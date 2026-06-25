@@ -3221,7 +3221,7 @@ function openChat(jid){
   // DB'den eksik mesajlari kontrol et (canli kacan mesaji yakalamak icin).
   baslatTazeleme(jid);
   const gd=document.getElementById('groupDesc');
-  if(c.isGroup&&c.description){
+  if(c.isGroup && c.description && c.description.trim()){
     gd.style.display='block';
     const dt=document.getElementById('groupDescText');
     dt.textContent=c.description;
@@ -3231,7 +3231,14 @@ function openChat(jid){
     const long=c.description.length>120 || (c.description.match(/\n/g)||[]).length>=2;
     tog.style.display=long?'inline-block':'none';
     tog.textContent='Devamını gör';
-  } else gd.style.display='none';
+  } else {
+    // Aciklama YOK: hem gizle hem ICERIGI TEMIZLE (yoksa onceki grubun aciklamasi
+    // DOM'da kalip gorunebiliyordu). Bu, "aciklamasiz grupta baskasinin aciklamasi" bug'inin
+    // kesin cozumu — element bos olsun, sadece display:none yetmiyor olabilir.
+    gd.style.display='none';
+    const dt=document.getElementById('groupDescText');
+    if(dt) dt.textContent='';
+  }
   document.getElementById('offlineBanner').style.display=connected?'none':'block';
   // FLAS ONLEME: bellekte mesaj VARSA hemen ciz (bos kare gorunmesin).
   // Bellekte mesaj YOKSA bos beyaz birakmak yerine kisa "yukleniyor" goster;
