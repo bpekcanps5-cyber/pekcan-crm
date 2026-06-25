@@ -734,10 +734,12 @@
   .fwd-chip{display:inline-flex;align-items:center;gap:6px;background:var(--brand-soft);color:var(--brand);font-size:12.5px;font-weight:600;padding:5px 11px;border-radius:16px}
   .fwd-chip b{cursor:pointer;font-size:15px;line-height:1;font-weight:400}
   .fwd-chip b:hover{color:var(--text)}
-  /* Secim modu: mesajdaki secim kutusu */
-  .sec-kutu{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;border:2px solid var(--border);margin-right:8px;cursor:pointer;font-size:13px;font-weight:800;color:#fff;vertical-align:middle;flex-shrink:0;transition:all .12s}
+  /* Secim modu: secim kutusu — WhatsApp gibi baloncugun SOL DIKEY ORTASINDA.
+     absolute konum: baloncuk yapisini bozmaz, kutu disarida solda ortada durur. */
+  .sec-kutu{position:absolute;left:-34px;top:50%;transform:translateY(-50%);display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;border:2px solid var(--border);cursor:pointer;font-size:13px;font-weight:800;color:#fff;flex-shrink:0;transition:all .12s;background:var(--panel);z-index:2}
   .sec-kutu.dolu{background:var(--brand);border-color:var(--brand)}
-  .msg.secim-modu{cursor:pointer}
+  /* secim modunda mesaja sol margin ver ki kutu icin yer acilsin (baloncuk sola kaymasin) */
+  .msg.secim-modu{cursor:pointer;margin-left:38px}
   /* Toast bildirim */
   #toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:13px 22px;border-radius:13px;font-size:13.5px;font-weight:600;box-shadow:var(--shadow-lg);z-index:300;opacity:0;transition:all .3s cubic-bezier(.2,.8,.2,1);pointer-events:none;display:flex;align-items:center;gap:9px}
   #toast.show{transform:translateX(-50%) translateY(0);opacity:1}
