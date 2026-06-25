@@ -88,6 +88,18 @@
   .rail-btn:hover{background:rgba(255,255,255,.07);color:#dcebe8}
   .rail-btn.active{background:linear-gradient(140deg,#14b8a6,#0f766e);color:#fff;box-shadow:0 6px 16px rgba(20,184,166,.45)}
   .rail-btn svg{width:25px;height:25px}
+  /* Rail etiketleri: 4 ikonun altinda renkli nokta seridi */
+  .rail-ayrac{width:32px;height:1px;background:rgba(255,255,255,.1);margin:8px 0 6px}
+  .rail-etiketler{display:flex;flex-direction:column;align-items:center;gap:9px;width:100%;max-height:42vh;overflow-y:auto;padding:2px 0}
+  .rail-etiketler::-webkit-scrollbar{width:0}
+  .rail-etiket{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;cursor:pointer;position:relative;transition:all .18s;flex-shrink:0}
+  .rail-etiket:hover{transform:scale(1.12)}
+  .rail-etiket .re-nokta{width:18px;height:18px;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,.35);transition:all .18s}
+  .rail-etiket.aktif{background:rgba(255,255,255,.12)}
+  .rail-etiket.aktif .re-nokta{width:20px;height:20px;box-shadow:0 0 0 2.5px rgba(255,255,255,.5),0 2px 8px rgba(0,0,0,.4)}
+  .rail-etiket .re-ad{position:absolute;left:46px;top:50%;transform:translateY(-50%);background:var(--ink);color:#fff;padding:5px 11px;border-radius:9px;font-size:12.5px;font-weight:600;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s;z-index:300;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+  .rail-etiket:hover .re-ad{opacity:1}
+  .rail-etiket .re-sayi{position:absolute;top:-3px;right:-3px;background:#ef4444;color:#fff;font-size:9px;font-weight:800;min-width:15px;height:15px;border-radius:8px;display:grid;place-items:center;padding:0 3px;border:1.5px solid var(--ink)}
   .rail-spacer{flex:1}
   .rail .avatar{width:48px;height:48px;border-radius:50%;background:linear-gradient(140deg,#c8962a,#9a6f1d);display:grid;place-items:center;color:#fff;font-weight:700;cursor:pointer;transition:all .2s;border:2.5px solid transparent;font-size:15px}
   .rail .avatar:hover{border-color:rgba(255,255,255,.35)}
@@ -425,19 +437,19 @@
   .voice-player .vp-knob{position:absolute;top:50%;left:0;width:11px;height:11px;border-radius:50%;background:var(--brand);transform:translate(-50%,-50%);box-shadow:0 1px 3px rgba(0,0,0,.25)}
   .voice-player .vp-time{font-size:11.5px;color:var(--muted);font-weight:500}
   .voice-player .vp-mic{width:20px;height:20px;color:var(--brand);flex-shrink:0;opacity:.7}
-  .msg-doc{display:flex;align-items:center;gap:11px;background:rgba(0,0,0,.04);padding:11px;border-radius:13px;margin-bottom:3px;min-width:0;max-width:280px;text-decoration:none;color:inherit;transition:filter .13s}
+  .msg-doc{display:flex;align-items:center;gap:13px;background:rgba(0,0,0,.04);padding:14px;border-radius:14px;margin-bottom:3px;min-width:0;max-width:360px;text-decoration:none;color:inherit;transition:filter .13s}
   html[data-theme="dark"] .msg-doc{background:rgba(255,255,255,.06)}
   .msg-doc:hover{filter:brightness(.97)}
-  .msg-doc .doc-icon{width:40px;height:40px;border-radius:10px;background:linear-gradient(140deg,#5b8def,#3a6fd8);display:grid;place-items:center;color:#fff;flex-shrink:0}
-  .msg-doc .doc-icon{width:40px;height:40px;border-radius:10px;background:linear-gradient(140deg,#5b8def,#3a6fd8);display:grid;place-items:center;color:#fff;flex-shrink:0;position:relative}
-  .msg-doc .doc-icon svg{width:21px;height:21px}
-  .msg-doc .doc-ext{position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);font-size:7.5px;font-weight:800;background:#fff;color:#333;padding:1px 4px;border-radius:4px;letter-spacing:.3px;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .msg-doc .doc-icon{width:52px;height:52px;border-radius:12px;background:linear-gradient(140deg,#5b8def,#3a6fd8);display:grid;place-items:center;color:#fff;flex-shrink:0}
+  .msg-doc .doc-icon{width:52px;height:52px;border-radius:12px;background:linear-gradient(140deg,#5b8def,#3a6fd8);display:grid;place-items:center;color:#fff;flex-shrink:0;position:relative}
+  .msg-doc .doc-icon svg{width:27px;height:27px}
+  .msg-doc .doc-ext{position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:800;background:#fff;color:#333;padding:1.5px 5px;border-radius:5px;letter-spacing:.3px;box-shadow:0 1px 2px rgba(0,0,0,.2)}
   html[data-theme="dark"] .msg-doc .doc-ext{background:#1c2832;color:#e6efec}
-  .msg-doc .doc-thumb{width:48px;height:48px;border-radius:9px;background-size:cover;background-position:center;flex-shrink:0;cursor:zoom-in;border:1px solid var(--border)}
-  .msg-doc.has-thumb{max-width:300px}
+  .msg-doc .doc-thumb{width:90px;height:90px;border-radius:10px;background-size:cover;background-position:center;flex-shrink:0;cursor:zoom-in;border:1px solid var(--border)}
+  .msg-doc.has-thumb{max-width:420px}
   .msg-doc .doc-info{min-width:0;flex:1}
-  .msg-doc .doc-info .dn{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3}
-  .msg-doc .doc-info .dm{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .msg-doc .doc-info .dn{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.35}
+  .msg-doc .doc-info .dm{font-size:13px;color:var(--muted);margin-top:4px}
   /* Kisi karti (vCard) */
   .contact-card{display:flex;align-items:center;gap:12px;padding:11px 13px;background:rgba(0,0,0,.04);border-radius:13px;margin-bottom:3px;min-width:230px}
   html[data-theme="dark"] .contact-card{background:rgba(255,255,255,.06)}
@@ -606,7 +618,8 @@
   .lightbox{position:fixed;inset:0;background:rgba(6,16,14,.94);display:none;align-items:center;justify-content:center;z-index:100;flex-direction:column}
   .lightbox.show{display:flex}
   .lb-stage{flex:1;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
-  .lightbox img{max-width:90%;max-height:85vh;border-radius:12px;transition:transform .1s;cursor:grab;user-select:none}
+  /* Onizleme kucuk gelse bile ekrani kaplasin: width/height ile buyut (image-rendering ile netlik) */
+  .lightbox img{width:auto;height:auto;min-width:min(70vw,700px);max-width:94vw;max-height:88vh;object-fit:contain;border-radius:12px;transition:transform .1s;cursor:grab;user-select:none;image-rendering:auto;background:#fff}
   .lightbox img.grabbing{cursor:grabbing}
   .lb-toolbar{display:flex;gap:14px;padding:18px;background:rgba(0,0,0,.5)}
   .lb-toolbar button{background:rgba(255,255,255,.14);border:none;color:#fff;width:46px;height:46px;border-radius:50%;cursor:pointer;display:grid;place-items:center;transition:background .14s}
@@ -844,6 +857,8 @@
     <div class="rail-btn" id="railUnread" onclick="railFilter('unread',this)" title="Okunmamış"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg></div>
     <div class="rail-btn" id="railGroups" onclick="railFilter('groups',this)" title="Gruplar"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg></div>
     <div class="rail-btn" id="railPeople" onclick="railFilter('people',this)" title="Kişiler"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>
+    <div class="rail-ayrac"></div>
+    <div class="rail-etiketler" id="railEtiketler"></div>
     <div class="rail-spacer"></div>
     <div class="avatar" id="settingsAvatar" title="Ayarlar">ED</div>
   </div>
@@ -1174,6 +1189,22 @@
   <div class="set-item" id="waCikisItem" onclick="confirmLogout()" style="color:#e0a23c;display:none">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5c-1.11 0-2 .9-2 2v4h2V5h14v14H5v-4H3v4c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
     WhatsApp çıkış / Numara değiştir
+  </div>
+  <!-- TEHLIKELI BOLGE: sadece yonetici gorur, ic ice acilir (yanlislikla basilmasin) -->
+  <div id="tehlikeliBolge" style="display:none">
+    <div style="height:1px;background:var(--border-soft);margin:6px 0"></div>
+    <div class="set-item" id="tehlikeliAcBtn" onclick="tehlikeliAc()" style="color:#a05; font-weight:600">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5.99L19.53 19H4.47L12 5.99M12 2L1 21h22L12 2zm1 14h-2v2h2v-2zm0-6h-2v4h2v-4z"/></svg>
+      Tehlikeli işlemler
+      <span class="etiket-ok" id="tehlikeliOk" style="margin-left:auto">▼</span>
+    </div>
+    <div id="tehlikeliIcerik" style="display:none; padding:2px 6px 4px">
+      <div style="font-size:11px;color:var(--muted);padding:4px 8px 8px;line-height:1.5">⚠️ Grupları sıfırlar (kayıtlı kişiler korunur). Yeni mesaj geldikçe gruplar temiz şekilde geri gelir. <b>Onaylamak için 2 kez bas.</b></div>
+      <div class="set-item" id="grupSilBtn" onclick="grupSilAdim()" style="color:#c0392b; font-weight:700; border:1px solid rgba(192,57,43,.3); border-radius:10px; justify-content:center">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+        <span id="grupSilYazi">Sadece grupları sil</span>
+      </div>
+    </div>
   </div>
 </div>
 <div id="reactPicker" style="position:fixed;display:none;background:var(--panel);border:1px solid var(--border);border-radius:24px;box-shadow:0 6px 24px rgba(0,0,0,.2);padding:6px 8px;z-index:210;gap:4px">
@@ -1686,7 +1717,11 @@ function connect(){
           if(!c.avatar && prev.avatar) c.avatar=prev.avatar;
           if((!c.members||!c.members.length) && prev.members) c.members=prev.members;
           if(prev.customName){ c.customName=prev.customName; c.name=prev.customName; }
-          if(!c.description && prev.description) c.description=prev.description;
+          // Aciklama: SADECE veri hic gelmediyse (undefined/null) eskisini koru.
+          // Bos string ('') ise grup gercekten aciklamasiz/silinmis demektir -> bos birak.
+          // (Eskiden bos gelince de eskisini koruyordu; bu yuzden aciklamasiz grupta
+          //  onceki grubun aciklamasi gorunuyordu. Duzeltildi.)
+          if((c.description===undefined||c.description===null) && prev.description) c.description=prev.description;
         }
         chats[c.jid]=c;
       });
@@ -2534,6 +2569,57 @@ function applyUser(){
   // (Normal kullanici WhatsApp baglantisini kesemez/numara degistiremez — ofis ortak hatti korunur.)
   const wac=document.getElementById('waCikisItem');
   if(wac) wac.style.display = currentUser.role==='admin' ? 'flex' : 'none';
+  // "Tehlikeli islemler" (grup sifirlama) SADECE yoneticide gorunur.
+  const tb=document.getElementById('tehlikeliBolge');
+  if(tb) tb.style.display = currentUser.role==='admin' ? 'block' : 'none';
+}
+
+// TEHLIKELI BOLGE: ic ice ac/kapa (yanlislikla basilmasin diye gizli durur)
+function tehlikeliAc(){
+  const ic=document.getElementById('tehlikeliIcerik');
+  const ok=document.getElementById('tehlikeliOk');
+  if(!ic) return;
+  const acik = ic.style.display!=='none';
+  ic.style.display = acik ? 'none' : 'block';
+  if(ok) ok.textContent = acik ? '▼' : '▲';
+  // kapatinca grup-sil onayini da sifirla
+  if(acik) _grupSilOnay=0;
+  _grupSilSifirla();
+}
+// 2 KEZ BASMALI grup silme: ilk basista uyari, ikinci basista siler
+let _grupSilOnay=0; let _grupSilTimer=null;
+function _grupSilSifirla(){
+  _grupSilOnay=0;
+  if(_grupSilTimer){ clearTimeout(_grupSilTimer); _grupSilTimer=null; }
+  const y=document.getElementById('grupSilYazi');
+  const b=document.getElementById('grupSilBtn');
+  if(y) y.textContent='Sadece grupları sil';
+  if(b) b.style.background='';
+}
+function grupSilAdim(){
+  if(!currentUser || currentUser.role!=='admin'){ showToast('Bu işlem için yetkiniz yok.'); return; }
+  _grupSilOnay++;
+  const y=document.getElementById('grupSilYazi');
+  const b=document.getElementById('grupSilBtn');
+  if(_grupSilOnay===1){
+    // ilk basis: uyari goster, 4 sn icinde tekrar basmazsa sifirla
+    if(y) y.textContent='⚠️ Emin misin? TEKRAR BAS';
+    if(b) b.style.background='rgba(192,57,43,.15)';
+    if(_grupSilTimer) clearTimeout(_grupSilTimer);
+    _grupSilTimer=setTimeout(_grupSilSifirla, 4000);
+    return;
+  }
+  // ikinci basis: GERCEKTEN sil
+  if(_grupSilTimer){ clearTimeout(_grupSilTimer); _grupSilTimer=null; }
+  if(y) y.textContent='Siliniyor…';
+  try{ ws.send(JSON.stringify({type:'wipeGroups'})); }catch(e){ showToast('Bağlantı yok, tekrar dene.'); }
+  // menuyu kapat + onayi sifirla
+  setTimeout(()=>{
+    document.getElementById('settingsMenu').classList.remove('show');
+    const ic=document.getElementById('tehlikeliIcerik'); if(ic) ic.style.display='none';
+    const ok=document.getElementById('tehlikeliOk'); if(ok) ok.textContent='▼';
+    _grupSilSifirla();
+  }, 600);
 }
 
 async function appLogout(){
@@ -3160,6 +3246,10 @@ function openChat(jid){
   // NOT: Sohbet acilinca HEP en alttan baslar (renderMessages icindeki sohbetDegisti scroll'u).
   // Otomatik "bahsetmeye git" smooth-scroll'u KALDIRILDI — gecislerde gidip-gelme hissi
   // yaratiyordu ve kullanici "hep en altta baslasin" istedi.
+  // OTOMATIK ODAKLANMA: sohbete girince mesaj kutusuna odaklan ki kullanici
+  // direkt yazmaya baslayabilsin (alttaki kutuya tiklamasina gerek kalmasin).
+  // setTimeout: DOM guncellemesi bitsin, sonra odaklan (daha guvenilir).
+  setTimeout(()=>{ const mi=document.getElementById('msgInput'); if(mi) mi.focus(); }, 50);
 }
 
 // Beni etiketleyen SON mesaja kaydir + kisa sure vurgula
@@ -3487,8 +3577,36 @@ function renderEtiketBolum(){
     }).join('')+'</div>';
   }
   box.innerHTML=html;
+  renderRailEtiketler(); // sol dar menudeki renkli etiket noktalarini da guncelle
 }
-function etiketBolumToggle(){ _etiketBolumAcik=!_etiketBolumAcik; renderEtiketBolum(); }
+// SOL DAR MENU (rail): renkli etiket noktalari. Tiklayinca o etikete gore filtreler,
+// uzerine gelince adi gorunur (tooltip). Etiketsiz ise bos kalir.
+function renderRailEtiketler(){
+  const box=document.getElementById('railEtiketler');
+  if(!box) return;
+  if(!_labels || !_labels.length){ box.innerHTML=''; return; }
+  box.innerHTML=_labels.map(l=>{
+    const sayi=Object.values(_chatLabels||{}).filter(ids=>ids&&ids.includes(l.id)).length;
+    const aktif=_aktifEtiketFiltre===l.id;
+    const sayiRoz = sayi>0 ? '<span class="re-sayi">'+sayi+'</span>' : '';
+    return '<div class="rail-etiket'+(aktif?' aktif':'')+'" onclick="etiketFiltrele(\''+esc(l.id)+'\')" title="'+esc(l.name)+'">'+
+      '<span class="re-nokta" style="background:'+esc(l.color)+'"></span>'+
+      sayiRoz+
+      '<span class="re-ad">'+esc(l.name)+'</span>'+
+      '</div>';
+  }).join('');
+}
+// Etiket bolumu basligina tiklayinca ac/kapa. Filtre aktif olsa bile KAPANABILMELI
+// (eskiden filtre varken kapanmiyordu — kullanici sikayet etti, duzeltildi).
+function etiketBolumToggle(){
+  _etiketBolumAcik=!_etiketBolumAcik;
+  // Kapatiliyorsa ve bir filtre aktifse, filtreyi de temizle ki liste gercekten kapansin
+  if(!_etiketBolumAcik && _aktifEtiketFiltre){
+    _aktifEtiketFiltre=null;
+    renderList();
+  }
+  renderEtiketBolum();
+}
 function etiketFiltreTemizle(){
   _aktifEtiketFiltre=null;
   renderEtiketBolum();
@@ -3744,10 +3862,16 @@ function renderMessages(c, searchQ){
       else if(['zip','rar','7z'].includes(ext)){ dcolor='#b07b2e'; dlabel='ARŞİV'; }
       else if(ext) dlabel=ext.toUpperCase().slice(0,4);
       const icon = m.thumb
-        ? '<span class="doc-thumb" style="background-image:url('+esc(m.thumb)+')" onclick="event.preventDefault();openLightbox(\''+esc(m.thumb)+'\')"></span>'
+        ? '<span class="doc-thumb" style="background-image:url('+esc(m.thumb)+')"></span>'
         : '<span class="doc-icon" style="background:'+dcolor+'">'+docSvg()+'<span class="doc-ext">'+dlabel+'</span></span>';
       const dlUrl = esc(m.mediaUrl) + '?name=' + encodeURIComponent(fname);
-      body='<a class="msg-doc'+(m.thumb?' has-thumb':'')+'" href="'+dlUrl+'" download="'+esc(fname)+'">'+icon+'<span class="doc-info"><span class="dn">'+hlight(fname,searchQ)+'</span><span class="dm">İndirmek için tıkla</span></span></a>';
+      // Belgeye TIKLAYINCA: dosya inmisse ic icerigi yeni sekmede ac (PDF/resim icini gor),
+      // inmemisse "henuz indirilmedi" uyari. Alt satirda ayri "indir" baglantisi.
+      const acHandler = m.mediaUrl
+        ? 'onclick="event.preventDefault();belgeOnizle(\''+esc(m.mediaUrl)+'\',\''+esc(ext)+'\',\''+esc(m.thumb||'')+'\')"'
+        : 'onclick="event.preventDefault();showToast(\'Belge henüz indirilmedi, birazdan tekrar deneyin.\')"';
+      const altYazi = m.mediaUrl ? 'Görüntülemek için tıkla' : 'İndiriliyor…';
+      body='<a class="msg-doc'+(m.thumb?' has-thumb':'')+'" href="'+dlUrl+'" '+acHandler+' style="cursor:pointer">'+icon+'<span class="doc-info"><span class="dn">'+hlight(fname,searchQ)+'</span><span class="dm">'+altYazi+'</span>'+(m.mediaUrl?'<a class="doc-indir" href="'+dlUrl+'" download="'+esc(fname)+'" onclick="event.stopPropagation()" style="font-size:11.5px;color:var(--accent);text-decoration:none;display:inline-block;margin-top:2px">⬇ İndir</a>':'')+'</span></a>';
       // belgeye yazilan ACIKLAMA (caption) varsa dosyanin altinda goster
       if(m.caption){ body+='<div class="caption">'+hlight(m.caption,searchQ,m.mentions)+'</div>'; }
     } else if(m.kind==='contact'&&m.contact){
@@ -4574,6 +4698,22 @@ let lbScale=1, lbX=0, lbY=0, lbDragging=false, lbStartX=0, lbStartY=0;
 const lbImg=document.getElementById('lightboxImg'), lb=document.getElementById('lightbox');
 function lbApply(){ lbImg.style.transform='translate('+lbX+'px,'+lbY+'px) scale('+lbScale+')'; }
 function openLightbox(url){ lbImg.src=url; lbScale=1;lbX=0;lbY=0;lbApply(); lb.classList.add('show'); }
+// BELGE ONIZLEME: PDF veya resim ise GERCEK dosyayi yeni sekmede ac (net, tam ekran,
+// tarayicinin kendi PDF/resim goruntuleyicisi kaliteli gosterir). Diger belgelerde
+// kucuk thumb'i lightbox'ta buyut (yine de zoom yapilabilir).
+function belgeOnizle(mediaUrl, ext, thumb){
+  ext=(ext||'').toLowerCase();
+  const resimMi=['jpg','jpeg','png','webp','gif','bmp'].includes(ext);
+  const pdfMi=ext==='pdf';
+  if(pdfMi || resimMi){
+    // gercek dosyayi yeni sekmede ac — net ve tam ekran
+    try{ window.open(mediaUrl, '_blank'); }
+    catch(e){ if(thumb) openLightbox(thumb); }
+  } else {
+    // word/excel vs: onizleme resmini buyut (gercek dosya tarayicida acilmaz)
+    if(thumb) openLightbox(thumb);
+  }
+}
 function lbClose(){ lb.classList.remove('show'); lbScale=1; lbX=0; lbY=0; lbApply(); }
 document.getElementById('lbClose').onclick=lbClose;
 document.getElementById('lbZoomIn').onclick=()=>{ lbScale=Math.min(5,lbScale+0.3); lbApply(); };
@@ -4773,20 +4913,25 @@ async function doSendFiles(){
   const caption=document.getElementById('sendFileCaption').value.trim();
   document.getElementById('sendFileModal').classList.remove('show');
   if(!files.length||!activeJid) return;
+  // KRITIK: hedef sohbeti BURADA sabitle! Yukleme sirasinda (await) kullanici baska
+  // sohbete gecerse veya activeJid degisirse, dosya YANLIS GRUBA gidiyordu. Artik
+  // gonderim hep bu sabit 'hedefJid'e yapilir, yukleme bitene kadar degismez.
+  const hedefJid = activeJid;
+  const hedefAd = (chats[hedefJid] && chats[hedefJid].name) ? chats[hedefJid].name : '';
   for(let i=0;i<files.length;i++){
     const file=files[i];
     // aciklama sadece ilk dosyaya eklensin (WhatsApp da boyle yapar)
-    const q=new URLSearchParams({jid:activeJid, name:file.name, mime:file.type||'application/octet-stream', agent:benimAdim()});
+    const q=new URLSearchParams({jid:hedefJid, name:file.name, mime:file.type||'application/octet-stream', agent:benimAdim()});
     if(authToken) q.set('token', authToken);
     if(caption && i===0) q.set('caption', caption);
     const boyutMB=(file.size/1048576).toFixed(1);
-    showToast('📎 '+file.name+' gönderiliyor… ('+boyutMB+' MB)');
+    showToast('📎 '+file.name+(hedefAd?(' → '+hedefAd):'')+' gönderiliyor… ('+boyutMB+' MB)');
     try{
       const r=await fetch('/upload?'+q.toString(), {method:'POST', headers:{'Content-Type':'application/octet-stream'}, body:file});
       let j;
       try{ j=await r.json(); }catch(e){ j={ok:false, error:'sunucu yanıtı okunamadı'}; }
       if(!r.ok || !j.ok){ showToast('⚠️ '+file.name+' gönderilemedi: '+(j.error||('hata '+r.status))); }
-      else { showToast('✓ '+file.name+' gönderildi'); }
+      else { showToast('✓ '+file.name+(hedefAd?(' → '+hedefAd):'')+' gönderildi'); }
     }catch(err){ showToast('⚠️ Yükleme hatası: '+err.message); }
   }
 }

@@ -416,6 +416,27 @@ async function wipeAll() {
   // users tablosuna DOKUNMA - giris bilgileri kalmali
 }
 
+// SADECE GRUPLARI sil (kayitli kisileri ve contacts'i KORU).
+// Temiz baslangic icin: gruplar + grup mesajlari + gruba bagli etiket/atama silinir,
+// ama bire-bir kisi sohbetleri (is_group=false) ve kayitli kisiler (contacts) kalir.
+async function wipeGroups(lineId = null) {
+  if (!aktif) return;
+  // 1) Once silinecek grup jid'lerini bul (bu hatta ait, grup olanlar)
+  const kosul = lineId ? 'WHERE is_group=true AND line_id=$1' : 'WHERE is_group=true';
+  const params = lineId ? [lineId] : [];
+  const gruplar = await pool.query(`SELECT jid, line_id FROM chats ${kosul}`, params);
+  // 2) Bu gruplara ait mesajlari sil
+  for (const g of gruplar.rows) {
+    await q('DELETE FROM messages WHERE jid=$1 AND line_id=$2', [g.jid, g.line_id]);
+    // gruba bagli etiket baglantilari ve atamalar (tablolar varsa)
+    try { await q('DELETE FROM chat_labels WHERE chat_jid=$1 AND line_id=$2', [g.jid, g.line_id]); } catch (e) {}
+    try { await q('DELETE FROM chat_assignments WHERE chat_jid=$1 AND line_id=$2', [g.jid, g.line_id]); } catch (e) {}
+  }
+  // 3) Grup sohbetlerini sil (kisiler kalir)
+  await q(`DELETE FROM chats ${kosul}`, params);
+  // contacts ve users tablosuna DOKUNMA
+}
+
 // ============================================================
 // KULLANICILAR (users) — giris sistemi
 // ============================================================
@@ -853,7 +874,7 @@ function startCleanup() {
 module.exports = {
   init, test, isReady, startKeepAlive,
   saveChat, saveMessage, saveContact, saveSetting, getSetting,
-  loadAll, loadMessages, deleteMessage, wipeAll,
+  loadAll, loadMessages, deleteMessage, wipeAll, wipeGroups,
   cleanupOld, startCleanup,
   ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole,
   saveInternalMessage, loadInternalConversation, listInternalConversations,
