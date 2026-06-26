@@ -2473,33 +2473,50 @@ function aktiviteMesajiTespit(text) {
 const TAKIP_BEKLEME_MS = 3 * 60 * 1000; // 3 dakika
 const _takipUyari = new Map(); // jid -> { timer, sonKisi, grupAd, lineId, ts }
 
-// ÇİZGİ TESPİTİ: "------", "======", "____" gibi mesajlar "işlem bitti" işaretidir.
-// Çizginin yanında birkaç harf olsa bile sayılır (örn "--------e", "=====xyz" — yanlış
-// yazım/fazladan tuş). Mantık: mesajda en az 5 ardışık çizgi karakteri varsa = çizgi.
-function cizgiMesajiMi(text) {
+// KAPANIŞ MESAJI TESPİTİ: "iş bitti" işareti olan mesajları yakalar.
+// (1) Çizgi: "------", "======" (en az 4 ardışık çizgi — kısa çizgiler de sayılır)
+// (2) Kapanış ifadeleri: "işlem kalmamıştır", "yapılacak işlem", "Pekcan Sigorta" (imza)
+function kapanisMesajiMi(text) {
   if (!text || typeof text !== 'string') return false;
   const t = text.trim();
-  if (t.length < 3) return false;
-  // 1) Tamamen çizgi karakterlerinden oluşuyorsa (en az 3 çizgi) -> çizgi
+  if (t.length < 2) return false;
+  // küçült + Türkçe sadeleştir (yazım toleransı). NOT: İ/I önce dönüştürülür ki
+  // toLowerCase Türkçe "İ"yi bozmasın.
+  const sade = t
+    .replace(/İ/g, 'i').replace(/I/g, 'i').replace(/Ş/g, 's').replace(/Ğ/g, 'g')
+    .replace(/Ü/g, 'u').replace(/Ö/g, 'o').replace(/Ç/g, 'c')
+    .toLowerCase()
+    .replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c');
+  // 1) ÇİZGİ: en az 4 ardışık çizgi karakteri (kısa çizgi de iş bitti sayılır)
+  if (/[-=_─—–]{4,}/.test(t)) return true;
+  // tamamen çizgiden oluşuyorsa (en az 3) -> çizgi
   if (/^[-=_.\s─—–]+$/.test(t)) {
     const cizgiSayisi = (t.match(/[-=_─—–]/g) || []).length;
     if (cizgiSayisi >= 3) return true;
   }
-  // 2) İçinde EN AZ 5 ARDIŞIK çizgi karakteri varsa (yanında harf olsa bile) -> çizgi
-  //    "--------e", "====son", "iş bitti ------" gibi durumları yakalar.
-  if (/[-=_─—–]{5,}/.test(t)) return true;
+  // 2) KAPANIŞ İFADELERİ (iş bitti anlamına gelen kalıplar)
+  if (/islem kalmam|yapilacak islem kalma|islem kalmadi|isi kalmam/.test(sade)) return true;
+  if (/pekcan sigorta|daima yaninizda|hayirli olsun|hayirli ugurlu/.test(sade)) return true;
+  if (/tamamlandi|tamamlanmistir|halloldu|hallettik|bitti gitti/.test(sade)) return true;
   return false;
 }
 
-// Bir grupta mesaj geldi. Çizgi DEĞİLSE 3dk takip başlat/yenile. Çizgi İSE iptal (iş bitti).
-function takipKontrol(jid, text, sonKisi, grupAd, lineId, isGroup) {
+// Geriye dönük uyumluluk için eski isim de kapanış tespitine bağlanır.
+function cizgiMesajiMi(text) { return kapanisMesajiMi(text); }
+
+// Bir grupta mesaj geldi.
+// - Kapanış mesajı (çizgi/imza/işlem bitti) -> uyarı iptal (iş tamam).
+// - BİZDEN (ekip) mesaj -> uyarı iptal + timer başlatma (ekip ilgilenmiş, müşteri beklemiyor).
+// - Müşteriden mesaj -> 3 dk sonra biz cevap vermezsek uyar.
+function takipKontrol(jid, text, sonKisi, grupAd, lineId, isGroup, fromMe) {
   if (!isGroup) return; // sadece gruplarda
-  if (cizgiMesajiMi(text)) {
-    // ÇİZGİ çekildi = işlem tamamlandı -> bekleyen uyarıyı iptal et
+  // Kapanış mesajı VEYA bizden mesaj -> bekleyen uyarıyı iptal et, yeni timer BAŞLATMA.
+  if (fromMe || kapanisMesajiMi(text)) {
     takipUyarisiIptal(jid);
     return;
   }
-  // çizgi DEĞİL -> 3 dk sonra hâlâ çizgi/mesaj gelmezse uyar (süreyi baştan başlat)
+  // Buraya geldiyse: MÜŞTERİ yazdı ve kapanış değil -> 3 dk sonra biz cevap vermezsek uyar.
   const eski = _takipUyari.get(jid);
   if (eski && eski.timer) clearTimeout(eski.timer);
   const timer = setTimeout(() => {
@@ -2509,7 +2526,7 @@ function takipKontrol(jid, text, sonKisi, grupAd, lineId, isGroup) {
       jid,
       grupAd: grupAd || (jid || '').split('@')[0],
       kisi: sonKisi || '',
-      mesaj: `"${grupAd || 'Bu grup'}" grubunda 3 dk'dır işlem yok ve çizgi çekilmemiş. İş yarım kalmış olabilir.`,
+      mesaj: `"${grupAd || 'Bu grup'}" grubunda müşteri yazdı ama 3 dk'dır cevap verilmedi. İlgilenilmeyi bekliyor olabilir.`,
     };
     // SADECE bu hattın YÖNETİCİ panellerine gönder
     wss.clients.forEach((c) => {
@@ -2519,7 +2536,7 @@ function takipKontrol(jid, text, sonKisi, grupAd, lineId, isGroup) {
         }
       } catch (e) {}
     });
-    console.log(`🔔 TAKİP UYARISI: ${grupAd} | 3dk işlem yok + çizgi çekilmemiş -> yöneticiye bildirildi`);
+    console.log(`🔔 TAKİP UYARISI: ${grupAd} | müşteri yazdı, 3dk cevap yok -> yöneticiye bildirildi`);
   }, TAKIP_BEKLEME_MS);
   _takipUyari.set(jid, { timer, sonKisi, grupAd, lineId, ts: Date.now() });
 }
@@ -4283,7 +4300,7 @@ async function startWA(lineId = 'ofis') {
       if (isGroup) {
         const takipKisi = fromMe ? 'Ekip' : (senderName || senderPush || '');
         const takipGrupAd = (CC.get(jid)?.name) || (jid || '').split('@')[0];
-        takipKontrol(jid, info.text, takipKisi, takipGrupAd, lineId, isGroup);
+        takipKontrol(jid, info.text, takipKisi, takipGrupAd, lineId, isGroup, fromMe);
       }
 
       addMessage(jid, {
