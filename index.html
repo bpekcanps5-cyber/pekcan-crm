@@ -1007,17 +1007,17 @@
   /* Toast bildirim */
   #toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:13px 22px;border-radius:13px;font-size:13.5px;font-weight:600;box-shadow:var(--shadow-lg);z-index:300;opacity:0;transition:all .3s cubic-bezier(.2,.8,.2,1);pointer-events:none;display:flex;align-items:center;gap:9px}
   /* ── TAKİP UYARI KARTLARI (sağ altta, yöneticiye) ── */
-  #takipKartlar{position:fixed;bottom:24px;right:24px;z-index:280;display:flex;flex-direction:column;gap:12px;max-width:360px}
-  .takip-kart{background:var(--panel);border:1px solid var(--border-soft);border-left:4px solid #f59e0b;border-radius:14px;padding:14px 16px;box-shadow:var(--shadow-lg);cursor:pointer;transition:all .2s;animation:takipGir .35s cubic-bezier(.2,.8,.2,1);position:relative}
-  .takip-kart:hover{transform:translateX(-3px);border-left-color:#d97706;box-shadow:0 12px 32px rgba(0,0,0,.25)}
-  @keyframes takipGir{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
-  .takip-kart .tk-ust{display:flex;align-items:center;gap:8px;margin-bottom:7px}
-  .takip-kart .tk-ikon{font-size:18px;flex-shrink:0}
-  .takip-kart .tk-baslik{font-size:12.5px;font-weight:800;color:#d97706;text-transform:uppercase;letter-spacing:.4px}
-  .takip-kart .tk-grup{font-size:14.5px;font-weight:700;color:var(--text);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .takip-kart .tk-mesaj{font-size:13px;color:var(--muted);line-height:1.4}
-  .takip-kart .tk-alt{margin-top:9px;font-size:11.5px;color:var(--brand);font-weight:700}
-  .takip-kart .tk-kapat{position:absolute;top:10px;right:11px;width:22px;height:22px;border:none;background:var(--panel-2);border-radius:50%;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;display:grid;place-items:center}
+  #takipKartlar{position:fixed;bottom:18px;left:18px;z-index:280;display:flex;flex-direction:column;gap:9px;max-width:270px}
+  .takip-kart{background:var(--panel);border:1px solid var(--border-soft);border-left:3px solid #f59e0b;border-radius:11px;padding:10px 12px;box-shadow:var(--shadow-lg);cursor:pointer;transition:all .2s;animation:takipGir .35s cubic-bezier(.2,.8,.2,1);position:relative}
+  .takip-kart:hover{transform:translateX(3px);border-left-color:#d97706;box-shadow:0 10px 26px rgba(0,0,0,.25)}
+  @keyframes takipGir{from{opacity:0;transform:translateX(-40px)}to{opacity:1;transform:translateX(0)}}
+  .takip-kart .tk-ust{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+  .takip-kart .tk-ikon{font-size:14px;flex-shrink:0}
+  .takip-kart .tk-baslik{font-size:10px;font-weight:800;color:#d97706;text-transform:uppercase;letter-spacing:.3px}
+  .takip-kart .tk-grup{font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:18px}
+  .takip-kart .tk-mesaj{font-size:11px;color:var(--muted);line-height:1.35}
+  .takip-kart .tk-alt{margin-top:6px;font-size:10px;color:var(--brand);font-weight:700}
+  .takip-kart .tk-kapat{position:absolute;top:7px;right:7px;width:18px;height:18px;border:none;background:var(--panel-2);border-radius:50%;color:var(--muted);cursor:pointer;font-size:12px;line-height:1;display:grid;place-items:center}
   .takip-kart .tk-kapat:hover{background:var(--danger);color:#fff}
   #toast.show{transform:translateX(-50%) translateY(0);opacity:1}
   #toast svg{width:18px;height:18px;color:var(--brand-hi)}
