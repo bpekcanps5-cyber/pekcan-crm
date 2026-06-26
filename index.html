@@ -570,7 +570,10 @@
   .mention.clickable:hover{text-decoration:underline}
   .msg.out .mention{color:#fff;background:rgba(255,255,255,.22)}
   .mention-badge{display:inline-grid;place-items:center;min-width:17px;height:17px;padding:0 3px;margin-left:5px;border-radius:6px;background:var(--brand);color:#fff;font-size:11px;font-weight:800;vertical-align:middle}
-  .atama-nisan{margin-left:4px;font-size:11px;vertical-align:middle;opacity:.85}
+  .atama-nisan{margin-left:4px;display:inline-flex;align-items:center;vertical-align:middle;opacity:.55}
+  .atama-nisan svg{width:14px;height:14px;color:var(--muted)}
+  .atama-nisan.bana{opacity:1}
+  .atama-nisan.bana svg{color:var(--brand)}
   .msg.mentions-me{box-shadow:-3px 0 0 var(--brand)}
   .msg.flash{animation:msgFlash 1.2s ease}
   @keyframes msgFlash{0%{background:var(--brand-soft)}100%{background:inherit}}
@@ -668,6 +671,16 @@
   .fwd-tag{font-size:11.5px;color:var(--faint);font-style:italic;display:flex;align-items:center;gap:3px;margin-bottom:3px}
   .fwd-tag svg{width:13px;height:13px}
   .msg img.photo{max-width:300px;width:100%;border-radius:13px;display:block;cursor:zoom-in;margin-bottom:3px}
+  /* ─── FOTOĞRAF ALBÜMÜ (WhatsApp gibi karo grid) ─── */
+  .album-grid{display:grid;gap:3px;max-width:302px;border-radius:13px;overflow:hidden;margin-bottom:3px}
+  .album-grid.album-2{grid-template-columns:1fr 1fr}
+  .album-grid.album-3{grid-template-columns:1fr 1fr}
+  .album-grid.album-3 .album-karo:first-child{grid-column:1 / span 2}
+  .album-grid.album-4{grid-template-columns:1fr 1fr}
+  .album-karo{position:relative;cursor:zoom-in;overflow:hidden;aspect-ratio:1/1;background:var(--panel-2)}
+  .album-karo img.photo{width:100%;height:100%;object-fit:cover;max-width:none;border-radius:0;margin:0;cursor:zoom-in}
+  .album-grid.album-3 .album-karo:first-child{aspect-ratio:2/1}
+  .album-fazla{position:absolute;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;color:#fff;font-size:26px;font-weight:700}
   /* tam cozunurluk inene kadar onizleme hafif bulanik (yukleniyor hissi) */
   .msg img.photo.loading-thumb{filter:blur(1.5px) brightness(.92);transition:filter .3s}
   .msg video.clip{max-width:300px;width:100%;border-radius:13px;display:block;margin-bottom:3px}
@@ -870,6 +883,14 @@
   /* Onizleme kucuk gelse bile ekrani kaplasin: width/height ile buyut (image-rendering ile netlik) */
   .lightbox img{width:auto;height:auto;min-width:min(70vw,700px);max-width:94vw;max-height:88vh;object-fit:contain;border-radius:12px;transition:transform .1s;cursor:grab;user-select:none;image-rendering:auto;background:#fff}
   .lightbox img.grabbing{cursor:grabbing}
+  /* GALERİ okları */
+  .lb-nav{position:fixed;top:50%;transform:translateY(-50%);width:52px;height:52px;border-radius:50%;border:none;background:rgba(0,0,0,.45);color:#fff;cursor:pointer;display:grid;place-items:center;z-index:105;transition:background .15s}
+  .lb-nav:hover{background:rgba(0,0,0,.75)}
+  .lb-nav svg{width:32px;height:32px}
+  .lb-prev{left:24px}
+  .lb-next{right:24px}
+  .lb-sayac{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;font-size:14px;font-weight:600;padding:6px 16px;border-radius:20px;z-index:105}
+  @media (max-width:600px){ .lb-nav{width:42px;height:42px} .lb-prev{left:8px} .lb-next{right:8px} }
   .lb-toolbar{display:flex;gap:14px;padding:18px;background:rgba(0,0,0,.5)}
   .lb-toolbar button{background:rgba(255,255,255,.14);border:none;color:#fff;width:46px;height:46px;border-radius:50%;cursor:pointer;display:grid;place-items:center;transition:background .14s}
   .lb-toolbar button:hover{background:rgba(255,255,255,.28)}
@@ -1820,6 +1841,10 @@
 
 <div class="lightbox" id="lightbox">
   <div class="lb-stage" id="lbStage"><img id="lightboxImg" src="" draggable="false"><iframe id="lightboxPdf" src="" style="display:none;width:90vw;height:90vh;border:none;border-radius:8px;background:#fff"></iframe></div>
+  <!-- GALERİ okları (birden fazla foto varsa görünür) -->
+  <button class="lb-nav lb-prev" id="lbPrev" title="Önceki (←)" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+  <button class="lb-nav lb-next" id="lbNext" title="Sonraki (→)" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+  <div class="lb-sayac" id="lbSayac" style="display:none"></div>
   <div class="lb-toolbar">
     <button id="lbZoomOut" title="Uzaklastir"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg></button>
     <button id="lbReset" title="Sifirla"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg></button>
@@ -2001,6 +2026,7 @@ function readAllSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path
 function pinSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 9V4l1 0c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1l1 0v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/></svg>';}
 function archiveSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z"/></svg>';}
 function dotsSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>';}
+function kisiSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';}
 function sunSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 000-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/></svg>';}
 function moonSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>';}
 
@@ -4075,7 +4101,16 @@ function chatRow(c){
   const sub=c.isGroup?('<div class="chat-tags"><span class="tag grouptag">'+(c.memberCount?c.memberCount+' üye':'grup')+'</span></div>'):'';
   const pinIc=pinned.has(c.jid)?'<span class="pin-icon">'+pinSvg()+'</span>':'';
   const menIc=c.hasMention?'<span class="mention-badge" title="Burada senden bahsedildi">@</span>':'';
-  const atamaIc=banaEtiketli(c)?'<span class="atama-nisan" title="Bu gruba etiketlendin">👤</span>':'';
+  // ATAMA logosu: gruba kişi atanmışsa insan ikonu göster.
+  //  - SANA atandıysa: dolu/yeşil ikon (senin işin)
+  //  - Başkasına atandıysa: soluk ikon (birileri ilgileniyor)
+  let atamaIc='';
+  if(banaEtiketli(c)){
+    atamaIc='<span class="atama-nisan bana" title="Bu gruba etiketlendin">'+kisiSvg()+'</span>';
+  } else if(c.atananlar && c.atananlar.length){
+    const adlar=c.atananlar.join(', ');
+    atamaIc='<span class="atama-nisan" title="Atanan: '+esc(adlar)+'">'+kisiSvg()+'</span>';
+  }
   // ETIKET noktalari: bu grubun etiketlerinin renkleri
   let etiketNoktalari='';
   if(c.etiketler && c.etiketler.length && _labels.length){
@@ -4796,7 +4831,38 @@ function renderMessages(c, searchQ){
   }
   let lastDay=''; // son yazilan tarih ayraci (gun degisince yenisi yazilir)
   let html='';
+  // ─── ALBÜM GRUPLAMA ───
+  // Arka arkaya gelen (aynı gönderen, yakın zaman, başka mesaj araya girmeden) fotoğrafları
+  // tek albüm karosunda göster (WhatsApp gibi). _albumBas: bir albümün ilk foto index'i ->
+  // o albümdeki tüm foto index'leri. _albumAtla: albümün ilk fotosu DIŞINDAKİ index'ler (render'da atlanır).
+  const _albumBas={}; const _albumAtla=new Set();
+  {
+    const msgs=c.messages||[];
+    let i=0;
+    while(i<msgs.length){
+      const m=msgs[i];
+      const fotoMu=(x)=> x && x.kind==='image' && (x.mediaUrl||x.thumb) && !x.deleted;
+      if(fotoMu(m)){
+        // bu fotodan başlayarak ardışık fotoları topla (aynı gönderen + 90sn içinde)
+        const grup=[i];
+        let j=i+1;
+        while(j<msgs.length && fotoMu(msgs[j])
+              && msgs[j].fromMe===m.fromMe
+              && (msgs[j].sender||'')===(m.sender||'')
+              && Math.abs((msgs[j].ts||0)-(msgs[j-1].ts||0)) < 90000 // 90 sn içinde
+              && !msgs[j].caption && !msgs[j-1].caption // açıklamalı foto albüme girmesin (tek göster)
+        ){ grup.push(j); j++; }
+        if(grup.length>=2){ // en az 2 foto -> albüm
+          _albumBas[i]=grup;
+          for(let k=1;k<grup.length;k++) _albumAtla.add(grup[k]);
+        }
+        i=j;
+      } else i++;
+    }
+  }
   html+=c.messages.map((m,idx)=>{
+    // Bu foto bir albümün İLK fotosu DEĞİLSE ve albüme aitse -> atla (ilk fotoda hepsi render edildi)
+    if(_albumAtla.has(idx)) return '';
     // gun degistiyse tarih ayraci ekle
     let sep='';
     const gl=dayLabel(m.ts);
@@ -4894,7 +4960,25 @@ function renderMessages(c, searchQ){
     let quote='';
     if(m.replyTo){ quote='<div class="reply-quote" '+(m.replyTo.id?('onclick="jumpToMsg(\''+m.replyTo.id+'\')" style="cursor:pointer"'):'')+'><div class="rq-sender">'+esc(m.replyTo.sender||'')+'</div><div class="rq-text">'+esc(m.replyTo.text||'')+'</div></div>'; }
     let body='';
-    if(m.kind==='image'&&(m.mediaUrl||m.thumb)){
+    if(m.kind==='image'&&(m.mediaUrl||m.thumb)&&_albumBas[idx]){
+      // ─── ALBÜM KAROSU: 2-4+ fotoğraf tek karede (WhatsApp gibi) ───
+      const grup=_albumBas[idx];
+      const fotolar=grup.map(gi=>c.messages[gi]);
+      const toplam=fotolar.length;
+      // en fazla 4 göster, fazlası "+N" olarak son karoda
+      const gosterilecek=fotolar.slice(0,4);
+      const kalan=toplam-4;
+      const gridCls = toplam===2?'album-2':(toplam===3?'album-3':'album-4');
+      let karolar=gosterilecek.map((fm,gi)=>{
+        const src=fm.mediaUrl||fm.thumb;
+        const yukCls=(!fm.mediaUrl&&fm.thumb)?' loading-thumb':'';
+        const sonKaro=(gi===3 && kalan>0);
+        const fazlaEt = sonKaro ? '<div class="album-fazla">+'+kalan+'</div>' : '';
+        return '<div class="album-karo'+(sonKaro?' album-karo-son':'')+'" onclick="openLightbox(\''+esc(src)+'\')">'+
+          '<img class="photo'+yukCls+'" src="'+esc(src)+'" loading="lazy" decoding="async">'+fazlaEt+'</div>';
+      }).join('');
+      body='<div class="album-grid '+gridCls+'">'+karolar+'</div>';
+    } else if(m.kind==='image'&&(m.mediaUrl||m.thumb)){
       // Tam cozunurluk indiyse onu, inmediyse ONIZLEMEYI (thumb) goster -> foto ANINDA gorunur.
       const fotoSrc = m.mediaUrl || m.thumb;
       const tiklaSrc = m.mediaUrl || m.thumb;
@@ -4999,6 +5083,16 @@ function renderMessages(c, searchQ){
   if(!searchQ && (sohbetDegisti || altaYakin)){
     box.scrollTop=box.scrollHeight;
     sifirlaAltaInBadge(); // alta indik -> bildirim sıfırlansın
+    // SOHBET YENİ AÇILDIYSA: resim/medya yüklendikçe yükseklik değişir, en alta KESIN in.
+    // Birkaç kez tekrar zorla (anında, animasyonsuz) ki en altta açılsın.
+    if(sohbetDegisti){
+      const enAltaZorla=()=>{ box.scrollTop=box.scrollHeight; };
+      requestAnimationFrame(enAltaZorla);
+      setTimeout(enAltaZorla, 50);
+      setTimeout(enAltaZorla, 150);
+      setTimeout(enAltaZorla, 350);
+      setTimeout(enAltaZorla, 600);
+    }
   } else if(!searchQ && !sohbetDegisti && !altaYakin){
     // Kullanıcı YUKARIDA okuyor ve yeni mesaj geldi -> bildirim rozetini artır.
     // AMA en son gelen mesaj KENDİ mesajımsa artırma (zaten alta inecek).
@@ -5058,10 +5152,10 @@ document.getElementById('messages').addEventListener('scroll',e=>{
     ws.send(JSON.stringify({type:'loadOlder', jid:activeJid, beforeTs:enEski.ts}));
   }
 });
-// En alta kaydır (sağ alt buton)
+// En alta kaydır (sağ alt buton) — anında (yavaş animasyon yok)
 function enAltaIn(){
   const box=document.getElementById('messages');
-  if(box){ box.scrollTo({top:box.scrollHeight, behavior:'smooth'}); }
+  if(box){ box.scrollTop=box.scrollHeight; }
   sifirlaAltaInBadge(); // bildirimi temizle
 }
 document.getElementById('messages').addEventListener('click',e=>{
@@ -5884,7 +5978,46 @@ function pickTeamMention(username, displayName){
 let lbScale=1, lbX=0, lbY=0, lbDragging=false, lbStartX=0, lbStartY=0;
 const lbImg=document.getElementById('lightboxImg'), lb=document.getElementById('lightbox');
 function lbApply(){ lbImg.style.transform='translate('+lbX+'px,'+lbY+'px) scale('+lbScale+')'; }
-function openLightbox(url){ lbImg.src=url; lbScale=1;lbX=0;lbY=0;lbApply(); lb.classList.add('show'); }
+// ─── LIGHTBOX GALERİ ───
+// Açık sohbetteki TÜM fotoğrafları toplar, tıklanan fotodan başlar, ←/→ ile gezinilir.
+let _lbGaleri=[];   // {url} listesi (açık sohbetin tüm fotoğrafları)
+let _lbIndex=0;     // şu an gösterilen fotoğrafın indexi
+function lbGaleriTopla(){
+  // açık sohbetin image mesajlarının URL'lerini sırayla topla
+  _lbGaleri=[];
+  const c = activeJid ? chats[activeJid] : null;
+  if(!c || !c.messages) return;
+  for(const m of c.messages){
+    if(m.kind==='image' && (m.mediaUrl||m.thumb)){
+      _lbGaleri.push(m.mediaUrl || m.thumb);
+    }
+  }
+}
+function openLightbox(url){
+  // galeriyi topla, tıklanan fotoğrafın index'ini bul
+  lbGaleriTopla();
+  _lbIndex = _lbGaleri.indexOf(url);
+  if(_lbIndex<0){ _lbGaleri=[url]; _lbIndex=0; } // listede yoksa tek foto göster
+  lbGoster();
+  lb.classList.add('show');
+}
+function lbGoster(){
+  const url=_lbGaleri[_lbIndex];
+  lbImg.src=url; lbScale=1;lbX=0;lbY=0;lbApply();
+  // sağ/sol ok ve sayaç: birden fazla foto varsa göster
+  const cokFoto=_lbGaleri.length>1;
+  const prev=document.getElementById('lbPrev');
+  const next=document.getElementById('lbNext');
+  const sayac=document.getElementById('lbSayac');
+  if(prev) prev.style.display=cokFoto?'grid':'none';
+  if(next) next.style.display=cokFoto?'grid':'none';
+  if(sayac){
+    sayac.style.display=cokFoto?'block':'none';
+    sayac.textContent=(_lbIndex+1)+' / '+_lbGaleri.length;
+  }
+}
+function lbSonraki(){ if(_lbGaleri.length<2)return; _lbIndex=(_lbIndex+1)%_lbGaleri.length; lbGoster(); }
+function lbOnceki(){ if(_lbGaleri.length<2)return; _lbIndex=(_lbIndex-1+_lbGaleri.length)%_lbGaleri.length; lbGoster(); }
 // BELGE ONIZLEME: PDF panel ICINDE lightbox'ta acilir (foto gibi, hizli ac-kapa).
 // Resim de lightbox'ta. Word/Excel tarayicida gosterilemez -> yeni sekmede acilir/iner.
 // fname: gercek dosya adi — PDF'i "farkli kaydet" ile indirince dogru isim gelsin diye.
@@ -5902,6 +6035,8 @@ function belgeOnizle(mediaUrl, ext, thumb, fname){
     // PDF: PANEL ICINDE iframe'de goster (yeni sekme degil). X/ESC ile kapanir.
     if(img) img.style.display='none';
     if(pdf){ pdf.src=src; pdf.style.display='block'; }
+    // PDF galeri değil -> okları/sayacı gizle
+    ['lbPrev','lbNext','lbSayac'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
     lb.classList.add('show');
   } else if(resimMi){
     // Resim: normal lightbox (zoom'lu)
@@ -5955,8 +6090,16 @@ lbImg.addEventListener('mousedown',e=>{ if(lbScale<=1)return; lbDragging=true; l
 window.addEventListener('mousemove',e=>{ if(!lbDragging)return; lbX=e.clientX-lbStartX; lbY=e.clientY-lbStartY; lbApply(); });
 window.addEventListener('mouseup',()=>{ lbDragging=false; lbImg.classList.remove('grabbing'); });
 lb.addEventListener('click',e=>{ if(e.target===lb||e.target.id==='lbStage'){ lbClose(); } });
-// ESC tusu ile lightbox'i kapat (PDF/foto hizli kapansin — kullanici istedi)
-document.addEventListener('keydown',e=>{ if(e.key==='Escape' && lb.classList.contains('show')) lbClose(); });
+// GALERİ: sağ/sol ok butonları
+document.getElementById('lbPrev').onclick=(e)=>{ e.stopPropagation(); lbOnceki(); };
+document.getElementById('lbNext').onclick=(e)=>{ e.stopPropagation(); lbSonraki(); };
+// ESC tusu ile lightbox'i kapat + ←/→ ile galeri gezinme
+document.addEventListener('keydown',e=>{
+  if(!lb.classList.contains('show')) return;
+  if(e.key==='Escape'){ lbClose(); }
+  else if(e.key==='ArrowLeft'){ lbOnceki(); }
+  else if(e.key==='ArrowRight'){ lbSonraki(); }
+});
 
 function send(){
   const inp=document.getElementById('msgInput');
