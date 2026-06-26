@@ -202,6 +202,10 @@
   .rail-spacer{flex:1}
   .rail .avatar{width:48px;height:48px;border-radius:50%;background:linear-gradient(140deg,#c8962a,#9a6f1d);display:grid;place-items:center;color:#fff;font-weight:700;cursor:pointer;transition:all .2s;border:2.5px solid transparent;font-size:15px}
   .rail .avatar:hover{border-color:rgba(255,255,255,.35)}
+  /* Genel avatar (iç mesaj listesi, üye listeleri vb.) — YUVARLAK ve ezilmez */
+  .avatar{width:46px;height:46px;border-radius:50%;flex:0 0 auto;box-sizing:border-box;display:grid;place-items:center;color:#fff;font-weight:700;font-size:16px;aspect-ratio:1/1;overflow:hidden}
+  /* iç mesaj/sohbet satırındaki avatar ezilmesin (flex item olarak küçülmesin) */
+  .chat > .avatar{flex:0 0 46px;width:46px;height:46px}
 
   /* ===== Sidebar ===== */
   .sidebar{width:410px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);min-height:0;background:var(--panel)}
