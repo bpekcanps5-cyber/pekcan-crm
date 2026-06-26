@@ -236,14 +236,20 @@ async function loadAll(lineId = 'ofis') {
 const SAKLAMA_GUN = 30;
 function eskiEsikMs() { return Date.now() - SAKLAMA_GUN * 24 * 60 * 60 * 1000; }
 
-async function loadMessages(chatJid, limit = 60, lineId = 'ofis') {
+async function loadMessages(chatJid, limit = 60, lineId = 'ofis', beforeTs = null) {
   if (!aktif) return [];
   try {
-    // Sadece son SAKLAMA_GUN gunluk + bu hatta ait mesajlari getir (izolasyon).
-    const r = await pool.query(
-      'SELECT * FROM messages WHERE line_id=$1 AND chat_jid=$2 AND ts >= $3 ORDER BY ts DESC LIMIT $4',
-      [lineId, chatJid, eskiEsikMs(), limit]
-    );
+    // Sadece son SAKLAMA_GUN gunluk + bu hatta ait mesajlar (izolasyon).
+    // beforeTs verilirse: o zamandan ESKI mesajlari getir (sonsuz scroll / "daha fazla yukle").
+    let sql, params;
+    if (beforeTs) {
+      sql = 'SELECT * FROM messages WHERE line_id=$1 AND chat_jid=$2 AND ts >= $3 AND ts < $4 ORDER BY ts DESC LIMIT $5';
+      params = [lineId, chatJid, eskiEsikMs(), beforeTs, limit];
+    } else {
+      sql = 'SELECT * FROM messages WHERE line_id=$1 AND chat_jid=$2 AND ts >= $3 ORDER BY ts DESC LIMIT $4';
+      params = [lineId, chatJid, eskiEsikMs(), limit];
+    }
+    const r = await pool.query(sql, params);
     return r.rows.reverse(); // eskiden yeniye
   } catch (e) {
     console.error('⚠️  DB loadMessages hatasi:', e.message);
@@ -252,7 +258,63 @@ async function loadMessages(chatJid, limit = 60, lineId = 'ofis') {
 }
 
 // ============================================================
-// ESKI MESAJ TEMIZLIGI — SAKLAMA_GUN'den eski mesajlari Supabase'den sil.
+// MESAJ İÇERİĞİNDE ARAMA (WhatsApp gibi — sohbet adı değil, mesaj metni içinde)
+// Verilen kelimeyi bu hatta ait mesajların text/caption alanlarında arar.
+// Eşleşen her sohbet için: kaç eşleşme + en son eşleşen mesajın özeti döner.
+// ============================================================
+async function searchMessages(kelime, lineId = 'ofis', limit = 40) {
+  if (!aktif || !kelime || kelime.trim().length < 2) return { sohbetler: [], mesajlar: [] };
+  try {
+    // ÇOK KELİMELİ ARAMA: "araç motor" -> hem "araç" hem "motor" geçen mesajlar (ayrı ayrı).
+    // Tek kelime gibi "%araç motor%" aramak, kelimeler ardışık değilse bulamıyordu.
+    const kelimeler = kelime.trim().toLowerCase().split(/\s+/).filter(k => k.length >= 2).slice(0, 5);
+    if (!kelimeler.length) return { sohbetler: [], mesajlar: [] };
+    // her kelime için ayrı LIKE koşulu (hepsi geçmeli = AND)
+    const kosullar = [];
+    const params = [lineId, eskiEsikMs()];
+    for (const k of kelimeler) {
+      params.push('%' + k + '%');
+      const idx = params.length;
+      kosullar.push(`(LOWER(text) LIKE $${idx} OR LOWER(caption) LIKE $${idx})`);
+    }
+    const kosulSql = kosullar.join(' AND ');
+
+    // 1) SOHBET ÖZETİ: hangi sohbette kaç eşleşme
+    const ozet = await pool.query(
+      `SELECT chat_jid, COUNT(*) AS eslesme, MAX(ts) AS son_ts
+       FROM messages
+       WHERE line_id = $1 AND ts >= $2 AND ${kosulSql}
+       GROUP BY chat_jid
+       ORDER BY son_ts DESC
+       LIMIT ${limit}`,
+      params
+    );
+    // 2) EŞLEŞEN MESAJLAR (WhatsApp gibi "Mesajlar" bölümü).
+    //    NOT: messages tablosunda chat_name sütunu YOK — sohbet adını panel kendi belleğinden alır.
+    const msgs = await pool.query(
+      `SELECT id, chat_jid, text, caption, sender, from_me, ts, time
+       FROM messages
+       WHERE line_id = $1 AND ts >= $2 AND ${kosulSql}
+       ORDER BY ts DESC
+       LIMIT 60`,
+      params
+    );
+    return {
+      sohbetler: ozet.rows.map(x => ({
+        chatJid: x.chat_jid, eslesme: Number(x.eslesme) || 0, sonTs: Number(x.son_ts) || 0,
+      })),
+      mesajlar: msgs.rows.map(m => ({
+        id: m.id, chatJid: m.chat_jid, chatName: '',
+        text: m.text || m.caption || '', sender: m.sender || '', fromMe: m.from_me || false,
+        ts: Number(m.ts) || 0, time: m.time || '',
+      })),
+    };
+  } catch (e) {
+    console.error('⚠️  searchMessages hatasi:', e.message);
+    return { sohbetler: [], mesajlar: [] };
+  }
+}
+
 // Gunde bir kez calistirilir (server.js startCleanup). Sohbet/kisi/ayar KORUNUR;
 // sadece eski MESAJLAR silinir, boylece veritabani kucuk ve hizli kalir.
 // ============================================================
@@ -524,15 +586,27 @@ function _convKey(a, b) {
 async function saveInternalMessage(m) {
   if (!aktif) return { ok: false, error: 'DB bagli degil' };
   try {
+    // Once dosya sutunlari (media_url, file_name, kind) DAHIL kaydetmeyi dene.
     const r = await pool.query(
-      `INSERT INTO internal_messages (id, conv_key, from_user, to_user, text, ts, read_at, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,NULL, now())
-       RETURNING id, conv_key, from_user, to_user, text, ts, read_at`,
-      [m.id, _convKey(m.from, m.to), m.from, m.to, m.text || '', m.ts || Date.now()]
+      `INSERT INTO internal_messages (id, conv_key, from_user, to_user, text, media_url, file_name, kind, ts, read_at, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL, now())
+       RETURNING id, conv_key, from_user, to_user, text, media_url, file_name, kind, ts, read_at`,
+      [m.id, _convKey(m.from, m.to), m.from, m.to, m.text || '', m.mediaUrl || null, m.fileName || null, m.kind || 'text', m.ts || Date.now()]
     );
     return { ok: true, row: r.rows[0] };
   } catch (e) {
-    return { ok: false, error: e.message, _hata: true };
+    // Dosya sutunlari HENUZ eklenmediyse: dosyasiz (sadece text) kaydet ki mesaj kaybolmasin.
+    try {
+      const r2 = await pool.query(
+        `INSERT INTO internal_messages (id, conv_key, from_user, to_user, text, ts, read_at, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,NULL, now())
+         RETURNING id, conv_key, from_user, to_user, text, ts, read_at`,
+        [m.id, _convKey(m.from, m.to), m.from, m.to, m.text || '', m.ts || Date.now()]
+      );
+      return { ok: true, row: r2.rows[0] };
+    } catch (e2) {
+      return { ok: false, error: e2.message, _hata: true };
+    }
   }
 }
 
@@ -540,8 +614,9 @@ async function saveInternalMessage(m) {
 async function loadInternalConversation(userA, userB, limit = 200) {
   if (!aktif) return [];
   try {
+    // Once dosya sutunlari (media_url, file_name, kind) DAHIL cekmeyi dene.
     const r = await pool.query(
-      `SELECT id, from_user, to_user, text, ts, read_at
+      `SELECT id, from_user, to_user, text, media_url, file_name, kind, ts, read_at
          FROM internal_messages
         WHERE conv_key = $1
         ORDER BY ts ASC
@@ -549,7 +624,20 @@ async function loadInternalConversation(userA, userB, limit = 200) {
       [_convKey(userA, userB), limit]
     );
     return r.rows;
-  } catch (e) { return []; }
+  } catch (e) {
+    // dosya sutunlari yoksa: dosyasiz cek (eski tablo yapisi)
+    try {
+      const r2 = await pool.query(
+        `SELECT id, from_user, to_user, text, ts, read_at
+           FROM internal_messages
+          WHERE conv_key = $1
+          ORDER BY ts ASC
+          LIMIT $2`,
+        [_convKey(userA, userB), limit]
+      );
+      return r2.rows;
+    } catch (e2) { return []; }
+  }
 }
 
 // Bir kullanicinin TUM konusma ozetleri: kiminle, son mesaj, okunmamis sayisi
@@ -612,6 +700,50 @@ async function setUserRole(id, role) {
   if (!aktif) return { ok: false };
   try { await pool.query('UPDATE users SET role=$1 WHERE id=$2', [role, id]); return { ok: true }; }
   catch (e) { return { ok: false, error: e.message }; }
+}
+
+// Kullanicinin GORUNEN ADINI, GIRIS ADINI ve/veya SIFRESINI guncelle (yonetici).
+// Sadece verilen alanlar degisir (bos birakilanlara dokunulmaz).
+// Donus: { ok, error?, username? } — username degistiyse yeni adi doner (oturum/hat eslemesi icin).
+async function updateUser(id, { displayName, username, password } = {}) {
+  if (!aktif) return { ok: false, error: 'Veritabanı kapalı' };
+  try {
+    // once mevcut kullaniciyi al (eski giris adini bilmek icin — hat eslemesi guncellenecek)
+    const mevcut = await pool.query('SELECT username FROM users WHERE id=$1', [id]);
+    if (!mevcut.rows.length) return { ok: false, error: 'Kullanıcı bulunamadı' };
+    const eskiUsername = mevcut.rows[0].username;
+
+    const setler = [];
+    const params = [];
+    let i = 1;
+    if (displayName !== undefined && displayName !== null && String(displayName).trim()) {
+      setler.push(`display_name=$${i++}`); params.push(String(displayName).trim());
+    }
+    let yeniUsername = null;
+    if (username !== undefined && username !== null && String(username).trim() && String(username).trim() !== eskiUsername) {
+      yeniUsername = String(username).trim();
+      setler.push(`username=$${i++}`); params.push(yeniUsername);
+    }
+    if (password !== undefined && password !== null && String(password).length) {
+      setler.push(`password=$${i++}`); params.push(String(password));
+    }
+    if (!setler.length) return { ok: false, error: 'Değiştirilecek bir şey yok' };
+    params.push(id);
+    await pool.query(`UPDATE users SET ${setler.join(', ')} WHERE id=$${i}`, params);
+
+    // GIRIS ADI degistiyse: kullanici_hatlari ve sessions tablolarindaki eslemeyi de guncelle
+    // (yoksa kullanici eski adiyla hatta bagli kalir / oturumu kopar).
+    if (yeniUsername) {
+      try { await pool.query('UPDATE kullanici_hatlari SET username=$1 WHERE username=$2', [yeniUsername, eskiUsername]); } catch (e) {}
+      try { await pool.query('UPDATE sessions SET username=$1 WHERE username=$2', [yeniUsername, eskiUsername]); } catch (e) {}
+    }
+    return { ok: true, username: yeniUsername || eskiUsername, eskiUsername };
+  } catch (e) {
+    if ((e.message || '').includes('duplicate') || e.code === '23505') {
+      return { ok: false, error: 'Bu kullanıcı adı zaten var' };
+    }
+    return { ok: false, error: e.message };
+  }
 }
 
 // ============================================================
@@ -860,6 +992,89 @@ async function loadChatLabels() {
   } catch (e) { return {}; }
 }
 
+// ============================================================
+// POLİÇE YÜKLEMELERİ (police_yuklemeler) — PERFORMANS RAPORU İÇİN
+// Panelden SÜRÜKLENİP yüklenen her PDF (poliçe) burada loglanır.
+// İletilen (forward) dosyalar BURAYA YAZILMAZ — sadece gerçek yüklemeler.
+// "POS" içeren dosyalar da yazılmaz (server.js'te filtrelenir).
+// Kim, ne zaman, hangi gruba, hangi branş — yönetici performans raporu için.
+// ============================================================
+async function savePoliceYukleme(p) {
+  if (!aktif) return { ok: false };
+  try {
+    const r = await pool.query(
+      `INSERT INTO police_yuklemeler (id, line_id, kullanici, kullanici_ad, chat_jid, chat_name, dosya_adi, brans, plaka, iki_aylik, ts, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())
+       ON CONFLICT (id) DO NOTHING
+       RETURNING *`,
+      [p.id, p.lineId || 'ofis', p.kullanici || '', p.kullaniciAd || '', p.chatJid || '', p.chatName || '',
+       p.dosyaAdi || '', p.brans || '', p.plaka || '', !!p.ikiAylik, p.ts || Date.now()]
+    );
+    return { ok: true, yeni: r.rows.length > 0, row: r.rows[0] || null };
+  } catch (e) {
+    // tablo henuz yoksa sessizce gec (SQL calistirilmamis olabilir) — yukleme yine de calisir
+    if (!(e.message || '').includes('police_yuklemeler')) console.error('savePoliceYukleme hatasi:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// Belirli tarih aralığındaki TÜM poliçe yüklemelerini getir (yönetici raporu).
+// kullaniciFiltre verilirse sadece o kişininkiler.
+async function loadPoliceYuklemeler(baslangicTs = null, bitisTs = null, lineId = null) {
+  if (!aktif) return [];
+  try {
+    let sql = 'SELECT * FROM police_yuklemeler WHERE 1=1';
+    const params = [];
+    if (baslangicTs !== null && bitisTs !== null) {
+      params.push(baslangicTs, bitisTs);
+      sql += ` AND ts >= $${params.length - 1} AND ts <= $${params.length}`;
+    }
+    if (lineId) { params.push(lineId); sql += ` AND line_id = $${params.length}`; }
+    sql += ' ORDER BY ts DESC LIMIT 5000';
+    const r = await pool.query(sql, params);
+    return r.rows;
+  } catch (e) { return []; }
+}
+
+// ============================================================
+// AKTİVİTE MESAJLARI (aktivite_mesajlar) — "ilgileniyorum/kesiyorum" sayımı
+// Gruplarda kesim/ilgilenme mesajı yazan kişiyi loglar (yanlış yazım dahil).
+// Performans raporunda "kaç kesim mesajı" olarak gösterilir. Ayrı/yan veridir.
+// ============================================================
+async function saveAktivite(a) {
+  if (!aktif) return { ok: false };
+  try {
+    const r = await pool.query(
+      `INSERT INTO aktivite_mesajlar (id, line_id, kullanici, kullanici_ad, chat_jid, chat_name, tur, ham_mesaj, ts, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+       ON CONFLICT (id) DO NOTHING
+       RETURNING *`,
+      [a.id, a.lineId || 'ofis', a.kullanici || '', a.kullaniciAd || '', a.chatJid || '', a.chatName || '',
+       a.tur || 'kesim', a.hamMesaj || '', a.ts || Date.now()]
+    );
+    return { ok: true, yeni: r.rows.length > 0 };
+  } catch (e) {
+    if (!(e.message || '').includes('aktivite_mesajlar')) console.error('saveAktivite hatasi:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+async function loadAktiviteler(baslangicTs = null, bitisTs = null, lineId = null) {
+  if (!aktif) return [];
+  try {
+    let sql = 'SELECT * FROM aktivite_mesajlar WHERE 1=1';
+    const params = [];
+    if (baslangicTs !== null && bitisTs !== null) {
+      params.push(baslangicTs, bitisTs);
+      sql += ` AND ts >= $${params.length - 1} AND ts <= $${params.length}`;
+    }
+    if (lineId) { params.push(lineId); sql += ` AND line_id = $${params.length}`; }
+    sql += ' ORDER BY ts DESC LIMIT 5000';
+    const r = await pool.query(sql, params);
+    return r.rows;
+  } catch (e) { return []; }
+}
+
 // Periyodik temizligi baslat: acilista bir kez + her 24 saatte bir calisir.
 let _cleanupTimer = null;
 function startCleanup() {
@@ -874,9 +1089,9 @@ function startCleanup() {
 module.exports = {
   init, test, isReady, startKeepAlive,
   saveChat, saveMessage, saveContact, saveSetting, getSetting,
-  loadAll, loadMessages, deleteMessage, wipeAll, wipeGroups,
+  loadAll, loadMessages, deleteMessage, wipeAll, wipeGroups, searchMessages,
   cleanupOld, startCleanup,
-  ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole,
+  ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, updateUser,
   saveInternalMessage, loadInternalConversation, listInternalConversations,
   markInternalRead, internalUnreadCount,
   saveSession, loadSessions, deleteSession, updateSessionRole,
@@ -885,4 +1100,5 @@ module.exports = {
   addAllowedIp, removeAllowedIp, loadAllowedIps,
   setUserLine, getUserLine, loadUserLines, saveLine, loadLines, deleteLineData,
   saveSatis, loadSatislar, loadTumSatislar, updateSatisAdet, setSatisOnay, deleteSatis, gunuKapat, loadKapaliGunler,
+  savePoliceYukleme, loadPoliceYuklemeler, saveAktivite, loadAktiviteler,
 };

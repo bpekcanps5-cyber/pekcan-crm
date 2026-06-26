@@ -127,8 +127,11 @@ app.get('/media/:file', (req, res, next) => {
   const filePath = path.join(MEDIA_DIR, req.params.file);
   if (!fs.existsSync(filePath)) return next();
   if (wanted) {
-    // gercek isimle indir
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(wanted)}"`);
+    // 'inline': tarayicida GORUNTULE (indirme zorlamaz, "yasakli dosya" uyarisi vermez)
+    // ama "farkli kaydet" yapilinca da gercek dosya adi gelsin. download=true ise indir.
+    const indir = req.query.download === '1';
+    const disp = indir ? 'attachment' : 'inline';
+    res.setHeader('Content-Disposition', `${disp}; filename="${encodeURIComponent(wanted)}"`);
   }
   return res.sendFile(filePath);
 });
@@ -355,6 +358,30 @@ app.post('/api/users/delete', express.json(), async (req, res) => {
   res.json(r);
 });
 
+// Kullanici DUZENLE: gorunen ad / giris adi / sifre (sadece yonetici).
+// Sadece gonderilen alanlar degisir. Sifre bos gonderilirse degismez.
+app.post('/api/users/update', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  const id = req.body?.id;
+  if (!id) return res.json({ ok: false, error: 'Kullanıcı seçili değil' });
+  const r = await db.updateUser(id, {
+    displayName: req.body?.displayName,
+    username: req.body?.username,
+    password: req.body?.password,
+  });
+  if (r.ok && r.username && r.eskiUsername && r.username !== r.eskiUsername) {
+    // GIRIS ADI degisti: bellekteki oturumlarda da username'i guncelle (yoksa o kullanici
+    // bir sonraki istekte taninmaz). Acik oturumlarini yeni ada tasi.
+    for (const [tok, s] of sessions) {
+      if (s.username === r.eskiUsername) s.username = r.username;
+    }
+    console.log(`✏️  Kullanici guncellendi: ${r.eskiUsername} -> ${r.username}`);
+  } else if (r.ok) {
+    console.log(`✏️  Kullanici bilgileri guncellendi (id: ${id})`);
+  }
+  res.json(r);
+});
+
 // MEVCUT kullanicinin HAT TIPINI degistir (ofis <-> pazarlama). Sadece yonetici.
 // Kullanim: eski/yanlis eslenmis kullaniciyi pazarlamaya cevirmek icin
 // (orn. Volkan 'ofis'e dusmus -> pazarlamaya al, kendi hatti olsun).
@@ -578,11 +605,103 @@ app.post('/api/satislar/gunu-kapat', express.json(), async (req, res) => {
   }
 });
 
+// ============================================================
+// PERFORMANS RAPORU API (SADECE YÖNETİCİ)
+// Kişi kişi: kaç poliçe (PDF) yüklemiş + branş dağılımı + kaç kesim/ilgilenme mesajı.
+// kapsam: bugun | hafta | ay | tum | ozel
+// ============================================================
+app.post('/api/performans', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Bu rapora sadece yönetici erişebilir' });
+  // tarih aralığı
+  let ar;
+  const kapsam = req.body?.kapsam || 'bugun';
+  const now = new Date();
+  if (kapsam === 'bugun') {
+    ar = { bas: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).getTime(),
+           bit: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime() };
+  } else if (kapsam === 'hafta') {
+    ar = { bas: Date.now() - 7 * 24 * 60 * 60 * 1000, bit: Date.now() };
+  } else if (kapsam === 'ay') {
+    ar = { bas: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0).getTime(), bit: Date.now() };
+  } else if (kapsam === 'ozel' && req.body?.bas && req.body?.bit) {
+    ar = { bas: new Date(req.body.bas + 'T00:00:00').getTime(), bit: new Date(req.body.bit + 'T23:59:59.999').getTime() };
+  } else {
+    ar = null; // tüm
+  }
+  try {
+    const hat = req.body?.lineId || null; // opsiyonel hat filtresi (yoksa tüm hatlar)
+    const policeler = await db.loadPoliceYuklemeler(ar?.bas ?? null, ar?.bit ?? null, hat);
+    const aktiviteler = await db.loadAktiviteler(ar?.bas ?? null, ar?.bit ?? null, hat);
+
+    // KİŞİ BAZINDA TOPLA: kullanıcı adına göre grupla
+    const kisiler = {}; // ad -> { ad, police, branslar:{}, kesim, ilgilenme, iki_aylik, gruplar:Map, sonTs }
+    function kisiAl(ad) {
+      const k = (ad || 'Bilinmeyen').trim() || 'Bilinmeyen';
+      if (!kisiler[k]) kisiler[k] = {
+        ad: k, police: 0, branslar: {}, kesim: 0, ilgilenme: 0, ikiAylik: 0,
+        gruplar: new Map(),   // grupAdi -> { police, kesim, ilgilenme, branslar:{} }
+        sonTs: 0,             // en son aktivite zamanı
+      };
+      return kisiler[k];
+    }
+    function grupAl(k, ad) {
+      const g = (ad || 'Bilinmeyen grup').trim() || 'Bilinmeyen grup';
+      if (!k.gruplar.has(g)) k.gruplar.set(g, { ad: g, police: 0, kesim: 0, ilgilenme: 0, branslar: {} });
+      return k.gruplar.get(g);
+    }
+    for (const p of policeler) {
+      const k = kisiAl(p.kullanici_ad);
+      k.police++;
+      const b = p.brans || 'diğer';
+      k.branslar[b] = (k.branslar[b] || 0) + 1;
+      if (p.iki_aylik) k.ikiAylik++;
+      if (p.ts && p.ts > k.sonTs) k.sonTs = p.ts;
+      // grup bazında döküm
+      const g = grupAl(k, p.chat_name);
+      g.police++;
+      g.branslar[b] = (g.branslar[b] || 0) + 1;
+    }
+    for (const a of aktiviteler) {
+      const k = kisiAl(a.kullanici_ad);
+      if (a.tur === 'kesim') k.kesim++;
+      else if (a.tur === 'ilgileniyorum') k.ilgilenme++;
+      if (a.ts && a.ts > k.sonTs) k.sonTs = a.ts;
+      const g = grupAl(k, a.chat_name);
+      if (a.tur === 'kesim') g.kesim++;
+      else if (a.tur === 'ilgileniyorum') g.ilgilenme++;
+    }
+    // diziye çevir + grupları diziye çevir (poliçeye göre sıralı) + kişiyi sırala
+    const liste = Object.values(kisiler).map(k => ({
+      ad: k.ad, police: k.police, branslar: k.branslar,
+      kesim: k.kesim, ilgilenme: k.ilgilenme, ikiAylik: k.ikiAylik,
+      grupSayisi: k.gruplar.size,
+      sonTs: k.sonTs,
+      // DETAY: grup bazında döküm (en çok poliçe olan grup üstte)
+      gruplar: Array.from(k.gruplar.values()).sort((a, b) => b.police - a.police || b.kesim - a.kesim),
+    })).sort((a, b) => b.police - a.police || b.kesim - a.kesim);
+
+    // GENEL TOPLAMLAR (üstteki özet kartları için)
+    const toplam = {
+      police: policeler.length,
+      kisi: liste.length,
+      kesim: aktiviteler.filter(a => a.tur === 'kesim').length,
+      ilgilenme: aktiviteler.filter(a => a.tur === 'ilgileniyorum').length,
+      ikiAylik: policeler.filter(p => p.iki_aylik).length,
+    };
+    // branş dağılımı (genel)
+    const bransDagilim = {};
+    for (const p of policeler) { const b = p.brans || 'diğer'; bransDagilim[b] = (bransDagilim[b] || 0) + 1; }
+
+    res.json({ ok: true, kapsam, liste, toplam, bransDagilim });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 // Rol degistir - yonetici yap/geri al (sadece yonetici)
 app.post('/api/users/role', express.json(), async (req, res) => {
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
   const yeniRol = req.body?.role === 'admin' ? 'admin' : 'agent';
-  const r = await db.setUserRole(req.body?.id, yeniRol);
   // bu kullanicinin acik oturumlarinin rolunu de guncelle (bellek + DB)
   // (id -> username: kullanici listesinden bul)
   try {
@@ -742,7 +861,30 @@ app.post('/upload', express.raw({ type: '*/*', limit: '64mb' }), async (req, res
     // 90sn icinde yuklenmezse hata don (kullanici tekrar denesin).
     let sent;
     try {
-      const gonderP = upSock.sendMessage(jid, waMsg);
+      // YANIT (reply): panel replyId gonderdiyse, dosyayi o mesaja YANIT olarak gonder.
+      // GUVENLI: sadece TAM raw (key'li) varsa quoted ekleriz. raw yoksa alintisiz gondeririz
+      // (alinti insa etmeye calismak bazi mesajlarda gonderim hatasina yol aciyordu).
+      let gonderOpt = {};
+      const replyId = req.query.replyId;
+      if (replyId) {
+        try {
+          const C2 = hatChats(upLineId);
+          const chat2 = C2 && C2.get ? C2.get(jid) : null;
+          const orijMsg = chat2 && chat2.messages ? chat2.messages.find(x => x && x.id === replyId) : null;
+          if (orijMsg && orijMsg.raw && orijMsg.raw.key && orijMsg.raw.message) {
+            gonderOpt = { quoted: orijMsg.raw };
+            console.log('   ↩️  medya yaniti: raw ile alinti hazir');
+          }
+        } catch (e) { /* yanit bulunamazsa normal gonder */ }
+      }
+      let gonderP;
+      try {
+        gonderP = upSock.sendMessage(jid, waMsg, gonderOpt);
+      } catch (qErr) {
+        // quoted ile gonderim ANINDA patlarsa (bozuk quoted): alintisiz tekrar dene
+        console.log('   ⚠️  alintili gonderim hata verdi, alintisiz deneniyor:', qErr.message);
+        gonderP = upSock.sendMessage(jid, waMsg, {});
+      }
       const timeoutP = new Promise((_, rej) => setTimeout(() => rej(new Error('dosya yukleme zaman asimi (cok buyuk olabilir)')), 90000));
       sent = await Promise.race([gonderP, timeoutP]);
     } catch (gonderHata) {
@@ -755,6 +897,22 @@ app.post('/upload', express.raw({ type: '*/*', limit: '64mb' }), async (req, res
     }
     console.log(`✅ Dosya gonderildi: ${fileName} (${boyutMB} MB)`);
 
+    // YANIT önizlemesi (panelde "yanıt: ..." görünsün) — GUVENLI: hata olsa bile PDF düşmeli.
+    let medyaReplyTo = null;
+    try {
+      const replyId2 = req.query.replyId;
+      if (replyId2) {
+        const C3 = hatChats(upLineId);
+        const chat3 = C3 && C3.get ? C3.get(jid) : null;
+        const orij = chat3 && chat3.messages ? chat3.messages.find(x => x && x.id === replyId2) : null;
+        if (orij) {
+          let onText = '';
+          try { onText = replyPreview(orij); } catch (e) { onText = orij.text || ''; }
+          medyaReplyTo = { sender: orij.fromMe ? 'Siz' : (orij.sender || ''), text: onText };
+        }
+      }
+    } catch (e) { medyaReplyTo = null; }
+
     addMessage(jid, {
       id: sent.key.id, key: sent.key,
       raw: sent, // kendi gonderdigimiz medyayi sonradan yanitlayabilmek icin
@@ -764,11 +922,116 @@ app.post('/upload', express.raw({ type: '*/*', limit: '64mb' }), async (req, res
       fileName: kind === 'document' ? fileName : undefined,
       mime: mime,
       mediaUrl: webPath, sender: agent, time: nowTime(),
+      replyTo: medyaReplyTo, // panelde yanıt önizlemesi (null olabilir, sorun değil)
       durum: 2, // gonderildi (tek tik)
     }, {}, upLineId);
+
+    // ---- PERFORMANS RAPORU: yüklenen PDF poliçe mi? Öyleyse kaydet. ----
+    // SADECE panelden SÜRÜKLENİP yüklenen PDF'ler (bu rota = gerçek yükleme, iletme DEĞİL).
+    // "POS" geçenler policeAdiAyristir içinde elenir (null döner).
+    if (kind === 'document') {
+      try {
+        const ayristir = policeAdiAyristir(fileName);
+        if (ayristir && db.isReady()) {
+          const C3 = hatChats(upLineId);
+          const chat3 = C3 && C3.get ? C3.get(jid) : null;
+          const polId = 'pol_' + upLineId + '_' + (sent.key.id || (Date.now() + '_' + Math.random().toString(36).slice(2, 8)));
+          db.savePoliceYukleme({
+            id: polId,
+            lineId: upLineId,
+            kullanici: (s && s.username) ? s.username : '',
+            kullaniciAd: agent || (s && s.displayName) || 'Bilinmeyen',
+            chatJid: jid,
+            chatName: chat3?.name || (jid || '').split('@')[0],
+            dosyaAdi: fileName,
+            brans: ayristir.brans,
+            plaka: ayristir.plaka,
+            ikiAylik: ayristir.ikiAylik,
+            ts: Date.now(),
+          }).then((r) => {
+            if (r.ok && r.yeni) {
+              console.log(`📄 POLİÇE yüklendi [${upLineId}]: ${ayristir.brans}${ayristir.plaka ? ' ' + ayristir.plaka : ''} | ${agent} | ${(chat3?.name || '').slice(0, 25)}`);
+              // canlı haber ver (rapor açıksa güncellensin)
+              broadcastHat(upLineId, { type: 'yeniPolice', kullanici: agent });
+            }
+          }).catch(() => {});
+        }
+      } catch (e) { /* poliçe kaydı başarısız olsa bile yükleme tamamlandı */ }
+    }
+
     res.json({ ok: true });
   } catch (e) {
     console.error('Yukleme hatasi:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================
+// İÇ MESAJ DOSYA YÜKLEME (ekip içi) — KRİTİK: WhatsApp'a HİÇ DOKUNMAZ!
+// Dosya diske kaydedilir, SADECE iç mesaj olarak alıcıya iletilir.
+// Boylece hicbir sekilde yanlis WhatsApp grubuna gitme riski YOKTUR.
+// ============================================================
+app.post('/internal-upload', express.raw({ type: '*/*', limit: '64mb' }), async (req, res) => {
+  try {
+    // KIMLIK: token'dan gonderen kullaniciyi bul
+    const s = req.query.token && sessions.get(req.query.token);
+    if (!s || !s.username) return res.status(401).json({ error: 'Oturum bulunamadı.' });
+    if (!db.isReady()) return res.status(503).json({ error: 'Veritabanı bağlı değil.' });
+
+    const fromUser = s.username;
+    const toUser = (req.query.to || '').trim();
+    if (!toUser) return res.status(400).json({ error: 'Alıcı belirtilmedi.' });
+
+    let fileName = req.query.name ? decodeURIComponent(req.query.name) : '';
+    const mime = req.query.mime || 'application/octet-stream';
+    if (!fileName) fileName = 'belge';
+
+    // dosyayi diske kaydet (panelde gostermek icin)
+    const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
+    const savedName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const dosyaBuf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body);
+    if (!dosyaBuf.length) return res.status(400).json({ error: 'Dosya alınamadı.' });
+    const boyutMB = (dosyaBuf.length / 1048576).toFixed(2);
+    fs.writeFileSync(path.join(MEDIA_DIR, savedName), dosyaBuf);
+    const webPath = '/media/' + savedName;
+
+    // tip belirle (panel ikonu icin)
+    let kind = 'document';
+    if (mime.startsWith('image/')) kind = 'image';
+    else if (mime.startsWith('video/')) kind = 'video';
+    else if (mime.startsWith('audio/')) kind = 'audio';
+
+    // ic mesaj olarak kaydet (text yerine dosya)
+    const mid = 'im_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const caption = req.query.caption ? decodeURIComponent(req.query.caption) : '';
+    const r = await db.saveInternalMessage({
+      id: mid, from: fromUser, to: toUser,
+      text: caption, mediaUrl: webPath, fileName, kind, ts: Date.now(),
+    });
+    if (!r.ok) return res.status(500).json({ error: 'İç mesaj kaydedilemedi.' });
+
+    console.log(`📎➡️👤 İç mesaj dosyası: ${fileName} (${boyutMB} MB) | ${fromUser} -> ${toUser}`);
+
+    const payload = {
+      id: mid, from: fromUser, fromName: s.displayName || fromUser, to: toUser,
+      text: caption, mediaUrl: webPath, fileName, kind, ts: r.row?.ts || Date.now(),
+    };
+    // gonderene + aliciya canli ilet (tum acik WS'lerine)
+    let aliciCevrimici = false;
+    wss.clients.forEach((c) => {
+      if (c.readyState === 1 && (c._username === fromUser || c._username === toUser)) {
+        c.send(JSON.stringify({ type: 'internalMessage', msg: payload }));
+        if (c._username === toUser) aliciCevrimici = true;
+      }
+    });
+    if (aliciCevrimici) {
+      const n = await db.internalUnreadCount(toUser);
+      wss.clients.forEach((c) => { if (c.readyState === 1 && c._username === toUser) c.send(JSON.stringify({ type: 'internalUnread', count: n })); });
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('İç mesaj dosya yukleme hatasi:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -857,6 +1120,13 @@ wss.on('connection', (ws) => {
   ws.on('message', async (raw) => {
     try {
       const msg = JSON.parse(raw);
+
+      // HEARTBEAT: panel her 25sn'de "ping" yollar; "pong" doneriz. Bu, panel-sunucu
+      // arasindaki baglantiyi canli tutar (Nginx/internet "olu" deyip kesmesin).
+      if (msg.type === 'ping') {
+        try { ws.send(JSON.stringify({ type: 'pong' })); } catch (e) {}
+        return;
+      }
 
       // PANEL KIMLIGI: panel baglaninca token'iyla "merhaba" der, biz hattini buluruz.
       // Boylece bu ws'e SADECE kendi hattinin mesajlari gider (izolasyon).
@@ -1800,12 +2070,12 @@ wss.on('connection', (ws) => {
           }
           // 1) ANINDA: bellekte ne varsa hemen gonder — kullanici beklemesin (yavaslik/bos acilis biter).
           if (chat.messages && chat.messages.length) {
-            ws.send(JSON.stringify({ type: 'message', jid: msg.jid, chat: stripRaw(chat) }));
+            ws.send(JSON.stringify({ type: 'message', jid: msg.jid, chat: stripRaw(chat, 300) }));
           }
           // 2) ARKA PLANDA: DB'den son mesajlari cek, EKSIK olanlari ekle, sonra tekrar gonder.
           //    Boylece acilis hizli olur, eksik mesaj varsa hemen ardindan tamamlanir.
           if (db.isReady()) {
-            db.loadMessages(msg.jid, 80, _LID).then((rows) => {
+            db.loadMessages(msg.jid, 300, _LID).then((rows) => {
               console.log(`📨 loadMessages [${(chat.name||msg.jid).slice(0,30)}]: bellekte ${chat.messages?.length||0}, DB'den ${rows.length} mesaj`);
               const dbMsgs = rows.map(r => ({
                 id: r.id, fromMe: r.from_me, kind: r.kind, text: r.text || '',
@@ -1828,7 +2098,7 @@ wss.on('connection', (ws) => {
                 chat.messages = Array.from(birlesik.values()).sort((a, b) => (a.ts || 0) - (b.ts || 0));
                 const last = chat.messages[chat.messages.length - 1];
                 if (last) { chat.lastTs = last.ts || chat.lastTs; chat.lastTime = last.time || chat.lastTime; }
-                ws.send(JSON.stringify({ type: 'message', jid: msg.jid, chat: stripRaw(chat) }));
+                ws.send(JSON.stringify({ type: 'message', jid: msg.jid, chat: stripRaw(chat, 300) }));
               }
             }).catch(() => {});
           } else if (!chat.messages.length) {
@@ -1878,6 +2148,51 @@ wss.on('connection', (ws) => {
               ws.send(JSON.stringify({ type: 'message', jid: msg.jid, chat: stripRaw(chat) }));
             }
           }
+        }
+      }
+
+      // MESAJ İÇERİĞİNDE ARAMA (WhatsApp gibi): panel kelime yollar, DB'de mesajlarda arar.
+      // Eşleşen sohbet jid'lerini + özet döner; panel bunları arama sonucuna ekler.
+      else if (msg.type === 'searchMessages') {
+        const kelime = (msg.q || '').trim();
+        if (kelime.length >= 2 && db.isReady()) {
+          const sonuc = await db.searchMessages(kelime, _LID, 40);
+          ws.send(JSON.stringify({ type: 'searchMessagesResult', q: kelime, sohbetler: sonuc.sohbetler, mesajlar: sonuc.mesajlar }));
+        } else {
+          ws.send(JSON.stringify({ type: 'searchMessagesResult', q: kelime, sohbetler: [], mesajlar: [] }));
+        }
+      }
+      // beforeTs'ten ESKI mesajlari DB'den cekip panele AYRI gonderir (ustetune eklenir).
+      else if (msg.type === 'loadOlder') {
+        const chat = C.get(msg.jid);
+        if (chat && db.isReady() && msg.beforeTs) {
+          const rows = await db.loadMessages(msg.jid, 200, _LID, Number(msg.beforeTs));
+          const eskiMsgs = rows.map(r => ({
+            id: r.id, fromMe: r.from_me, kind: r.kind, text: r.text || '',
+            mediaUrl: r.media_url || null, thumb: r.thumb || null,
+            sender: r.sender || '', senderJid: r.sender_jid || '', senderPush: r.sender_push || '',
+            replyTo: r.reply_to || null, contact: r.contact_data || null, contacts: r.contacts_data || null,
+            reaction: r.reaction || null, myReaction: r.my_reaction || null,
+            forwarded: r.forwarded || false, mentionsMe: r.mentions_me || false,
+            edited: r.edited || false, deleted: r.deleted || false,
+            time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null,
+            mentions: r.mentions || null, caption: r.caption || '',
+          }));
+          // belleğe de ekle (varsa tekrar etme) ki bir daha sorulmasın
+          if (eskiMsgs.length) {
+            const mevcut = new Set((chat.messages || []).map(x => x.id));
+            const yeniler = eskiMsgs.filter(x => !mevcut.has(x.id));
+            if (yeniler.length) {
+              chat.messages = [...yeniler, ...(chat.messages || [])].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+              // bellek limitini koru (en yeni 400) — ama eski yükleme yaptıysak geçici taşmaya izin ver
+              if (chat.messages.length > 600) chat.messages = chat.messages.slice(-600);
+            }
+          }
+          console.log(`⬆️  loadOlder [${(chat.name||msg.jid).slice(0,25)}]: ${eskiMsgs.length} eski mesaj gönderildi`);
+          // AYRI tip: panel bunları üste ekleyecek, mevcut görünümü bozmayacak
+          ws.send(JSON.stringify({ type: 'olderMessages', jid: msg.jid, messages: eskiMsgs, bitti: eskiMsgs.length < 200 }));
+        } else {
+          ws.send(JSON.stringify({ type: 'olderMessages', jid: msg.jid, messages: [], bitti: true }));
         }
       }
 
@@ -2051,6 +2366,142 @@ function satisAyristir(text) {
   const adet = m[2] ? parseInt(m[2], 10) : 1;
   if (adet < 1 || adet > 9999) return null; // mantiksiz adet
   return { urun, adet };
+}
+
+// ============================================================
+// POLİÇE DOSYA ADI AYRIŞTIRMA (performans raporu için)
+// Yüklenen PDF'in adından branş + plaka çıkarır. "POS" geçiyorsa REDDEDER.
+// Örnek ad: "CEMSAT ... TRAFİK SİGORTASI 34 EK 8531 (GRUP ADI) 06 HAZİRAN 2026.pdf"
+// Dönüş: null (poliçe değil/POS) | { brans, plaka, ikiAylik }
+// ============================================================
+// Dosya adında brans tespiti icin anahtar kelimeler -> normalize brans.
+// ÖNCE tam/uzun kelimeler aranır; bulunmazsa KISALTMALAR (tek başına duran) denenir.
+// ÖNEMLİ: Branş bulunamazsa bile PDF yine SAYILIR ('diğer' branş) — hiçbir poliçe kaçmaz.
+const POLICE_BRANS_TAM = {
+  'trafik': 'trafik', 'kasko': 'kasko', 'dask': 'dask',
+  'yeşilkart': 'yeşilkart', 'yesilkart': 'yeşilkart', 'yeşil kart': 'yeşilkart',
+  'konut': 'konut', 'işyeri': 'işyeri', 'isyeri': 'işyeri', 'iş yeri': 'işyeri',
+  'tamamlayıcı sağlık': 'tss', 'tamamlayici saglik': 'tss',
+  'ferdi kaza': 'ferdi kaza', 'sağlık': 'sağlık', 'saglik': 'sağlık',
+  'nakliyat': 'nakliyat', 'seyahat': 'seyahat',
+};
+// KISALTMALAR: sadece TEK BAŞINA (kelime sınırlı) eşleşir — tesadüfi eşleşmeyi önler.
+// Örn. "TR", "TRF", "TRFK" -> trafik; "KSK" -> kasko; "İMM"/"IMM" -> imm.
+const POLICE_BRANS_KISA = {
+  'trafik': 'trafik', 'trf': 'trafik', 'trfk': 'trafik', 'tr': 'trafik',
+  'kasko': 'kasko', 'ksk': 'kasko', 'ks': 'kasko',
+  'dask': 'dask', 'dsk': 'dask',
+  'tss': 'tss', 'tmss': 'tss',
+  'yeşilkart': 'yeşilkart', 'yesilkart': 'yeşilkart', 'yk': 'yeşilkart',
+  'konut': 'konut', 'knt': 'konut',
+  'işyeri': 'işyeri', 'isyeri': 'işyeri',
+  'öss': 'öss', 'oss': 'öss',
+  'imm': 'imm', 'ımm': 'imm',
+  'fk': 'ferdi kaza',
+};
+function policeAdiAyristir(dosyaAdi) {
+  if (!dosyaAdi || typeof dosyaAdi !== 'string') return null;
+  // Türkçe-güvenli küçültme: "İ"->"i", "I"->"i" düzgün olsun (yoksa TRAFİK eşleşmez)
+  const trKucult = (s) => s
+    .replace(/İ/g, 'i').replace(/I/g, 'i').replace(/Ş/g, 'ş').replace(/Ğ/g, 'ğ')
+    .replace(/Ü/g, 'ü').replace(/Ö/g, 'ö').replace(/Ç/g, 'ç')
+    .toLowerCase();
+  const adLower = trKucult(dosyaAdi);
+  // sadece PDF'leri poliçe say
+  if (!adLower.endsWith('.pdf')) return null;
+  // "POS" geçiyorsa REDDET (kelime sınırıyla — içinde geçenleri yanlış elemesin)
+  if (/\bpos\b/i.test(dosyaAdi) || /[ _-]pos[ _.-]/i.test(dosyaAdi)) return null;
+  // BRANŞ TESPİTİ — 2 aşamalı:
+  let brans = '';
+  // 1) ÖNCE tam kelimeler (en güvenilir). İlk eşleşen kazanır.
+  for (const [kelime, normal] of Object.entries(POLICE_BRANS_TAM)) {
+    if (adLower.includes(trKucult(kelime))) { brans = normal; break; }
+  }
+  // 2) Tam kelime yoksa KISALTMALARı dene — ama SADECE tek başına duranı (kelime sınırlı).
+  //    Böylece "TR" tesadüfen başka kelimenin içinde geçerse yakalanmaz.
+  if (!brans) {
+    for (const [kisa, normal] of Object.entries(POLICE_BRANS_KISA)) {
+      // kelime sınırı: rakam/harf olmayan (veya satır başı/sonu) ile çevrili
+      const re = new RegExp('(^|[^a-z0-9çğıöşü])' + kisa.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z0-9çğıöşü]|$)');
+      if (re.test(adLower)) { brans = normal; break; }
+    }
+  }
+  // PLAKA: Türk plaka formatı (34 EK 8531 / 34EK8531 / 06 ABC 123 gibi)
+  let plaka = '';
+  const plakaM = dosyaAdi.match(/\b(0?[1-9]|[1-7][0-9]|8[01])\s?[A-ZÇĞİÖŞÜa-zçğıöşü]{1,3}\s?\d{2,4}\b/);
+  if (plakaM) plaka = plakaM[0].toUpperCase().replace(/\s+/g, ' ').trim();
+  // 2 AYLIK: dosya adında açıkça "2 aylık / 2ay / 2a" yazıyorsa işaretle (opsiyonel ipucu)
+  const ikiAylik = /2\s?ayl[ıi]k|2\s?ay\b|\b2a\b|\b2ay\b/i.test(dosyaAdi);
+  // PDF her durumda poliçe SAYILIR; branş bulunamazsa 'diğer' (hiçbir PDF kaçmaz).
+  return { brans: brans || 'diğer', plaka, ikiAylik };
+}
+
+// ============================================================
+// AKTİVİTE MESAJI TESPİTİ (kesim/ilgilenme — yanlış yazım dahil)
+// "ilgileniyorum, bakıyorum, kesiyorum, kesildi" vb. + bunların hatalı yazımları.
+// Dönüş: null (alakasız) | { tur } ('kesim' | 'ilgileniyorum')
+// ============================================================
+function aktiviteMesajiTespit(text) {
+  if (!text || typeof text !== 'string') return null;
+  // küçült + Türkçe karakterleri sadeleştir (yanlış yazımı yakalamak için)
+  let t = text.toLowerCase()
+    .replace(/ı/g, 'i').replace(/İ/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c');
+  t = t.trim();
+  if (t.length > 60) return null; // uzun mesajlar genelde kesim bildirimi değil
+  // SORU cümlelerini ELE: "kesilecek mi?", "kesti mi" gibi sorular iş bildirimi değil.
+  if (/\bm[iı]\?*\s*$/.test(t) || t.includes('?')) return null;
+  // KESİM grubu: yapılan/yapılıyor eylem (kesiyorum, kesildi, kesti, kesicem, kesiyom).
+  // "kesilecek" (gelecek/soru) hariç — sadece olmuş/oluyor halleri.
+  if (/\bkesti\b|\bkesildi\b|\bkesiyor|\bkesiyom|\bkesicem|\bkesicez|\bkestim\b|\bkesildi/.test(t)) return { tur: 'kesim' };
+  // İLGİLENME grubu: ilgilen-, bak- (ilgileniyorum, bakıyorum, bakıorum, bakiyom)
+  if (/\bilgileniyor|\bilgilenıyor|\bilgilendim\b|\bilgilenicem/.test(t)) return { tur: 'ilgileniyorum' };
+  if (/\bbakiyor|\bbakior|\bbakiyom|\bbakicam|\bbaktim\b/.test(t)) return { tur: 'ilgileniyorum' };
+  return null;
+}
+
+// ════════════════════════════════════════════════════════════════
+// TAKİP UYARISI: bir grupta "ilgileniyorum/kesiyorum" yazılıp 4 DK boyunca
+// O GRUPTA HİÇ MESAJ gelmezse, YÖNETİCİ paneline "takipte kalmış olabilir" kartı düşer.
+// O grupta herhangi biri (gelen/giden) yazınca uyarı İPTAL olur.
+// ════════════════════════════════════════════════════════════════
+const TAKIP_BEKLEME_MS = 4 * 60 * 1000; // 4 dakika
+const _takipUyari = new Map(); // jid -> { timer, kisi, tur, grupAd, lineId, ts }
+
+function takipUyarisiBaslat(jid, kisi, tur, grupAd, lineId) {
+  // önceki timer varsa iptal et (yeni aktivite, süre baştan)
+  const eski = _takipUyari.get(jid);
+  if (eski && eski.timer) clearTimeout(eski.timer);
+  const timer = setTimeout(() => {
+    // 4 dk doldu, hiç mesaj gelmedi -> yöneticilere kart gönder
+    _takipUyari.delete(jid);
+    const turYazi = tur === 'kesim' ? 'kesim/işlem' : 'ilgileniyorum';
+    const payload = {
+      type: 'takipUyari',
+      jid,
+      grupAd: grupAd || (jid || '').split('@')[0],
+      kisi: kisi || '',
+      tur,
+      turYazi,
+      mesaj: `"${kisi || 'Biri'}" ${turYazi} dedi ama 4 dk'dır bu grupta işlem yok. Takipte kalmış olabilir mi?`,
+    };
+    // SADECE bu hattın YÖNETİCİ panellerine gönder
+    wss.clients.forEach((c) => {
+      try {
+        if (c.readyState === 1 && c._role === 'admin' && (c._lineId || 'ofis') === lineId) {
+          c.send(JSON.stringify(payload));
+        }
+      } catch (e) {}
+    });
+    console.log(`🔔 TAKİP UYARISI: ${grupAd} | ${kisi} ${turYazi} dedi, 4dk işlem yok -> yöneticiye bildirildi`);
+  }, TAKIP_BEKLEME_MS);
+  _takipUyari.set(jid, { timer, kisi, tur, grupAd, lineId, ts: Date.now() });
+}
+
+// O grupta herhangi bir mesaj gelince takip uyarısını iptal et (sorun yok demektir)
+function takipUyarisiIptal(jid) {
+  const v = _takipUyari.get(jid);
+  if (v && v.timer) { clearTimeout(v.timer); _takipUyari.delete(jid); }
 }
 
 // Bir satis komutunu DB'ye kaydet (hat-izole). Panele de canli haber verir.
@@ -2488,11 +2939,11 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
   if (meta.memberCount) chat.memberCount = meta.memberCount;
   if (meta.members) chat.members = meta.members;
   chat.messages.push(message);
-  // BELLEK OPTIMIZASYONU (40 kullanici): her sohbette bellekte en fazla 200 mesaj tut.
+  // BELLEK OPTIMIZASYONU (40 kullanici): her sohbette bellekte en fazla 400 mesaj tut.
   // Daha eskiler bellekten dusurulur (DB'de KALIR — sohbet acilinca oradan yuklenir).
-  // Boylece sunucu hafizasi 7500 sohbet x sinirsiz mesaj ile sismez.
-  if (chat.messages.length > 200) {
-    chat.messages = chat.messages.slice(-200);
+  // 400 mesaj = yogun bir grupta bile rahat 2 hafta gerisini kapsar.
+  if (chat.messages.length > 400) {
+    chat.messages = chat.messages.slice(-400);
   }
   chat.lastTime = message.time;
   chat.lastTs = now;
@@ -2510,10 +2961,9 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
 }
 
 // raw + key (buyuk/hassas alanlar) panele gonderilmez — sadece sunucuda tutulur
-// Ayrica panele en fazla son 120 mesaj gonderilir (performans: 500 mesaji her seferinde yollamak kasiyor)
-function stripRaw(chat) {
-  // 40 kullanici icin trafik optimizasyonu: her sohbet guncellemesinde son 60 mesaj gonderilir
-  const recent = chat.messages.length > 60 ? chat.messages.slice(-60) : chat.messages;
+// limit: normal mesaj akisinda 60 (trafik az), sohbet ACILISINDA 300 (eski mesajlar gorunur).
+function stripRaw(chat, limit = 60) {
+  const recent = chat.messages.length > limit ? chat.messages.slice(-limit) : chat.messages;
   return {
     ...chat,
     // ACIKLAMA her zaman TANIMLI gitsin: undefined ise panel "eskisini koru" deyip
@@ -2634,9 +3084,13 @@ function describeMessage(m) {
     'secretEncryptedMessage',
   ];
   if (keys.length === 0 || skipTypes.includes(realType)) {
+    // TESHIS: boş mesaj mı yoksa bilinen teknik mesaj mı? (kaçan mesajı yakalamak için)
+    if (keys.length === 0) {
+      console.log('⚠️  BOŞ MESAJ (decrypt henüz olmamış olabilir) — messages.update ile düzeltme beklenecek');
+    }
     return { kind: 'skip' };
   }
-  console.log('⚠️  Desteklenmeyen mesaj. Bulunan alanlar:', JSON.stringify(keys));
+  console.log('⚠️  DESTEKLENMEYEN MESAJ TİPİ:', JSON.stringify(keys), '| realType:', realType);
   // Sifreleme/anahtar sorunu olan mesajlar icin kullanici dostu aciklama
   return { kind: 'undecryptable', text: 'Bu mesajın şifresi çözülemedi. Gönderenin mesajı tekrar göndermesini isteyebilirsin.' };
 }
@@ -2943,7 +3397,7 @@ async function saveMedia(m, kind, sock = waSock) {
 
 // ---- WhatsApp baglantisi ----
 let _waStarting = false;
-let _reconnectGecikme = 3000; // gecici kopmada yeniden baglanma beklemesi (backoff ile artar)
+let _reconnectGecikme = 1500; // ilk gecici kopmada hizli baglan (1.5sn); ust uste koparsa backoff ile artar
 // startWA(lineId): bir HATTI baslatir. Varsayilan 'ofis' (geriye uyumlu).
 // Her hat kendi auth klasorunu (auth/<lineId>) ve kendi line objesini kullanir.
 async function startWA(lineId = 'ofis') {
@@ -2985,10 +3439,12 @@ async function startWA(lineId = 'ofis') {
       return undefined; // bulunamazsa undefined (Baileys bos mesajla devam eder, kopmaz)
     },
     retryRequestDelayMs: 350,       // retry istekleri arasi bekleme (cok hizli retry WhatsApp'i kizdirir)
-    maxMsgRetryCount: 3,            // bir mesaj icin en fazla 3 retry (sonsuz retry dongüsünü onler)
-    connectTimeoutMs: 60000,        // baglanti kurma zaman asimi (yavas agda kopmasin)
-    keepAliveIntervalMs: 15000,     // 15 sn'de bir "hayatta miyim" sinyali -> olu baglanti erken yakalanir
+    maxMsgRetryCount: 5,            // bir mesaj icin en fazla 5 retry (3'ten artirildi — gecici ag sorunlarinda mesaj dusurmesin)
+    connectTimeoutMs: 90000,        // baglanti kurma zaman asimi 90sn (yavas/dalgali agda erken pes etmesin)
+    keepAliveIntervalMs: 25000,     // 25 sn'de bir "hayatta miyim" (WhatsApp Web standardi ~30sn; 15sn cok sikti, bazen ters tepiyordu)
+    defaultQueryTimeoutMs: 90000,   // sorgu zaman asimi 90sn (varsayilan 60sn bazen yavas yanitta kopmaya yol aciyordu)
     emitOwnEvents: false,           // kendi gonderdigimiz mesajlari geri event olarak alma (gereksiz yuk)
+    qrTimeout: 60000,               // QR gecerlilik suresi (cok kisa olunca surekli yeni QR uretip baglantiyi mesgul ediyordu)
   });
   line.sock = sock;   // hattin kendi soketi (HER hat icin dogru — bunu kullan)
   // KRITIK: global 'waSock' koprusu SADECE ofis hatti icin guncellensin.
@@ -3033,7 +3489,7 @@ async function startWA(lineId = 'ofis') {
         lastQR = null;
         myNumber = buNumara; myLID = buLID;
       }
-      _reconnectGecikme = 3000;
+      _reconnectGecikme = 1500;
       console.log(`\n✅ WhatsApp baglandi (hat: ${lineId})! Panel: http://localhost:${PORT}\n`);
       console.log(`   👤 numaram: ${buNumara}${buLID ? ' | LID: ' + buLID : ''}`);
       broadcastHat(lineId, { type: 'status', connected: true, myJid, myName });
@@ -3147,7 +3603,7 @@ async function startWA(lineId = 'ofis') {
         } catch (e) { console.error('   auth temizlenemedi:', e.message); }
         if (lineId === 'ofis') { myNumber = null; myLID = null; lastQR = null; }
         line.myNumber = null; line.myLID = null; line.lastQR = null;
-        _reconnectGecikme = 3000;
+        _reconnectGecikme = 1500;
         // panele bildir: baglanti gitti, yeni QR geliyor
         broadcastHat(lineId, { type: 'status', connected: false, loggedOut: true });
         if (!line.manualLogout) setTimeout(() => startWA(lineId), 2000); // bu HATTI yeniden baslat
@@ -3795,13 +4251,16 @@ async function startWA(lineId = 'ofis') {
         }
       }
 
+      // TAKİP UYARISI İPTALİ: bu grupta yeni bir mesaj geldi -> bekleyen takip uyarısı varsa iptal et.
+      // (Aktivite mesajının KENDİSİ timer'ı başlatır; o yüzden aktivite DEĞİLSE iptal ediyoruz.
+      //  Böylece "ilgileniyorum" yazan mesaj kendi timer'ını iptal etmez, ama sonraki herhangi
+      //  bir mesaj -gelen ya da giden- iptal eder = "grupta hareket var, sorun yok".)
+      if (isGroup && _takipUyari.has(jid)) {
+        const buAktivite = aktiviteMesajiTespit(info.text);
+        if (!buAktivite) takipUyarisiIptal(jid);
+      }
+
       addMessage(jid, {
-        id: m.key.id,
-        raw: m,
-        key: m.key,
-        fromMe: fromMe,
-        kind: info.kind,
-        text: info.text,
         caption: info.caption || '', // belge/dosya aciklamasi (varsa)
         fileName: info._fileName || undefined, // belge adi (iletme icin saklanir)
         mime: info._mime || undefined,         // belge tipi (iletme icin saklanir)
@@ -3834,15 +4293,60 @@ async function startWA(lineId = 'ofis') {
           const chatObj = CC.get(jid);
           satisKaydet(m, satis, lineId, chatObj, saticiAdi, saticiJid2).catch(() => {});
         }
+        // --- AKTİVİTE MESAJI: "ilgileniyorum/kesiyorum" vb. (yanlış yazım dahil) ---
+        // SADECE ofis ekibi/kayıtlı kişiler sayılır (müşteri yazınca sayma).
+        // fromMe (panelden/hat) VEYA senderOfis (kayıtlı ofis kişisi) ise geçerli.
+        if (fromMe || senderOfis) {
+          const akt = aktiviteMesajiTespit(info.text);
+          if (akt && db.isReady()) {
+            const chatObj2 = CC.get(jid);
+            const aktKisiAdi = fromMe ? (line?.myName || 'Ben') : (senderName || senderPush || '');
+            const aktId = 'akt_' + lineId + '_' + (m.key?.id || (Date.now() + '_' + Math.random().toString(36).slice(2, 8)));
+            db.saveAktivite({
+              id: aktId,
+              lineId,
+              kullanici: '', // grup mesajında panel kullanıcı adı yok; ad ile takip edilir
+              kullaniciAd: aktKisiAdi,
+              chatJid: jid,
+              chatName: chatObj2?.name || (jid || '').split('@')[0],
+              tur: akt.tur,
+              hamMesaj: (info.text || '').slice(0, 80),
+              ts: m.messageTimestamp ? Number(m.messageTimestamp) * 1000 : Date.now(),
+            }).catch(() => {});
+            // TAKİP UYARISI: bu gruba 4 dk içinde işlem gelmezse yöneticiye haber ver.
+            // (sadece GRUPTA mantıklı — kişi sohbetinde takip uyarısı yok)
+            if (isGroup) {
+              takipUyarisiBaslat(jid, aktKisiAdi, akt.tur, chatObj2?.name || (jid || '').split('@')[0], lineId);
+            }
+          }
+        }
       }
 
       // --- ARKA PLAN: medya + avatar indir (mesaji bekletmeden) ---
       // Medya indip diske yazilinca addMessage'i ayni id ile tekrar cagiririz;
       // addMessage var olan mesajin mediaUrl'unu doldurup panele + DB'ye yansitir.
       if (hasMedia) {
-        saveMedia(m, info.kind, sock).then((url) => {
-          if (url) addMessage(jid, { id: m.key.id, mediaUrl: url, fromMe }, {}, lineId);
-        }).catch((e) => console.error('   ⚠️  arka plan medya indirme hatasi:', e.message));
+        // RETRY'LI medya indirme: ilk denemede inmezse (ag/zaman asimi) birkac kez
+        // tekrar dene. Eskiden tek deneme vardi -> inmeyen GORSEL/medya KALICI eksik
+        // kaliyordu (kullanici "eksik gorsel" sikayeti). Artik 4 deneme + artan bekleme.
+        const medyaIndirRetry = async (deneme = 1) => {
+          try {
+            const url = await saveMedia(m, info.kind, sock);
+            if (url) {
+              addMessage(jid, { id: m.key.id, mediaUrl: url, fromMe }, {}, lineId);
+              return; // basarili
+            }
+          } catch (e) { /* asagida tekrar denenecek */ }
+          // basarisiz: en fazla 4 deneme, her seferinde biraz daha bekle (4s, 8s, 16s)
+          if (deneme < 4) {
+            const bekle = 4000 * Math.pow(2, deneme - 1); // 4s, 8s, 16s
+            console.log(`   ⏳ medya inmedi (deneme ${deneme}/4), ${bekle/1000}sn sonra tekrar: ${String(m.key.id).slice(0,10)}`);
+            setTimeout(() => medyaIndirRetry(deneme + 1), bekle);
+          } else {
+            console.error(`   ❌ medya 4 denemede inmedi, vazgecildi: ${String(m.key.id).slice(0,10)} (${info.kind})`);
+          }
+        };
+        medyaIndirRetry(1);
       }
       // Avatar daha onceden yoksa arka planda cek (sohbet basligi/listesi icin)
       if (!avatarUrl) {

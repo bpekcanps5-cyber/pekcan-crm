@@ -35,10 +35,12 @@
     /* Cizgi & golge */
     --border:#e9edef;
     --border-soft:#f0f2f5;
-    --shadow-xs:0 1px .5px rgba(11,20,26,.13);
-    --shadow:0 1px 3px rgba(11,20,26,.13);
-    --shadow-md:0 4px 12px rgba(11,20,26,.15);
-    --shadow-lg:0 8px 30px rgba(11,20,26,.20);
+    /* Premium çok-katmanlı yumuşak gölgeler (derinlik hissi) */
+    --shadow-xs:0 1px 2px rgba(11,20,26,.06), 0 1px 1px rgba(11,20,26,.04);
+    --shadow:0 1px 2px rgba(11,20,26,.05), 0 2px 6px rgba(11,20,26,.08);
+    --shadow-sm:0 2px 4px rgba(11,20,26,.05), 0 4px 12px rgba(11,20,26,.07);
+    --shadow-md:0 4px 8px rgba(11,20,26,.06), 0 8px 24px rgba(11,20,26,.10);
+    --shadow-lg:0 8px 16px rgba(11,20,26,.08), 0 16px 48px rgba(11,20,26,.16);
 
     /* Durum */
     --unread:#25d366;         /* okunmamis rozet yesili */
@@ -59,10 +61,12 @@
     --in:#202c33; --out:#005c4b;
     --text:#e9edef; --muted:#8696a0; --faint:#667781;
     --border:#222d34; --border-soft:#1d272e;
-    --shadow-xs:0 1px .5px rgba(0,0,0,.2);
-    --shadow:0 2px 10px rgba(0,0,0,.35);
-    --shadow-md:0 6px 20px rgba(0,0,0,.45);
-    --shadow-lg:0 14px 40px rgba(0,0,0,.6);
+    /* Premium çok-katmanlı gölgeler (koyu tema — daha derin) */
+    --shadow-xs:0 1px 2px rgba(0,0,0,.25), 0 1px 1px rgba(0,0,0,.18);
+    --shadow:0 2px 6px rgba(0,0,0,.30), 0 1px 3px rgba(0,0,0,.22);
+    --shadow-sm:0 2px 8px rgba(0,0,0,.30), 0 4px 14px rgba(0,0,0,.25);
+    --shadow-md:0 6px 16px rgba(0,0,0,.38), 0 10px 30px rgba(0,0,0,.30);
+    --shadow-lg:0 12px 28px rgba(0,0,0,.45), 0 24px 60px rgba(0,0,0,.40);
     --unread:#14b8a6; --group:#5ba3e0;
   }
   /* ===== 4 TEMA (accent) — WhatsApp tabanli, acik mod =====
@@ -74,6 +78,91 @@
   html[data-theme="dark"][data-accent="navy"]{ --ink:#1f2c33; --brand:#1a73e8; --brand-hi:#60a5fa; --brand-soft:#0f2038; --unread:#1a73e8; --out:#0a3d6b; }
   html[data-theme="dark"][data-accent="purple"]{ --ink:#1f2c33; --brand:#9061f5; --brand-hi:#a78bfa; --brand-soft:#231542; --unread:#9061f5; --out:#3a1d6b; }
   html[data-theme="dark"][data-accent="rose"]{ --ink:#1f2c33; --brand:#e11d48; --brand-hi:#f43f5e; --brand-soft:#3a1020; --unread:#e11d48; --out:#5c1226; }
+
+  /* ════════════════════════════════════════════════════════════════
+     HAZIR TEMALAR (data-skin) — en KOYUDAN en ACIGA, hafif desenli.
+     Her tema komple bir gorunum: arka plan + paneller + marka rengi + desen.
+     Ayarlar menusunden secilir. --desen: mesaj alanindaki hafif motif rengi.
+     ════════════════════════════════════════════════════════════════ */
+
+  /* 1) GECE — en koyu (siyaha yakin lacivert) */
+  html[data-skin="gece"]{
+    --ink:#0f1620; --ink-2:#1a2433; --brand:#4f8cff; --brand-hi:#6ba0ff; --brand-soft:#16223a;
+    --gold:#4f8cff; --gold-soft:#16223a;
+    --bg:#070b11; --panel:#0c121b; --panel-2:#141d29; --chat-bg:#070b11;
+    --in:#141d29; --out:#1d3a5f;
+    --text:#e6edf5; --muted:#8a97a8; --faint:#5d6b7c;
+    --border:#1a2433; --border-soft:#111a26;
+    --unread:#4f8cff; --group:#6ba0ff; --online:#3ddc84; --tick-blue:#6ba0ff;
+    --desen:rgba(255,255,255,.025);
+  }
+  /* 2) GECE YARISI MOR — koyu mor/eflatun */
+  html[data-skin="mor"]{
+    --ink:#1a1030; --ink-2:#2a1a4a; --brand:#a974ff; --brand-hi:#bd91ff; --brand-soft:#241640;
+    --gold:#a974ff; --gold-soft:#241640;
+    --bg:#0e0818; --panel:#150e26; --panel-2:#1f1638; --chat-bg:#0e0818;
+    --in:#1f1638; --out:#3a2363;
+    --text:#ece4f7; --muted:#9a8bb5; --faint:#6b5d85;
+    --border:#241a3d; --border-soft:#180f2a;
+    --unread:#a974ff; --group:#bd91ff; --online:#3ddc84; --tick-blue:#bd91ff;
+    --desen:rgba(190,150,255,.035);
+  }
+  /* 3) ORMAN — koyu yesil/zumrut */
+  html[data-skin="orman"]{
+    --ink:#0a2018; --ink-2:#0f3024; --brand:#2dd4a8; --brand-hi:#4fe0bb; --brand-soft:#0f2e24;
+    --gold:#2dd4a8; --gold-soft:#0f2e24;
+    --bg:#06120d; --panel:#0a1a14; --panel-2:#10261d; --chat-bg:#06120d;
+    --in:#10261d; --out:#13483a;
+    --text:#e0f2ea; --muted:#7da394; --faint:#527065;
+    --border:#143228; --border-soft:#0d2019;
+    --unread:#2dd4a8; --group:#4fe0bb; --online:#3ddc84; --tick-blue:#4fe0bb;
+    --desen:rgba(120,255,210,.03);
+  }
+  /* 4) OKYANUS — orta koyulukta mavi (gri-lacivert) */
+  html[data-skin="okyanus"]{
+    --ink:#13283d; --ink-2:#1c3a57; --brand:#2b9fd4; --brand-hi:#4fb6e3; --brand-soft:#15324a;
+    --gold:#2b9fd4; --gold-soft:#15324a;
+    --bg:#0d1d2b; --panel:#11263a; --panel-2:#193548; --chat-bg:#0d1d2b;
+    --in:#193548; --out:#1a4a66;
+    --text:#dceaf3; --muted:#7d97a8; --faint:#54697a;
+    --border:#1c394f; --border-soft:#122636;
+    --unread:#2b9fd4; --group:#4fb6e3; --online:#3ddc84; --tick-blue:#4fb6e3;
+    --desen:rgba(150,210,255,.03);
+  }
+  /* 5) KUM — acik bej/krem (sicak, yumusak) */
+  html[data-skin="kum"]{
+    --ink:#8a6d3a; --ink-2:#a07f43; --brand:#c79a3e; --brand-hi:#d9af52; --brand-soft:#f5ecd8;
+    --gold:#c79a3e; --gold-soft:#f5ecd8;
+    --bg:#f3ecdd; --panel:#fdf9f0; --panel-2:#f0e8d6; --chat-bg:#efe6d3;
+    --in:#fffdf7; --out:#e7dcc0;
+    --text:#3a3022; --muted:#7a6e58; --faint:#a3957b;
+    --border:#e6dcc6; --border-soft:#f0e8d6;
+    --unread:#c79a3e; --group:#b08642; --online:#3a9d6a; --tick-blue:#3b9ed4;
+    --desen:rgba(140,110,50,.04);
+  }
+  /* 6) GUL KURUSU — acik pembe/somon (pastel) */
+  html[data-skin="gul"]{
+    --ink:#b04a5e; --ink-2:#c25a6e; --brand:#e0758c; --brand-hi:#ea8ca0; --brand-soft:#fce8ec;
+    --gold:#e0758c; --gold-soft:#fce8ec;
+    --bg:#fbeef0; --panel:#fffafb; --panel-2:#fbeaed; --chat-bg:#fbeef0;
+    --in:#fffafb; --out:#fbdce2;
+    --text:#4a3338; --muted:#9a7681; --faint:#c2a3ab;
+    --border:#f5dde2; --border-soft:#fbeaed;
+    --unread:#e0758c; --group:#d4869a; --online:#3a9d6a; --tick-blue:#3b9ed4;
+    --desen:rgba(224,117,140,.04);
+  }
+  /* 7) KAR — en acik (ferah beyaz/buz mavisi) */
+  html[data-skin="kar"]{
+    --ink:#2a6da8; --ink-2:#3580bf; --brand:#3b9ed4; --brand-hi:#57b3e3; --brand-soft:#e8f4fb;
+    --gold:#3b9ed4; --gold-soft:#e8f4fb;
+    --bg:#eef4f9; --panel:#ffffff; --panel-2:#f3f8fc; --chat-bg:#eef4f9;
+    --in:#ffffff; --out:#d6ebf7;
+    --text:#1a2c3a; --muted:#5d7383; --faint:#94a8b6;
+    --border:#e2ecf4; --border-soft:#f0f5fa;
+    --unread:#3b9ed4; --group:#3b82f6; --online:#3a9d6a; --tick-blue:#3b9ed4;
+    --desen:rgba(60,140,210,.035);
+  }
+
   *{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
   html,body{height:100%}
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;overflow:hidden;transition:background .25s}
@@ -92,6 +181,16 @@
   .rail-ayrac{width:32px;height:1px;background:rgba(255,255,255,.1);margin:8px 0 6px}
   .rail-etiketler{display:flex;flex-direction:column;align-items:center;gap:9px;width:100%;max-height:42vh;overflow-y:auto;padding:2px 0}
   .rail-etiketler::-webkit-scrollbar{width:0}
+  /* ── GENEL İNCE ŞIK SCROLLBAR (tüm panel: modallar, listeler, her yer) ── */
+  /* Firefox */
+  *{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+  /* Chrome/Safari/Edge — ince, yuvarlak, hover'da belirginleşir */
+  *::-webkit-scrollbar{width:7px;height:7px}
+  *::-webkit-scrollbar-track{background:transparent}
+  *::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 35%,transparent);border-radius:10px}
+  *::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--muted) 60%,transparent)}
+  *::-webkit-scrollbar-button{display:none;width:0;height:0}
+  *::-webkit-scrollbar-corner{background:transparent}
   .rail-etiket{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;cursor:pointer;position:relative;transition:all .18s;flex-shrink:0}
   .rail-etiket:hover{transform:scale(1.12)}
   .rail-etiket .re-nokta{width:18px;height:18px;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,.35);transition:all .18s}
@@ -194,6 +293,102 @@
   .ky-btn:hover{border-color:var(--brand);background:var(--brand-soft)}
   .ky-kapat:hover{border-color:#f59e0b;background:rgba(245,158,11,.08)}
   .ky-excel:hover{border-color:#16a34a;background:rgba(22,163,74,.08)}
+  /* ===== KONTROL ALT SEKMELERİ (Satışlar / Performans) ===== */
+  .kontrol-alt-sekme{display:flex;gap:4px;padding:10px 20px 0;background:var(--panel);border-bottom:1px solid var(--border)}
+  .kas-btn{padding:9px 18px;border:none;background:none;color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;border-bottom:2.5px solid transparent;transition:all .14s;border-radius:8px 8px 0 0}
+  .kas-btn:hover{color:var(--text);background:var(--panel-2)}
+  .kas-btn.active{color:var(--brand);border-bottom-color:var(--brand)}
+  /* ===== PERFORMANS RAPORU ALANI ===== */
+  .performans-alan{flex:1;overflow-y:auto;padding:18px 20px 24px}
+  /* üst özet kartları */
+  .perf-ozet{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:8px}
+  .perf-ozet-kart{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px 18px;text-align:center}
+  .perf-ozet-kart.ana{background:var(--brand-soft);border-color:var(--brand)}
+  .perf-ozet-kart .poz-buyuk{font-size:32px;font-weight:800;letter-spacing:-1px;line-height:1;color:var(--text)}
+  .perf-ozet-kart.ana .poz-buyuk{color:var(--brand)}
+  .perf-ozet-kart .poz-etiket{font-size:12px;color:var(--muted);margin-top:6px;font-weight:600}
+  .perf-aciklama{font-size:12.5px;color:var(--muted);background:var(--panel-2);border-radius:10px;padding:10px 14px;margin:14px 0 18px;line-height:1.5}
+  .perf-aciklama b{color:var(--text)}
+  /* kişi sıralama listesi */
+  .perf-baslik{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:0 0 12px}
+  .perf-kisi{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:10px;transition:border-color .14s}
+  .perf-kisi:hover{border-color:var(--brand)}
+  .perf-kisi.birinci{border-color:#f5b50a;background:linear-gradient(90deg,rgba(245,181,10,.07),transparent)}
+  .perf-kisi.ikinci{border-color:#9ca3af}
+  .perf-kisi.ucuncu{border-color:#cd7f32}
+  .perf-sira{font-size:20px;font-weight:800;min-width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--panel-2);color:var(--muted);flex-shrink:0}
+  .perf-kisi.birinci .perf-sira{background:#f5b50a;color:#fff}
+  .perf-kisi.ikinci .perf-sira{background:#9ca3af;color:#fff}
+  .perf-kisi.ucuncu .perf-sira{background:#cd7f32;color:#fff}
+  .perf-kisi-orta{flex:1;min-width:0}
+  .perf-kisi-ad{font-size:15.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .perf-kisi-detay{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .perf-rozet{font-size:11px;font-weight:600;padding:2px 9px;border-radius:8px;background:var(--panel-2);color:var(--muted)}
+  .perf-rozet.brans{background:var(--brand-soft);color:var(--brand)}
+  .perf-rozet.iki-aylik{background:rgba(245,158,11,.12);color:#d97706}
+  .perf-kisi-sayi{text-align:center;flex-shrink:0;min-width:64px}
+  .perf-kisi-sayi .pks-buyuk{font-size:28px;font-weight:800;color:var(--brand);line-height:1}
+  .perf-kisi-sayi .pks-etiket{font-size:10.5px;color:var(--muted);font-weight:600;margin-top:2px}
+  .perf-bos{text-align:center;padding:50px 20px;color:var(--faint);font-size:14px;line-height:1.6}
+  /* özet kart ikonu */
+  .perf-ozet-kart .poz-ikon{font-size:20px;margin-bottom:4px;opacity:.9}
+  /* ── LİDER KARTI (pano üstü) ── */
+  .perf-lider{display:flex;align-items:center;gap:16px;padding:18px 22px;border-radius:18px;margin-bottom:20px;
+    background:linear-gradient(120deg,color-mix(in srgb,#f5b50a 18%,var(--panel)),var(--panel));
+    border:1px solid color-mix(in srgb,#f5b50a 40%,transparent);box-shadow:0 4px 20px color-mix(in srgb,#f5b50a 12%,transparent)}
+  .perf-lider .lider-kupa{font-size:42px;line-height:1;filter:drop-shadow(0 2px 4px rgba(245,181,10,.4))}
+  .perf-lider .lider-bilgi{flex:1;min-width:0}
+  .perf-lider .lider-etiket{font-size:11.5px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:.5px}
+  .perf-lider .lider-ad{font-size:22px;font-weight:800;color:var(--text);margin:2px 0;letter-spacing:-.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .perf-lider .lider-fark{display:inline-block;font-size:12.5px;color:var(--muted);font-weight:600}
+  .perf-lider .lider-sayi{flex-shrink:0;font-size:38px;font-weight:800;color:#d97706;line-height:1;text-align:center;letter-spacing:-1px}
+  .perf-lider .lider-sayi small{display:block;font-size:11px;color:var(--muted);font-weight:600;letter-spacing:0}
+  /* ── KİŞİ LİSTESİ (barlı, tıklanır) ── */
+  .perf-liste{display:flex;flex-direction:column;gap:0}
+  .perf-kisi{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:13px 16px;margin-bottom:8px;cursor:pointer;transition:all .15s;position:relative}
+  .perf-kisi:hover{border-color:var(--brand);transform:translateX(2px)}
+  .perf-kisi.secili{border-color:var(--brand);border-bottom-left-radius:0;border-bottom-right-radius:0;margin-bottom:0}
+  .perf-kisi.birinci{background:linear-gradient(90deg,rgba(245,181,10,.08),var(--panel))}
+  .perf-sira{font-size:21px;font-weight:800;min-width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--panel-2);color:var(--muted);flex-shrink:0}
+  .perf-kisi.birinci .perf-sira,.perf-kisi.ikinci .perf-sira,.perf-kisi.ucuncu .perf-sira{background:transparent;font-size:26px}
+  .perf-kisi-orta{flex:1;min-width:0}
+  .perf-kisi-ust{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+  .perf-kisi-ad{font-size:15.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .perf-kisi-grup{font-size:11px;color:var(--muted);font-weight:600;flex-shrink:0;background:var(--panel-2);padding:2px 8px;border-radius:7px}
+  /* görsel bar */
+  .perf-bar-dis{height:7px;background:var(--panel-2);border-radius:5px;overflow:hidden;margin-bottom:7px}
+  .perf-bar-ic{height:100%;background:linear-gradient(90deg,var(--brand),color-mix(in srgb,var(--brand) 60%,#22d3ee));border-radius:5px;transition:width .5s cubic-bezier(.2,.8,.2,1)}
+  .perf-kisi.birinci .perf-bar-ic{background:linear-gradient(90deg,#f5b50a,#fbbf24)}
+  .perf-kisi-detay{display:flex;flex-wrap:wrap;gap:5px}
+  .perf-kisi-sayi{text-align:center;flex-shrink:0;min-width:58px}
+  .perf-kisi-sayi .pks-buyuk{font-size:26px;font-weight:800;color:var(--brand);line-height:1}
+  .perf-kisi.birinci .pks-buyuk{color:#d97706}
+  .perf-kisi-sayi .pks-etiket{font-size:10px;color:var(--muted);font-weight:600;margin-top:1px}
+  .perf-kisi-sayi .pks-ok{font-size:11px;color:var(--faint);margin-top:3px;transition:transform .2s}
+  .perf-kisi.secili .pks-ok{transform:rotate(180deg);color:var(--brand)}
+  /* ── KİŞİ DETAYI (akordeon) ── */
+  .perf-detay{max-height:0;overflow:hidden;background:var(--panel);border:1px solid var(--brand);border-top:none;border-radius:0 0 14px 14px;margin-bottom:8px;transition:max-height .3s ease}
+  .perf-detay.acik{max-height:1200px}
+  .perf-detay .pd-ic{padding:4px 18px 18px}
+  .pd-ozet{display:flex;gap:10px;flex-wrap:wrap;padding:14px 0;border-bottom:1px dashed var(--border);margin-bottom:14px}
+  .pd-oz{flex:1;min-width:64px;text-align:center;background:var(--panel-2);border-radius:11px;padding:10px 6px}
+  .pd-oz b{display:block;font-size:21px;font-weight:800;color:var(--text);line-height:1}
+  .pd-oz span{font-size:11px;color:var(--muted);font-weight:600}
+  .pd-baslik{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 10px}
+  /* branş mini barlar */
+  .pd-brans-liste{display:flex;flex-direction:column;gap:8px}
+  .pd-brans{display:flex;align-items:center;gap:10px}
+  .pd-brans-ad{font-size:13px;font-weight:600;color:var(--text);min-width:80px}
+  .pd-brans-bar{flex:1;height:8px;background:var(--panel-2);border-radius:5px;overflow:hidden}
+  .pd-brans-dolu{height:100%;background:linear-gradient(90deg,var(--brand),color-mix(in srgb,var(--brand) 55%,#22d3ee));border-radius:5px}
+  .pd-brans-sayi{font-size:13px;font-weight:800;color:var(--brand);min-width:24px;text-align:right}
+  /* grup dökümü */
+  .pd-grup-liste{display:flex;flex-direction:column;gap:6px}
+  .pd-grup{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--panel-2);border-radius:10px;padding:9px 13px}
+  .pd-grup-ad{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .pd-grup-sag{display:flex;gap:5px;flex-shrink:0}
+  .pd-grup-rozet{font-size:11px;font-weight:700;padding:2px 8px;border-radius:7px;background:var(--panel);color:var(--muted)}
+  .pd-grup-rozet.ana{background:var(--brand-soft);color:var(--brand)}
   /* satış listesi */
   .kontrol-liste{flex:1;overflow-y:auto;padding:0 20px 20px}
   .satis-grup-baslik{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:14px 2px 8px;position:sticky;top:0;background:var(--bg)}
@@ -251,6 +446,14 @@
   .internal-newbtn svg{width:18px;height:18px}
   #internalMessages{flex:1;overflow-y:auto;min-height:0;padding:18px 22px;display:flex;flex-direction:column;gap:7px}
   .im-msg{max-width:65%;padding:8px 13px;border-radius:14px;font-size:14px;line-height:1.4;word-wrap:break-word}
+  /* iç mesaj dosya/resim */
+  .im-img{max-width:240px;max-height:280px;border-radius:10px;display:block;cursor:pointer;margin:2px 0}
+  .im-caption{margin-top:5px;font-size:13.5px}
+  .im-dosya{display:flex;align-items:center;gap:9px;padding:9px 12px;background:rgba(0,0,0,.12);border-radius:10px;text-decoration:none;color:inherit;min-width:180px}
+  .im-msg.out .im-dosya{background:rgba(255,255,255,.15)}
+  .im-dosya-ik{font-size:24px;flex-shrink:0}
+  .im-dosya-ad{flex:1;min-width:0;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .im-dosya-in{font-size:11px;opacity:.8;flex-shrink:0}
   .im-msg.out{align-self:flex-end;background:linear-gradient(140deg,#14b8a6,#0f766e);color:#fff;border-bottom-right-radius:4px}
   .im-msg.in{align-self:flex-start;background:var(--panel-2);color:var(--text);border-bottom-left-radius:4px}
   .im-msg .im-time{font-size:10px;opacity:.7;margin-top:3px;text-align:right}
@@ -259,9 +462,19 @@
   .iup-item{display:flex;align-items:center;gap:12px;padding:9px 11px;border-radius:10px;cursor:pointer;transition:background .12s}
   .iup-item:hover{background:var(--brand-soft)}
   .list-section{font-size:10.5px;font-weight:800;color:var(--faint);text-transform:uppercase;letter-spacing:.8px;padding:14px 12px 6px}
-  .chat{display:flex;gap:14px;padding:12px 13px;cursor:pointer;border-radius:15px;position:relative;margin-bottom:3px;transition:all .14s}
+  /* ── MESAJ ARAMA SONUÇLARI (WhatsApp gibi "Mesajlar" bölümü) ── */
+  .chat.msg-sonuc .chat-preview{color:var(--muted)}
+  /* aranan kelime vurgusu (sarı/yeşil highlight) */
+  mark.arama-vurgu{background:color-mix(in srgb,var(--brand) 40%,transparent);color:var(--text);padding:0 2px;border-radius:3px;font-weight:700}
+  /* mesaja zıplayınca kısa parlama */
+  .msg.mesaj-vurgu{animation:mesajParla 2.2s ease}
+  @keyframes mesajParla{
+    0%,100%{background:initial}
+    15%,55%{box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 55%,transparent), 0 0 18px color-mix(in srgb,var(--brand) 35%,transparent)}
+  }
+  .chat{display:flex;gap:14px;padding:12px 13px;cursor:pointer;border-radius:15px;position:relative;margin-bottom:3px;transition:all .18s cubic-bezier(.2,.8,.2,1)}
   .chat:hover{background:var(--panel-2)}
-  .chat.active{background:var(--brand-soft)}
+  .chat.active{background:var(--brand-soft);box-shadow:var(--shadow-xs)}
   .chat.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:4px;height:60%;background:var(--brand);border-radius:0 4px 4px 0}
   .chat-avatar{width:54px;height:54px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;color:#fff;font-weight:700;font-size:19px;position:relative;background-size:cover;background-position:center;background-repeat:no-repeat;box-shadow:var(--shadow-xs)}
   .chat-avatar.has-img{background-color:transparent!important;overflow:hidden}
@@ -281,8 +494,7 @@
   html[data-theme="dark"] .badge{color:#06100e}
   .chat-tags{display:flex;gap:5px;margin-top:6px}
   .tag{font-size:10.5px;padding:2px 9px;border-radius:7px;font-weight:600}
-  .tag.grouptag{background:#e3edf8;color:var(--group)}
-  html[data-theme="dark"] .tag.grouptag{background:#102a40;color:#5ba3e0}
+  .tag.grouptag{background:var(--panel-2);color:var(--muted);border:1px solid var(--border-soft)}
   .chat-menu-btn{position:absolute;top:13px;right:13px;opacity:0;background:var(--panel);border:1px solid var(--border);color:var(--muted);cursor:pointer;padding:4px;border-radius:9px;transition:all .15s;box-shadow:var(--shadow-xs)}
   .chat:hover .chat-menu-btn{opacity:1}
   .chat-menu-btn:hover{color:var(--brand);border-color:var(--brand)}
@@ -295,7 +507,7 @@
   .ctx-item svg{width:17px;height:17px;color:var(--muted)}
 
   /* ===== Konusma alani ===== */
-  .conv{flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--chat-bg);position:relative;background-image:radial-gradient(var(--border-soft) 1px,transparent 0);background-size:22px 22px}
+  .conv{flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--chat-bg);position:relative;background-image:radial-gradient(var(--desen, var(--border-soft)) 1px,transparent 0),radial-gradient(var(--desen, var(--border-soft)) 1px,transparent 0);background-size:24px 24px,24px 24px;background-position:0 0,12px 12px}
   .conv-header{background:var(--panel);padding:13px 22px;display:flex;align-items:center;gap:15px;border-bottom:1px solid var(--border);box-shadow:var(--shadow-xs);z-index:2}
   .conv-avatar{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;background-size:cover;background-position:center;cursor:pointer;box-shadow:var(--shadow-xs);font-size:16px}
   .conv-avatar.group{border-radius:50%}
@@ -334,7 +546,15 @@
   .group-desc .gd-toggle{color:var(--gold);font-weight:700;cursor:pointer;font-size:11.5px;margin-top:4px;display:inline-block}
   .group-desc .gd-toggle:hover{text-decoration:underline}
 
-  .messages{flex:1;overflow-y:auto;padding:24px 8%;display:flex;flex-direction:column;gap:5px;min-height:0;background:transparent}
+  .messages{flex:1;overflow-y:auto;padding:24px 4%;display:flex;flex-direction:column;gap:5px;min-height:0;background:transparent}
+  /* sonsuz scroll: daha eski mesaj yükleniyor göstergesi (mesaj alanı üstünde) */
+  .eski-yuk-not{position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:6;margin-top:8px;background:var(--panel);color:var(--muted);font-size:12px;font-weight:600;padding:6px 16px;border-radius:20px;box-shadow:var(--shadow-sm);border:1px solid var(--border-soft)}
+  /* "en alta in" butonu — sağ altta yuvarlak, sohbet yukarıdayken görünür */
+  .alta-in-btn{position:absolute;right:18px;bottom:90px;z-index:6;width:42px;height:42px;border-radius:50%;border:1px solid var(--border-soft);background:var(--panel);color:var(--muted);cursor:pointer;display:grid;place-items:center;box-shadow:var(--shadow-md);transition:all .15s;opacity:.92}
+  .alta-in-btn:hover{background:var(--brand);color:#fff;border-color:var(--brand);transform:translateY(-2px);opacity:1}
+  .alta-in-btn svg{width:24px;height:24px}
+  /* yeni mesaj bildirim rozeti (alta in butonunun üstünde) */
+  .alta-in-badge{position:absolute;top:-6px;right:-4px;min-width:20px;height:20px;padding:0 5px;border-radius:11px;background:var(--brand);color:#fff;font-size:11px;font-weight:800;display:grid;place-items:center;box-shadow:0 2px 6px rgba(0,0,0,.3);border:2px solid var(--chat-bg)}
   .messages>*:first-child{margin-top:auto}
   .messages::-webkit-scrollbar{width:8px}
   .messages::-webkit-scrollbar-thumb{background:rgba(120,140,138,.3);border-radius:5px}
@@ -394,13 +614,40 @@
   .msg-actions button.danger{color:#dc2626}
   .msg-actions button.danger:hover{background:#fee2e2;color:#dc2626}
   .msg-actions button svg{width:17px;height:17px;flex-shrink:0}
-  .msg .sender-name{font-size:14px;font-weight:800;margin-bottom:4px;letter-spacing:-.2px;display:flex;align-items:center;gap:4px}
+  .msg .sender-name{font-size:14px;font-weight:800;margin-bottom:5px;letter-spacing:-.2px;display:flex;align-items:center;gap:4px}
   .msg .sender-name.clickable{cursor:pointer}
   .msg .sender-name.clickable:hover{text-decoration:underline}
-  /* ofis ekibi rozeti: gruptaki normal kisilerden ayirt etmek icin */
-  .ofis-rozet{font-size:11px;opacity:.9;flex-shrink:0}
-  /* ofis uyesinin adi: hafif arka plan + cizgi ile one cikar */
-  .msg .sender-name.ofis-uye{padding:1px 7px;border-radius:6px;background:rgba(34,197,94,.13);border-left:3px solid var(--brand)}
+  /* ofis ekibi rozeti: küçük yeşil yuvarlak içinde kalkan ikonu (şık, kurumsal) */
+  .ofis-rozet{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--brand);color:#fff;flex-shrink:0;font-size:9px}
+  .ofis-rozet svg{width:10px;height:10px}
+  /* ── İKİ FARKLI EKİP ROZETİ (karışmasın) ── */
+  /* Ortak: ikon yuvarlağı */
+  .panel-rozet,.ofis-rozet{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;color:#fff;flex-shrink:0}
+  .panel-rozet svg,.ofis-rozet svg{width:10px;height:10px}
+  .panel-rozet{background:var(--brand)}      /* PANEL kullanıcısı = marka yeşili + kalkan */
+  .ofis-rozet{background:#3b82f6}             /* GRUPTAKİ ofis kişisi = mavi + bina */
+
+  /* 1) PANEL KULLANICISI adı (giden mesaj): yeşil pill, blok satır (mesaj altına geçer) */
+  .msg .sender-name.team-name{
+    display:flex;align-items:center;gap:5px;width:fit-content;max-width:100%;
+    padding:3px 11px 3px 4px;border-radius:20px;margin-bottom:6px;
+    background:linear-gradient(90deg,color-mix(in srgb,var(--brand) 24%,transparent),color-mix(in srgb,var(--brand) 8%,transparent));
+    border:1px solid color-mix(in srgb,var(--brand) 38%,transparent);
+    font-size:13px;font-weight:700;color:var(--ink) !important;
+  }
+  /* 2) GRUPTAKİ OFİS KİŞİSİ adı (gelen mesaj): mavi pill, blok satır */
+  .msg .sender-name.ofis-uye{
+    display:flex;align-items:center;gap:5px;width:fit-content;max-width:100%;
+    padding:3px 11px 3px 4px;border-radius:20px;margin-bottom:6px;
+    background:linear-gradient(90deg,rgba(59,130,246,.20),rgba(59,130,246,.06));
+    border:1px solid rgba(59,130,246,.38);
+    font-size:13px;font-weight:700;color:#1d4ed8 !important;
+  }
+  /* koyu temalarda metni parlak tut */
+  html[data-skin] .msg .sender-name.team-name,
+  html[data-theme="dark"] .msg .sender-name.team-name{ color:var(--text) !important; }
+  html[data-skin] .msg .sender-name.ofis-uye,
+  html[data-theme="dark"] .msg .sender-name.ofis-uye{ color:#93c5fd !important; }
   /* *kalin* metin: renkli ve kalin (WhatsApp tarzi vurgu) */
   /* *kalin* metin: renkli, canli, kalin (animasyonsuz, sabit) */
   .md-bold{
@@ -551,6 +798,8 @@
   .qr-list{overflow-y:auto;padding:6px}
   .qr-item{padding:10px 12px;border-radius:10px;cursor:pointer;transition:background .12s;display:flex;flex-direction:column;gap:2px;position:relative}
   .qr-item:hover{background:var(--brand-soft)}
+  /* klavyeyle (ok tuşu) seçili öğe — net vurgu + sol çizgi */
+  .qr-item.secili{background:var(--brand-soft);box-shadow:inset 3px 0 0 var(--brand)}
   .qr-item .qr-title{font-size:12px;font-weight:800;color:var(--brand);text-transform:uppercase;letter-spacing:.3px;display:flex;align-items:center;gap:6px}
   .qr-item .qr-tag{background:var(--brand);color:#fff;font-size:9.5px;padding:1px 6px;border-radius:5px;letter-spacing:.5px}
   .qr-item .qr-text{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.85}
@@ -687,9 +936,9 @@
   .etiket-oge-sayi{font-size:11px;font-weight:700;color:var(--muted);background:var(--panel-2);padding:1px 8px;border-radius:10px}
   .etiket-oge.aktif .etiket-oge-sayi{background:var(--brand);color:#fff}
   /* Liste etiket noktalari */
-  .liste-etiketler{display:inline-flex;gap:3px;margin-left:5px;vertical-align:middle}
-  .liste-etiket-nokta{width:8px;height:8px;border-radius:50%;display:inline-block}
-  .modal{background:var(--panel);border-radius:8px;padding:30px;width:400px;max-width:90%;box-shadow:var(--shadow-lg);animation:modalIn .13s ease-out}
+  .liste-etiketler{display:inline-flex;gap:3px;margin-right:6px;vertical-align:middle}
+  .liste-etiket-nokta{width:9px;height:9px;border-radius:50%;display:inline-block;box-shadow:0 0 0 1.5px var(--panel)}
+  .modal{background:var(--panel);border-radius:18px;padding:30px;width:400px;max-width:90%;box-shadow:var(--shadow-lg);animation:modalIn .13s ease-out;border:1px solid var(--border-soft)}
   @keyframes modalIn{from{opacity:0}to{opacity:1}}
   .modal h3{font-size:19px;font-weight:800;margin-bottom:6px;letter-spacing:-.4px}
   .modal p{font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.55}
@@ -719,6 +968,14 @@
   .accent-dot{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;transition:transform .12s;box-shadow:0 2px 5px rgba(0,0,0,.15)}
   .accent-dot:hover{transform:scale(1.08)}
   .accent-dot.active{border-color:var(--text)}
+  /* Hazir tema seçici (skin) — 4'lü ızgara, kucuk onizlemeli kartlar */
+  .skin-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;padding:2px 13px 12px}
+  .skin-card{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 3px;border-radius:9px;cursor:pointer;border:2px solid transparent;transition:all .13s;background:var(--panel-2)}
+  .skin-card:hover{transform:translateY(-1px);background:var(--brand-soft)}
+  .skin-card.active{border-color:var(--brand);background:var(--brand-soft)}
+  .skin-prev{width:30px;height:30px;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,.25);border:1.5px solid rgba(255,255,255,.15)}
+  .skin-ad{font-size:10.5px;font-weight:600;color:var(--text);letter-spacing:-.2px}
+  .skin-card.active .skin-ad{color:var(--brand)}
 
   .fwd-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;cursor:pointer}
   .fwd-row:hover{background:var(--panel-2)}
@@ -734,14 +991,34 @@
   .fwd-chip{display:inline-flex;align-items:center;gap:6px;background:var(--brand-soft);color:var(--brand);font-size:12.5px;font-weight:600;padding:5px 11px;border-radius:16px}
   .fwd-chip b{cursor:pointer;font-size:15px;line-height:1;font-weight:400}
   .fwd-chip b:hover{color:var(--text)}
-  /* Secim modu: secim kutusu — WhatsApp gibi baloncugun SOL DIKEY ORTASINDA.
-     absolute konum: baloncuk yapisini bozmaz, kutu disarida solda ortada durur. */
-  .sec-kutu{position:absolute;left:-34px;top:50%;transform:translateY(-50%);display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;border:2px solid var(--border);cursor:pointer;font-size:13px;font-weight:800;color:#fff;flex-shrink:0;transition:all .12s;background:var(--panel);z-index:2}
-  .sec-kutu.dolu{background:var(--brand);border-color:var(--brand)}
-  /* secim modunda mesaja sol margin ver ki kutu icin yer acilsin (baloncuk sola kaymasin) */
-  .msg.secim-modu{cursor:pointer;margin-left:38px}
+  /* SEÇİM DAİRESİ — normalde GİZLİ (gözü yormasın). Sadece:
+     1) mesajın üstüne gelince (hover) görünür,
+     2) zaten bir seçim varsa (secim-modu) hepsi görünür. */
+  .sec-kutu{position:absolute;left:-32px;top:50%;transform:translateY(-50%);display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;border:2px solid var(--border);cursor:pointer;font-size:12px;font-weight:800;color:#fff;flex-shrink:0;transition:opacity .14s, border-color .12s, background .12s;background:var(--panel);z-index:2;opacity:0;pointer-events:none}
+  /* mesaja gelince daire belirir ve tıklanabilir olur */
+  .msg:hover .sec-kutu{opacity:.7;pointer-events:auto}
+  .sec-kutu:hover{opacity:1 !important;border-color:var(--brand);transform:translateY(-50%) scale(1.12)}
+  /* seçim modunda (en az 1 seçili) TÜM daireler görünür ve tıklanabilir */
+  .msg.secim-modu .sec-kutu{opacity:.85;pointer-events:auto}
+  .sec-kutu.dolu{background:var(--brand);border-color:var(--brand);opacity:1 !important;pointer-events:auto}
+  /* Sol boşluğu SADECE seçim modunda ver (normalde mesajlar tam yerinde dursun) */
+  .msg.secim-modu{margin-left:34px}
+  .msg.out.secim-modu{margin-left:34px;margin-right:4px}
   /* Toast bildirim */
   #toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:13px 22px;border-radius:13px;font-size:13.5px;font-weight:600;box-shadow:var(--shadow-lg);z-index:300;opacity:0;transition:all .3s cubic-bezier(.2,.8,.2,1);pointer-events:none;display:flex;align-items:center;gap:9px}
+  /* ── TAKİP UYARI KARTLARI (sağ altta, yöneticiye) ── */
+  #takipKartlar{position:fixed;bottom:24px;right:24px;z-index:280;display:flex;flex-direction:column;gap:12px;max-width:360px}
+  .takip-kart{background:var(--panel);border:1px solid var(--border-soft);border-left:4px solid #f59e0b;border-radius:14px;padding:14px 16px;box-shadow:var(--shadow-lg);cursor:pointer;transition:all .2s;animation:takipGir .35s cubic-bezier(.2,.8,.2,1);position:relative}
+  .takip-kart:hover{transform:translateX(-3px);border-left-color:#d97706;box-shadow:0 12px 32px rgba(0,0,0,.25)}
+  @keyframes takipGir{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+  .takip-kart .tk-ust{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .takip-kart .tk-ikon{font-size:18px;flex-shrink:0}
+  .takip-kart .tk-baslik{font-size:12.5px;font-weight:800;color:#d97706;text-transform:uppercase;letter-spacing:.4px}
+  .takip-kart .tk-grup{font-size:14.5px;font-weight:700;color:var(--text);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .takip-kart .tk-mesaj{font-size:13px;color:var(--muted);line-height:1.4}
+  .takip-kart .tk-alt{margin-top:9px;font-size:11.5px;color:var(--brand);font-weight:700}
+  .takip-kart .tk-kapat{position:absolute;top:10px;right:11px;width:22px;height:22px;border:none;background:var(--panel-2);border-radius:50%;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;display:grid;place-items:center}
+  .takip-kart .tk-kapat:hover{background:var(--danger);color:#fff}
   #toast.show{transform:translateX(-50%) translateY(0);opacity:1}
   #toast svg{width:18px;height:18px;color:var(--brand-hi)}
   /* Mesaj secim modu */
@@ -753,6 +1030,8 @@
   .selection-bar button:hover{background:rgba(255,255,255,.22)}
   .selection-bar button.primary{background:var(--brand)}
   .selection-bar button.primary:hover{background:var(--brand-hi)}
+  .selection-bar button.sil-btn{background:rgba(239,68,68,.85)}
+  .selection-bar button.sil-btn:hover{background:rgba(239,68,68,1)}
   .selection-bar button svg{width:17px;height:17px}
   .qr-screen{position:fixed;inset:0;z-index:9999;background:linear-gradient(160deg,var(--ink) 0%,#0a3d35 100%);display:none;align-items:center;justify-content:center;padding:20px}
   .qr-screen.show{display:flex}
@@ -877,7 +1156,7 @@
         <span>İç Mesajlar</span>
         <span class="tab-badge" id="internalBadge" style="display:none">0</span>
       </button>
-      <button class="main-tab" data-tab="kontrol" onclick="switchMainTab('kontrol')">
+      <button class="main-tab" data-tab="kontrol" id="kontrolTab" onclick="switchMainTab('kontrol')">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
         <span>Kontrol</span>
         <span class="tab-badge" id="kontrolBadge" style="display:none">0</span>
@@ -985,8 +1264,14 @@
       <div class="selection-bar" id="selectionBar">
         <button onclick="clearSelection()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
         <span class="sel-count" id="selCount">0 seçildi</span>
+        <button onclick="silSelected()" class="sil-btn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>Sil</button>
         <button class="primary" onclick="forwardSelected()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z"/></svg>İlet</button>
       </div>
+      <div class="eski-yuk-not" id="eskiYukNot" style="display:none">⏳ Daha eski mesajlar yükleniyor…</div>
+      <button class="alta-in-btn" id="altaInBtn" onclick="enAltaIn()" title="En alta in" style="display:none">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+        <span class="alta-in-badge" id="altaInBadge" style="display:none">0</span>
+      </button>
       <div class="messages" id="messages"></div>
       <div class="mention-list" id="mentionList"></div>
       <div class="reply-preview" id="replyPreview">
@@ -1061,6 +1346,8 @@
       </div>
       <div class="messages" id="internalMessages"></div>
       <div class="composer">
+        <button class="attach-btn" id="internalAttachBtn" title="Dosya ekle"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg></button>
+        <input type="file" id="internalFileInput" style="display:none" multiple>
         <textarea id="internalInput" placeholder="Ekip arkadaşına mesaj yaz" rows="1"></textarea>
         <button class="send-btn" id="internalSendBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
       </div>
@@ -1076,6 +1363,11 @@
 
     <!-- KONTROL / SATIŞ TAKİBİ PANELİ -->
     <div id="kontrolContent" style="display:none;flex-direction:column;min-height:0;flex:1;overflow:hidden">
+      <!-- Kontrol alt sekmeleri: Satışlar / Performans (Performans sadece yönetici) -->
+      <div class="kontrol-alt-sekme" id="kontrolAltSekme">
+        <button class="kas-btn active" data-kas="satislar" onclick="kontrolAltGec('satislar')">Satışlar</button>
+        <button class="kas-btn" id="kasPerformans" data-kas="performans" onclick="kontrolAltGec('performans')" style="display:none">📊 Performans</button>
+      </div>
       <div class="kontrol-head">
         <div class="kh-sol">
           <h2 id="kontrolBaslik">Satış Kontrol</h2>
@@ -1112,22 +1404,10 @@
         <button class="ky-btn ky-kapat" onclick="gunuKapat()" title="Bugünün satışlarını kilitle ve özet al">🔒 Günü Kapat</button>
         <button class="ky-btn ky-excel" onclick="satisExcelIndir()" title="Görünen satışları Excel olarak indir">📊 Excel İndir</button>
       </div>
-      <!-- Branş bilgi kutusu: nasıl yazılır rehberi (herkese görünür, kapatılabilir) -->
-      <div class="brans-bilgi" id="bransBilgi">
-        <div class="bb-head">
-          <span class="bb-baslik">📋 Satış nasıl kaydedilir?</span>
-          <span class="bb-kapat" onclick="document.getElementById('bransBilgi').style.display='none'">✕</span>
-        </div>
-        <div class="bb-icerik">
-          Gruba <b>/branş+adet</b> yazın (bitişik). Örnek: <code>/trafik2</code> = 2 trafik, <code>/kasko</code> = 1 kasko. Adet yazmazsanız 1 sayılır.
-          <div class="bb-branslar">
-            <span class="bb-rozet">/trafik</span><span class="bb-rozet">/kasko</span><span class="bb-rozet">/dask</span><span class="bb-rozet">/tss</span><span class="bb-rozet">/yeşilkart</span><span class="bb-rozet">/konut</span><span class="bb-rozet">/işyeri</span><span class="bb-rozet">/öss</span><span class="bb-rozet">/imm</span>
-          </div>
-          <div class="bb-not">Sadece bu 9 branş sayılır. Başka bir şey yazarsanız satış olarak kaydedilmez.</div>
-        </div>
-      </div>
       <!-- Satış listesi -->
       <div class="kontrol-liste" id="kontrolListe"></div>
+      <!-- PERFORMANS RAPORU (yönetici): kişi kişi poliçe yükleme -->
+      <div class="performans-alan" id="performansAlan" style="display:none"></div>
     </div>
   </div>
 </div>
@@ -1137,6 +1417,7 @@
   <div class="modal" style="width:420px;max-width:94vw">
     <h3>Kime mesaj?</h3>
     <p style="color:var(--muted);font-size:13px;margin-bottom:14px">Mesajlaşmak istediğin ekip arkadaşını seç.</p>
+    <input type="text" id="internalUserSearch" class="um-input" placeholder="🔍 Kullanıcı ara…" autocomplete="off" oninput="filterInternalPicker()" style="width:100%;margin-bottom:12px">
     <div id="internalUserPicker" style="display:flex;flex-direction:column;gap:4px;max-height:340px;overflow-y:auto"></div>
     <div class="modal-btns" style="margin-top:16px">
       <button class="btn ghost" onclick="document.getElementById('internalNewModal').classList.remove('show')">Kapat</button>
@@ -1159,12 +1440,32 @@
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 01-4.4 2.26 5.4 5.4 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
     Karanlık tema <span class="set-toggle" id="themeToggleSwitch"></span>
   </div>
-  <div style="padding:10px 13px 6px;font-size:11.5px;color:var(--muted);font-weight:600">Renk teması</div>
-  <div class="accent-row" style="display:flex;gap:10px;padding:2px 13px 10px">
-    <span class="accent-dot" data-accent="teal" onclick="setAccent('teal')" style="background:#14b8a6" title="Teal"></span>
-    <span class="accent-dot" data-accent="navy" onclick="setAccent('navy')" style="background:#2563eb" title="Lacivert"></span>
-    <span class="accent-dot" data-accent="purple" onclick="setAccent('purple')" style="background:#7c3aed" title="Mor"></span>
-    <span class="accent-dot" data-accent="rose" onclick="setAccent('rose')" style="background:#be123c" title="Bordo"></span>
+  <div style="padding:10px 13px 6px;font-size:11.5px;color:var(--muted);font-weight:600">🎨 Tema</div>
+  <div class="skin-grid">
+    <div class="skin-card" data-skin="gece" onclick="setSkin('gece')" title="Gece (en koyu)">
+      <span class="skin-prev" style="background:linear-gradient(135deg,#070b11 50%,#4f8cff 50%)"></span><span class="skin-ad">Gece</span>
+    </div>
+    <div class="skin-card" data-skin="mor" onclick="setSkin('mor')" title="Gece Yarısı Mor">
+      <span class="skin-prev" style="background:linear-gradient(135deg,#0e0818 50%,#a974ff 50%)"></span><span class="skin-ad">Mor</span>
+    </div>
+    <div class="skin-card" data-skin="orman" onclick="setSkin('orman')" title="Orman">
+      <span class="skin-prev" style="background:linear-gradient(135deg,#06120d 50%,#2dd4a8 50%)"></span><span class="skin-ad">Orman</span>
+    </div>
+    <div class="skin-card" data-skin="okyanus" onclick="setSkin('okyanus')" title="Okyanus">
+      <span class="skin-prev" style="background:linear-gradient(135deg,#0d1d2b 50%,#2b9fd4 50%)"></span><span class="skin-ad">Okyanus</span>
+    </div>
+    <div class="skin-card" data-skin="kum" onclick="setSkin('kum')" title="Kum">
+      <span class="skin-prev" style="background:linear-gradient(135deg,#efe6d3 50%,#c79a3e 50%)"></span><span class="skin-ad">Kum</span>
+    </div>
+    <div class="skin-card" data-skin="gul" onclick="setSkin('gul')" title="Gül Kurusu">
+      <span class="skin-prev" style="background:linear-gradient(135deg,#fbeef0 50%,#e0758c 50%)"></span><span class="skin-ad">Gül</span>
+    </div>
+    <div class="skin-card" data-skin="kar" onclick="setSkin('kar')" title="Kar (en açık)">
+      <span class="skin-prev" style="background:linear-gradient(135deg,#eef4f9 50%,#3b9ed4 50%)"></span><span class="skin-ad">Kar</span>
+    </div>
+    <div class="skin-card" data-skin="klasik" onclick="setSkin('klasik')" title="Klasik WhatsApp">
+      <span class="skin-prev" style="background:linear-gradient(135deg,#efeae2 50%,#00a884 50%)"></span><span class="skin-ad">Klasik</span>
+    </div>
   </div>
   <div class="set-item" onclick="ws.send(JSON.stringify({type:'markAllRead'}));document.getElementById('settingsMenu').classList.remove('show')">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/></svg>
@@ -1366,6 +1667,7 @@
   <div class="modal" style="width:440px;max-width:94vw">
     <h3>Gruba kişi etiketle</h3>
     <p style="color:var(--muted);font-size:13px;margin-bottom:14px">Ekip üyelerini seç. Etiketlenenler bu gruba bağlanır; gruba mesaj/bahsedilme gelince onların bahsedilmelerinde görünür. İşin bitince kendini çıkarabilirsin.</p>
+    <input type="text" id="assignSearch" class="um-input" placeholder="🔍 Kullanıcı ara…" autocomplete="off" oninput="renderAssignList()" style="width:100%;margin-bottom:12px">
     <div id="assignList" style="display:flex;flex-direction:column;gap:7px;max-height:340px;overflow-y:auto"></div>
     <div class="modal-btns" style="margin-top:16px">
       <button class="btn ghost" id="assignClose">Kapat</button>
@@ -1416,6 +1718,34 @@
   </div>
 </div>
 
+<!-- KULLANICI DÜZENLE: isim / giriş adı / şifre -->
+<div class="modal-bg" id="userEditModal">
+  <div class="modal" style="width:440px;max-width:94vw">
+    <h3>Kullanıcıyı Düzenle</h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Değiştirmek istediğin alanları doldur. <b>Şifreyi boş bırakırsan değişmez.</b></p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:12.5px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px">Görünen ad</label>
+        <input type="text" id="editUserName" class="um-input" placeholder="Örn: Burak Pekcan" style="width:100%">
+      </div>
+      <div>
+        <label style="font-size:12.5px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px">Giriş adı (kullanıcı adı)</label>
+        <input type="text" id="editUserLogin" class="um-input" placeholder="giriş için kullanılan ad" autocomplete="off" style="width:100%">
+        <div style="font-size:11.5px;color:var(--faint);margin-top:4px">⚠️ Giriş adını değiştirirsen kullanıcı yeni adıyla girmeli.</div>
+      </div>
+      <div>
+        <label style="font-size:12.5px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px">Yeni şifre</label>
+        <input type="text" id="editUserPass" class="um-input" placeholder="boş bırakırsan değişmez" autocomplete="new-password" style="width:100%">
+      </div>
+    </div>
+    <div id="editUserMsg" style="font-size:13px;min-height:16px;margin-top:10px"></div>
+    <div class="modal-btns" style="margin-top:14px">
+      <button class="btn ghost" onclick="document.getElementById('userEditModal').classList.remove('show')">Vazgeç</button>
+      <button class="btn primary" id="editUserSaveBtn" onclick="userDuzenleKaydet()">Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="confirmModal">
   <div class="modal">
     <h3 id="cfTitle">Onayla</h3>
@@ -1428,6 +1758,7 @@
 </div>
 
 <div id="toast"></div>
+<div id="takipKartlar"></div>
 
 <div class="modal-bg" id="forwardModal">
   <div class="modal" style="width:440px;max-width:94vw">
@@ -1447,7 +1778,7 @@
 </div>
 
 <div class="lightbox" id="lightbox">
-  <div class="lb-stage" id="lbStage"><img id="lightboxImg" src="" draggable="false"></div>
+  <div class="lb-stage" id="lbStage"><img id="lightboxImg" src="" draggable="false"><iframe id="lightboxPdf" src="" style="display:none;width:90vw;height:90vh;border:none;border-radius:8px;background:#fff"></iframe></div>
   <div class="lb-toolbar">
     <button id="lbZoomOut" title="Uzaklastir"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg></button>
     <button id="lbReset" title="Sifirla"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg></button>
@@ -1564,7 +1895,7 @@
 const avatarColors=['#6a4c93','#1982c4','#8ac926','#ff924c','#ff595e','#1d9e75','#c77dff','#0fa3b1'];
 function colorFor(n){let s=0;for(const c of n)s+=c.charCodeAt(0);return avatarColors[s%avatarColors.length];}
 function initials(n){const p=n.trim().split(/\s+/);return((p[0]?.[0]||'')+(p[1]?.[0]||'')).toUpperCase();}
-function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 // Toast bildirim (ekran altinda kisa mesaj)
 let toastTimer=null;
 function showToast(msg){
@@ -1573,6 +1904,46 @@ function showToast(msg){
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>t.classList.remove('show'),2200);
+}
+// TAKİP UYARI KARTI: sağ altta, yöneticiye. Tıklayınca o grup açılır.
+const _takipKartGosterilen=new Set(); // aynı grup için üst üste kart yığılmasın
+function takipKartiGoster(d){
+  const kaplar=document.getElementById('takipKartlar');
+  if(!kaplar) return;
+  // aynı grup için zaten kart varsa tekrar gösterme
+  if(_takipKartGosterilen.has(d.jid)) return;
+  _takipKartGosterilen.add(d.jid);
+  const kart=document.createElement('div');
+  kart.className='takip-kart';
+  const turIkon = d.tur==='kesim' ? '✂️' : '👀';
+  kart.innerHTML=
+    '<button class="tk-kapat" title="Kapat">✕</button>'+
+    '<div class="tk-ust"><span class="tk-ikon">'+turIkon+'</span><span class="tk-baslik">Takip uyarısı</span></div>'+
+    '<div class="tk-grup">'+esc(d.grupAd||'Grup')+'</div>'+
+    '<div class="tk-mesaj">'+esc(d.mesaj||'')+'</div>'+
+    '<div class="tk-alt">Gruba gitmek için tıkla →</div>';
+  // karta tıkla -> o grubu aç
+  kart.addEventListener('click',(e)=>{
+    if(e.target.classList.contains('tk-kapat')) return; // kapat butonu hariç
+    if(chats[d.jid]){
+      if(_mainTab!=='chats') switchMainTab('chats');
+      openChat(d.jid);
+    } else {
+      showToast('Grup bulunamadı: '+(d.grupAd||''));
+    }
+    kartKaldir();
+  });
+  // kapat butonu
+  kart.querySelector('.tk-kapat').addEventListener('click',(e)=>{ e.stopPropagation(); kartKaldir(); });
+  function kartKaldir(){
+    kart.style.animation='takipGir .25s reverse';
+    setTimeout(()=>{ kart.remove(); _takipKartGosterilen.delete(d.jid); }, 250);
+  }
+  kaplar.appendChild(kart);
+  // 30 sn sonra otomatik kaybol (yönetici görmediyse bile yığılmasın)
+  setTimeout(()=>{ if(kart.parentNode){ kartKaldir(); } }, 30000);
+  // hafif ses (varsa)
+  try{ playPing(); }catch(e){}
 }
 function groupSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>';}
 function docSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>';}
@@ -1597,7 +1968,12 @@ function applyTheme(t){
 }
 let theme=window.__theme||'light';
 applyTheme(theme);
-document.getElementById('themeToggle').onclick=()=>{theme=(theme==='dark')?'light':'dark';window.__theme=theme;applyTheme(theme);};
+// Ust kose karanlik/aydinlik dugmesi: hazir tema (skin) aktifse onu KLASIGE dondur
+// (yoksa skin kendi rengini dayatip dark/light dugmesi calismiyormus gibi gorunur).
+document.getElementById('themeToggle').onclick=()=>{
+  if(typeof skin!=='undefined' && skin!=='klasik') setSkin('klasik');
+  theme=(theme==='dark')?'light':'dark';window.__theme=theme;applyTheme(theme);
+};
 
 // ---- Ayarlar menusu ----
 const settingsMenu=document.getElementById('settingsMenu');
@@ -1614,6 +1990,7 @@ function toggleSound(){
   document.getElementById('soundToggle').classList.toggle('on', soundOn);
 }
 function toggleThemeFromMenu(){
+  if(typeof skin!=='undefined' && skin!=='klasik') setSkin('klasik');
   theme=(theme==='dark')?'light':'dark'; window.__theme=theme; applyTheme(theme);
 }
 // Renk temasi sec
@@ -1625,6 +2002,31 @@ function setAccent(a){
   document.querySelectorAll('.accent-dot').forEach(d=>d.classList.toggle('active', d.dataset.accent===a));
 }
 setAccent(accent);
+
+// ════════════════════════════════════════════════════════════════
+// HAZIR TEMALAR (skin): tek tikla komple gorunum degisir.
+// Secim oturum boyu (window) + tarayici hafizasi (varsa) hatirlanir.
+// 'klasik' = orijinal WhatsApp gorunumu (data-skin yok). Digerleri 7 tema.
+// ════════════════════════════════════════════════════════════════
+let skin = window.__skin || 'klasik';
+function setSkin(s){
+  skin = s; window.__skin = s;
+  if(s==='klasik'){
+    document.documentElement.removeAttribute('data-skin');
+  } else {
+    document.documentElement.setAttribute('data-skin', s);
+    // tema secilince eski accent/dark cakismasin diye onlari kaldir (tema kendi rengini getirir)
+    document.documentElement.removeAttribute('data-accent');
+    document.documentElement.removeAttribute('data-theme');
+  }
+  // secili kartı isaretle
+  document.querySelectorAll('.skin-card').forEach(c=>c.classList.toggle('active', c.dataset.skin===s));
+  // hafizaya yaz (tarayici izin veriyorsa — bazi ortamlarda kapali olabilir)
+  try{ localStorage.setItem('pekcan_skin', s); }catch(e){}
+}
+// acilista kayitli temayi geri yukle
+try{ const ks=localStorage.getItem('pekcan_skin'); if(ks) skin=ks; }catch(e){}
+setSkin(skin);
 function openSelfChat(){
   settingsMenu.classList.remove('show');
   if(!myJid){ alert('Kendi numaran henüz alınmadı, biraz bekle.'); return; }
@@ -1645,6 +2047,10 @@ window.addEventListener('mouseup',()=>{rdrag=false;resizer.classList.remove('dra
 
 let chats={};
 let activeJid=null, currentFilter='all', searchTerm='', connected=false, hasConnectedOnce=false;
+// Sonsuz scroll durumu (yukarı kaydırınca eski mesaj yükleme)
+let _eskiYukleniyor=false;     // şu an "daha eski getir" isteği gönderildi mi (çift istek olmasın)
+let _altaInBildirim=0, _altaInSonSayi=null; // alta in butonu yeni mesaj bildirimi
+let _eskiBitti={};             // jid -> true: bu sohbette daha eski mesaj kalmadı
 let _team=[]; // ekip uyeleri {username, displayName} — atama modalinda + openChat'te kullanilir
 let replyTarget=null;
 let editTarget=null;
@@ -1674,7 +2080,19 @@ function updateTitle(){
 }
 // ---- Ayarlar + kendi bilgilerim ----
 let myJid=null, myName='Ben';
-function updateMyName(){ const el=document.getElementById('settingsName'); if(el) el.textContent=myName; }
+// myName = HATTIN SAHİBİNİN WhatsApp adı (giriş yapan kullanıcı DEĞİL).
+// Ayarlar başlığında KULLANICI adı durur (applyUser yazar); hattın sahibini
+// "Bağlı" pill'inde gösteririz (bağlı cihaz = bu WhatsApp hesabı).
+function updateMyName(){ guncelleBagliPill(); }
+// "Bağlı" pill'ine hattın sahibinin adını ekle (örn: "Bağlı · Pekcan Baran")
+function guncelleBagliPill(){
+  const t=document.getElementById('connText');
+  if(!t) return;
+  // sadece bağlıyken ve gerçek bir isim varsa ekle
+  if(connected && myName && myName!=='Ben'){
+    t.textContent='Bağlı · '+myName;
+  }
+}
 
 let ws;
 function connect(){
@@ -1730,6 +2148,43 @@ function connect(){
       renderList();
       // acik sohbet varsa basligini tazele
       if(activeJid&&chats[activeJid]) updateConvHeader(chats[activeJid], activeJid);
+    }
+    else if(d.type==='searchMessagesResult'){
+      // MESAJ ARAMA sonucu. Güncel kelimeyle eşleşiyorsa uygula (eski sonuç bozmasın).
+      if((searchTerm||'').trim().toLocaleLowerCase('tr') !== (d.q||'').toLocaleLowerCase('tr')) return;
+      _mesajAramaSonuc={};
+      for(const s of (d.sohbetler||[])){
+        _mesajAramaSonuc[s.chatJid]={eslesme:s.eslesme};
+      }
+      _mesajAramaListesi = d.mesajlar||[];  // WhatsApp gibi "Mesajlar" başlığı altında listelenecek
+      renderList();
+    }
+    else if(d.type==='olderMessages'){
+      // SONSUZ SCROLL: daha eski mesajlar geldi -> sohbetin BAŞINA ekle, scroll'u koru.
+      _eskiYukleniyor=false;
+      const eskiYukNot=document.getElementById('eskiYukNot');
+      if(eskiYukNot) eskiYukNot.style.display='none';
+      if(d.bitti) _eskiBitti[d.jid]=true;   // bu sohbette daha eski yok
+      const c=chats[d.jid];
+      if(!c || !d.messages || !d.messages.length) return;
+      // mevcut id'leri al (tekrar ekleme)
+      const mevcut=new Set((c.messages||[]).map(x=>x.id));
+      const yeniler=d.messages.filter(x=>!mevcut.has(x.id));
+      if(!yeniler.length) return;
+      // sohbet açıksa: scroll pozisyonunu KORU (yoksa ekran zıplar)
+      const acikMi=(activeJid===d.jid);
+      const box=document.getElementById('messages');
+      const eskiYukseklik = acikMi ? box.scrollHeight : 0;
+      const eskiScroll = acikMi ? box.scrollTop : 0;
+      // başa ekle + sırala
+      c.messages=[...yeniler, ...(c.messages||[])].sort((a,b)=>(a.ts||0)-(b.ts||0));
+      if(acikMi){
+        renderMessages(c);
+        // yeni içerik üste eklendiği için, kullanıcının baktığı yer aşağı kaydı;
+        // farkı ekleyerek aynı mesajda kalmasını sağla (zıplama olmaz)
+        const yeniYukseklik=box.scrollHeight;
+        box.scrollTop = eskiScroll + (yeniYukseklik - eskiYukseklik);
+      }
     }
     else if(d.type==='message'){
       const wasArchived=archived.has(d.jid);
@@ -1842,21 +2297,57 @@ function connect(){
         }
       }
     }
-    else if(d.type==='opError'){ showToast(d.error||'İşlem başarısız'); }
+    else if(d.type==='opError'){
+      // Toplu silme sırasındaysak: hata olsa bile sıradakine geç (zincir takılmasın).
+      if(typeof _topluSilToplam!=='undefined' && _topluSilToplam>1 && (_topluSilSira.length || _topluSilJid)){
+        gonderSiradakiSil();
+      } else {
+        showToast(d.error||'İşlem başarısız');
+      }
+    }
     else if(d.type==='sendError'){
       // MESAJ GITMEDI: net uyari goster + yazilan metni geri koy (kaybolmasin).
       showToast('⚠️ '+(d.error||'Mesaj gönderilemedi!'));
       const inp=document.getElementById('msgInput');
       if(inp && d.text && !inp.value.trim()){ inp.value=d.text; autoGrow(inp); }
     }
-    else if(d.type==='opOk'){ showToast(d.message||'Tamamlandı'); }
+    else if(d.type==='opOk'){
+      // Toplu silme sırasındaysak: tek tek "silindi" toast'ı GÖSTERME (kalabalık olur),
+      // sadece sıradaki mesajı sil. İlerleme/bitiş toast'ını gonderSiradakiSil basar.
+      if(typeof _topluSilToplam!=='undefined' && _topluSilToplam>1 && (_topluSilSira.length || _topluSilJid)){
+        if(_topluSilSira.length){
+          const kalan=_topluSilToplam-_topluSilSira.length+1;
+          showToast('Siliniyor… ('+kalan+'/'+_topluSilToplam+')');
+        }
+        gonderSiradakiSil();
+      } else {
+        showToast(d.message||'Tamamlandı');
+      }
+    }
     else if(d.type==='typing'){ handleTyping(d); }
     else if(d.type==='openChat'){ setTimeout(()=>{ if(chats[d.jid]) openChat(d.jid); }, 250); }
     else if(d.type==='forwardResult'){
-      showToast(d.ok?('✓ '+d.count+' sohbete iletildi'):'İletilemedi');
       // İletilen sohbeti AC ki kullanici mesajin gittigini aninda gorsun.
       if(d.ok && d.acilacakJid && chats[d.acilacakJid]){
         setTimeout(()=>{ if(chats[d.acilacakJid]) openChat(d.acilacakJid); }, 300);
+      }
+      // SIRALI ILETME: bir mesaj bitti -> sıradakini gönder (PDF cakismasini onler).
+      // _fwdSiraToplam>1 ise coklu sira var demektir; her adim toast'i sira fonksiyonu basar.
+      if(typeof _fwdSira!=='undefined' && (_fwdSira.length || _fwdSiraToplam>1)){
+        _fwdSiraKalan=Math.max(0,_fwdSiraKalan-1);
+        // hala gonderilecek mesaj varsa ilerlemeyi goster + sonrakini gonder
+        if(_fwdSira.length){
+          const gonderilen=_fwdSiraToplam-_fwdSira.length+1;
+          showToast('İletiliyor… ('+gonderilen+'/'+_fwdSiraToplam+')');
+          gonderSiradakiForward();
+        } else {
+          // son mesaj da bitti
+          gonderSiradakiForward(); // bitis toast'ini basar
+          _fwdSiraToplam=0;
+        }
+      } else {
+        // TEK mesaj iletildi (eski davranis): tek toast
+        showToast(d.ok?('✓ '+d.count+' sohbete iletildi'):'İletilemedi');
       }
     }
     else if(d.type==='syncStatus'){ handleSyncStatus(d); }
@@ -1867,9 +2358,17 @@ function connect(){
       // degilse kontrol sekmesinde rozet goster (yeni satis var)
       else { const b=document.getElementById('kontrolBadge'); if(b){ b.style.display=''; b.textContent=(parseInt(b.textContent||'0',10)+1); } }
     }
+    else if(d.type==='yeniPolice'){
+      // yeni poliçe yüklendi: performans sekmesi açıksa canlı yenile
+      if(_mainTab==='kontrol' && _kontrolAltSekme==='performans') performansYukle();
+    }
     else if(d.type==='satisBildirim'){
       // yoneticiye: yeni satis geldi (hafif bildirim)
       if(_mainTab!=='kontrol'){ const b=document.getElementById('kontrolBadge'); if(b){ b.style.display=''; b.textContent=(parseInt(b.textContent||'0',10)+1); } }
+    }
+    else if(d.type==='takipUyari'){
+      // YÖNETİCİYE: bir grupta ilgilenildi/kesim dendi ama 4dk işlem yok -> takip kartı göster
+      takipKartiGoster(d);
     }
     else if(d.type==='satisDuzenlemeBildirim'){
       // yoneticiye: bir pazarlamaci satis duzenledi — dikkat cek
@@ -1889,9 +2388,22 @@ function connect(){
     // HAT KIMLIGI: bu panel hangi hatta (ofis/pazarlama) bagli — sunucu buna gore
     // SADECE bu hattin sohbetlerini/mesajlarini gonderir (izolasyon).
     if(authToken) ws.send(JSON.stringify({type:'merhaba', token:authToken}));
+    // ── HEARTBEAT (ping): her 25sn'de bir kucuk sinyal gonder ki Nginx/internet
+    //    altyapisi "bu baglanti olu" deyip KESMESIN. "Gelgitli baglanti"nin ana sebebi buydu. ──
+    if(_pingTimer) clearInterval(_pingTimer);
+    _pingTimer=setInterval(()=>{
+      if(ws && ws.readyState===WebSocket.OPEN){
+        try{ ws.send(JSON.stringify({type:'ping'})); }catch(e){}
+      }
+    }, 25000);
   };
-  ws.onclose=()=>{ setConnected(false); setTimeout(connect,2000); };
+  ws.onclose=()=>{
+    setConnected(false);
+    if(_pingTimer){ clearInterval(_pingTimer); _pingTimer=null; }
+    setTimeout(connect,2000);
+  };
 }
+let _pingTimer=null;
 // Senkron durumu: gruplar/sohbetler cekilince gosterge guncellenir
 function handleSyncStatus(d){
   const p=document.getElementById('connPill');
@@ -1900,8 +2412,8 @@ function handleSyncStatus(d){
   if(d.done){
     p.className='conn-pill online';
     t.textContent='Senkron tamam ✓'+(d.chatCount?' ('+d.chatCount+')':'');
-    // 3 sn sonra normal "Bagli"ya don
-    setTimeout(()=>{ if(connected){ t.textContent='Bağlı'; } }, 3000);
+    // 3 sn sonra normal "Bagli"ya don (hattın sahibi adıyla)
+    setTimeout(()=>{ if(connected){ guncelleBagliPill(); if(document.getElementById('connText').textContent.indexOf('·')<0) document.getElementById('connText').textContent='Bağlı'; } }, 3000);
   }
 }
 
@@ -1982,6 +2494,14 @@ function switchMainTab(tab){
     else { document.getElementById('emptyState').style.display='grid'; }
   } else if(kontrolGorunur){
     if(kc) kc.style.display='flex';
+    // alt sekmeyi her zaman Satışlar'dan başlat (performansta kalıp şaşırmasın)
+    _kontrolAltSekme='satislar';
+    document.querySelectorAll('.kas-btn').forEach(b=>b.classList.toggle('active', b.dataset.kas==='satislar'));
+    document.getElementById('performansAlan').style.display='none';
+    document.getElementById('kontrolListe').style.display='';
+    document.getElementById('kontrolDash').style.display='';
+    document.getElementById('kontrolFiltre').style.display='';
+    const kb=document.getElementById('kontrolBaslik'); if(kb) kb.textContent='Satış Kontrol';
     kontrolYukle(); // satislari cek + dashboard ciz
   } else {
     // ic mesaj
@@ -1997,6 +2517,194 @@ function switchMainTab(tab){
 let _kontrolKapsam='bugun';
 let _kontrolVeri=[];      // o an gösterilen satışlar
 let _kontrolAdmin=false;  // bu kullanıcı yönetici mi (server söyler)
+
+// ═══════════════════════════════════════════════════════════
+// KONTROL ALT SEKMELERİ: Satışlar / Performans
+// ═══════════════════════════════════════════════════════════
+let _kontrolAltSekme='satislar';
+function kontrolAltGec(sekme){
+  _kontrolAltSekme=sekme;
+  document.querySelectorAll('.kas-btn').forEach(b=>b.classList.toggle('active', b.dataset.kas===sekme));
+  const satisGorunur=(sekme==='satislar');
+  // Satışlar görünümü öğeleri
+  document.getElementById('kontrolListe').style.display = satisGorunur?'':'none';
+  document.getElementById('kontrolDash').style.display = satisGorunur?'':'none';
+  document.getElementById('kontrolYonetici').style.display = (satisGorunur&&_kontrolAdmin)?'flex':'none';
+  document.getElementById('kontrolFiltre').style.display = satisGorunur?'':'none';
+  // Performans alanı
+  document.getElementById('performansAlan').style.display = satisGorunur?'none':'block';
+  // başlık
+  const baslik=document.getElementById('kontrolBaslik');
+  if(baslik) baslik.textContent = satisGorunur?'Satış Kontrol':'Performans Raporu';
+  if(sekme==='performans') performansYukle();
+  else kontrolYukle();
+}
+
+// Performans raporunu sunucudan çek + çiz
+async function performansYukle(){
+  if(!authToken) return;
+  const alan=document.getElementById('performansAlan');
+  if(alan) alan.innerHTML='<div class="perf-bos">Yükleniyor…</div>';
+  // kapsamı satışlarla aynı kullan (bugün/hafta/tüm/özel)
+  let kapsam=_kontrolKapsam;
+  if(kapsam==='tum') kapsam='tum';
+  const govde={token:authToken, kapsam:(kapsam==='hafta'?'hafta':(kapsam==='tum'?'tum':(kapsam==='ozel'?'ozel':'bugun')))};
+  if(kapsam==='ay') govde.kapsam='ay';
+  if(govde.kapsam==='ozel'){
+    govde.bas=document.getElementById('tarihBas')?.value||'';
+    govde.bit=document.getElementById('tarihBit')?.value||'';
+    if(!govde.bas||!govde.bit){ if(alan) alan.innerHTML='<div class="perf-bos">Tarih aralığı seçin.</div>'; return; }
+  }
+  try{
+    const r=await fetch('/api/performans',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(govde)});
+    const d=await r.json();
+    if(!d.ok){ if(alan) alan.innerHTML='<div class="perf-bos">'+(d.error||'Rapor alınamadı')+'</div>'; return; }
+    performansCiz(d);
+  }catch(e){ if(alan) alan.innerHTML='<div class="perf-bos">Bağlantı hatası: '+esc(e.message)+'</div>'; }
+}
+
+// Branş adını güzel göster
+function bransGoster(b){
+  const m={trafik:'Trafik',kasko:'Kasko',dask:'DASK',tss:'TSS','yeşilkart':'Yeşil Kart',konut:'Konut','işyeri':'İşyeri','öss':'ÖSS',imm:'İMM','ferdi kaza':'Ferdi Kaza','sağlık':'Sağlık',nakliyat:'Nakliyat',seyahat:'Seyahat','diğer':'Diğer'};
+  return m[b]||b;
+}
+
+function performansCiz(d){
+  const alan=document.getElementById('performansAlan');
+  if(!alan) return;
+  const t=d.toplam||{};
+  const liste=d.liste||[];
+  _perfListe=liste; // detay açmak için sakla
+  const kapsamAd = ({bugun:'Bugün',hafta:'Bu hafta',ay:'Bu ay',tum:'Tüm zamanlar',ozel:'Seçili aralık'})[d.kapsam]||'';
+  let html='';
+
+  // ── ÜST ÖZET KARTLARI (ikonlu, modern) ──
+  html+='<div class="perf-ozet">';
+  html+='<div class="perf-ozet-kart ana"><div class="poz-ikon">📄</div><div class="poz-buyuk">'+(t.police||0)+'</div><div class="poz-etiket">Toplam Poliçe</div></div>';
+  html+='<div class="perf-ozet-kart"><div class="poz-ikon">👥</div><div class="poz-buyuk">'+(t.kisi||0)+'</div><div class="poz-etiket">Çalışan Kişi</div></div>';
+  html+='<div class="perf-ozet-kart"><div class="poz-ikon">⏱️</div><div class="poz-buyuk">'+(t.ikiAylik||0)+'</div><div class="poz-etiket">2 Aylık</div></div>';
+  html+='<div class="perf-ozet-kart"><div class="poz-ikon">✂️</div><div class="poz-buyuk">'+(t.kesim||0)+'</div><div class="poz-etiket">Kesim Mesajı</div></div>';
+  html+='</div>';
+
+  if(!liste.length){
+    html+='<div class="perf-bos">📭<br>Bu dönemde poliçe yüklemesi yok.<br><span style="font-size:12.5px;opacity:.8">Birisi gruba PDF sürükleyince burada görünecek.</span></div>';
+    html+='<div class="perf-aciklama">📄 <b>Poliçe</b> = panelden sürüklenip gruba yüklenen PDF\'ler. İletilenler ve "POS" içerenler sayılmaz. <b>Kesim mesajı</b> = gruplara yazılan "kesiyorum/ilgileniyorum" gibi mesajlar.</div>';
+    alan.innerHTML=html; return;
+  }
+
+  // en yüksek poliçe sayısı (barları oranlamak için)
+  const enYuksek = Math.max(...liste.map(k=>k.police), 1);
+  const birinci = liste[0];
+
+  // ── PANO BAŞLIĞI: lider vurgusu ──
+  if(birinci && birinci.police>0){
+    const ikinci = liste[1];
+    let fark='';
+    if(ikinci && ikinci.police>0){
+      const f=birinci.police-ikinci.police;
+      fark = f>0 ? ('<span class="lider-fark">2.\'den '+f+' poliçe önde</span>') : '<span class="lider-fark">başa baş yarış 🔥</span>';
+    }
+    html+='<div class="perf-lider">'+
+      '<div class="lider-kupa">🏆</div>'+
+      '<div class="lider-bilgi"><div class="lider-etiket">Dönemin lideri · '+esc(kapsamAd)+'</div>'+
+      '<div class="lider-ad">'+esc(birinci.ad)+'</div>'+fark+'</div>'+
+      '<div class="lider-sayi">'+birinci.police+'<small>poliçe</small></div>'+
+    '</div>';
+  }
+
+  // ── KİŞİ SIRALAMASI (görsel barlı, tıklanınca detay) ──
+  html+='<div class="perf-baslik">Sıralama <span style="font-weight:500;text-transform:none;letter-spacing:0;opacity:.7">· kişiye tıkla, detayını gör</span></div>';
+  html+='<div class="perf-liste">';
+  liste.forEach((k,i)=>{
+    const sira=i+1;
+    const siraCls = sira===1?'birinci':(sira===2?'ikinci':(sira===3?'ucuncu':''));
+    const madalya = sira===1?'🥇':(sira===2?'🥈':(sira===3?'🥉':sira));
+    const oran = Math.round((k.police/enYuksek)*100);
+    // mini rozetler (branş özeti, 2 aylık, kesim)
+    const branslar=Object.entries(k.branslar||{}).sort((a,b)=>b[1]-a[1]);
+    let miniRozet='';
+    branslar.slice(0,3).forEach(([b,n])=>{ miniRozet+='<span class="perf-rozet brans">'+bransGoster(b)+' '+n+'</span>'; });
+    if(branslar.length>3) miniRozet+='<span class="perf-rozet">+'+(branslar.length-3)+'</span>';
+    if(k.ikiAylik>0) miniRozet+='<span class="perf-rozet iki-aylik">⏱️ '+k.ikiAylik+'</span>';
+    if(k.kesim>0) miniRozet+='<span class="perf-rozet">✂️ '+k.kesim+'</span>';
+
+    html+='<div class="perf-kisi '+siraCls+'" onclick="perfDetayAc('+i+')" id="perfKisi'+i+'">'+
+      '<div class="perf-sira">'+madalya+'</div>'+
+      '<div class="perf-kisi-orta">'+
+        '<div class="perf-kisi-ust"><span class="perf-kisi-ad">'+esc(k.ad)+'</span><span class="perf-kisi-grup">'+k.grupSayisi+' grup</span></div>'+
+        '<div class="perf-bar-dis"><div class="perf-bar-ic" style="width:'+oran+'%"></div></div>'+
+        '<div class="perf-kisi-detay">'+miniRozet+'</div>'+
+      '</div>'+
+      '<div class="perf-kisi-sayi"><div class="pks-buyuk">'+k.police+'</div><div class="pks-etiket">poliçe</div><div class="pks-ok">▾</div></div>'+
+    '</div>'+
+    // DETAY (gizli, tıklayınca açılır)
+    '<div class="perf-detay" id="perfDetay'+i+'"></div>';
+  });
+  html+='</div>';
+
+  // açıklama en altta, sade
+  html+='<div class="perf-aciklama">📄 <b>Poliçe</b> = panelden sürüklenip yüklenen PDF\'ler (iletilenler ve "POS" hariç). Branş dosya adından okunur. <b>Kesim/ilgilenme</b> = gruplara yazılan mesajlar (yan bilgi).</div>';
+
+  alan.innerHTML=html;
+}
+
+// Kişi detayını aç/kapat (akordeon)
+let _perfListe=[], _perfAcik=null;
+function perfDetayAc(i){
+  const det=document.getElementById('perfDetay'+i);
+  const kart=document.getElementById('perfKisi'+i);
+  if(!det||!_perfListe[i]) return;
+  // açıksa kapat
+  if(_perfAcik===i){
+    det.classList.remove('acik'); det.innerHTML='';
+    if(kart) kart.classList.remove('secili');
+    _perfAcik=null; return;
+  }
+  // başka açık varsa kapat
+  if(_perfAcik!==null){
+    const eski=document.getElementById('perfDetay'+_perfAcik);
+    const eskiKart=document.getElementById('perfKisi'+_perfAcik);
+    if(eski){ eski.classList.remove('acik'); eski.innerHTML=''; }
+    if(eskiKart) eskiKart.classList.remove('secili');
+  }
+  const k=_perfListe[i];
+  let h='<div class="pd-ic">';
+  // özet satırı
+  h+='<div class="pd-ozet">'+
+    '<div class="pd-oz"><b>'+k.police+'</b><span>poliçe</span></div>'+
+    '<div class="pd-oz"><b>'+(k.grupSayisi||0)+'</b><span>grup</span></div>'+
+    '<div class="pd-oz"><b>'+(k.ikiAylik||0)+'</b><span>2 aylık</span></div>'+
+    '<div class="pd-oz"><b>'+(k.kesim||0)+'</b><span>kesim</span></div>'+
+    '<div class="pd-oz"><b>'+(k.ilgilenme||0)+'</b><span>ilgilenme</span></div>'+
+  '</div>';
+  // branş dağılımı (görsel mini barlar)
+  const branslar=Object.entries(k.branslar||{}).sort((a,b)=>b[1]-a[1]);
+  if(branslar.length){
+    const enB=Math.max(...branslar.map(x=>x[1]),1);
+    h+='<div class="pd-baslik">Branş dağılımı</div><div class="pd-brans-liste">';
+    branslar.forEach(([b,n])=>{
+      h+='<div class="pd-brans"><span class="pd-brans-ad">'+bransGoster(b)+'</span><div class="pd-brans-bar"><div class="pd-brans-dolu" style="width:'+Math.round(n/enB*100)+'%"></div></div><span class="pd-brans-sayi">'+n+'</span></div>';
+    });
+    h+='</div>';
+  }
+  // grup bazında döküm
+  if(k.gruplar && k.gruplar.length){
+    h+='<div class="pd-baslik">Hangi grupta ne yaptı</div><div class="pd-grup-liste">';
+    k.gruplar.forEach(g=>{
+      let detaylar=[];
+      if(g.police>0) detaylar.push('<span class="pd-grup-rozet ana">'+g.police+' poliçe</span>');
+      if(g.kesim>0) detaylar.push('<span class="pd-grup-rozet">✂️ '+g.kesim+'</span>');
+      if(g.ilgilenme>0) detaylar.push('<span class="pd-grup-rozet">👀 '+g.ilgilenme+'</span>');
+      h+='<div class="pd-grup"><span class="pd-grup-ad">'+esc(g.ad)+'</span><span class="pd-grup-sag">'+detaylar.join('')+'</span></div>';
+    });
+    h+='</div>';
+  }
+  h+='</div>';
+  det.innerHTML=h;
+  det.classList.add('acik');
+  if(kart) kart.classList.add('secili');
+  _perfAcik=i;
+}
 
 function kontrolKapsam(k){
   _kontrolKapsam=k;
@@ -2019,7 +2727,9 @@ function kontrolKapsam(k){
     const b=document.getElementById('tarihBas')?.value, s=document.getElementById('tarihBit')?.value;
     if(!b||!s) return;
   }
-  kontrolYukle();
+  // hangi alt sekme açıksa onu yenile
+  if(_kontrolAltSekme==='performans') performansYukle();
+  else kontrolYukle();
 }
 
 async function kontrolYukle(){
@@ -2260,24 +2970,26 @@ async function satisOnayla(id, onayli){
     if(d.ok){ kontrolYukle(); } else showToast('⚠️ '+(d.error||'İşlem başarısız'));
   }catch(e){ showToast('⚠️ Bağlantı hatası'); }
 }
-async function satisSil(id){
-  if(!confirm('Bu satış kaydını silmek istediğine emin misin?')) return;
-  try{
-    const r=await fetch('/api/satislar/sil',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, id})});
-    const d=await r.json();
-    if(d.ok){ showToast('Satış silindi'); kontrolYukle(); } else showToast('⚠️ '+(d.error||'Silinemedi'));
-  }catch(e){ showToast('⚠️ Bağlantı hatası'); }
+function satisSil(id){
+  askConfirm('Satışı sil', 'Bu satış kaydını silmek istediğine emin misin?', 'Sil', async ()=>{
+    try{
+      const r=await fetch('/api/satislar/sil',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, id})});
+      const d=await r.json();
+      if(d.ok){ showToast('Satış silindi'); kontrolYukle(); } else showToast('⚠️ '+(d.error||'Silinemedi'));
+    }catch(e){ showToast('⚠️ Bağlantı hatası'); }
+  });
 }
-async function gunuKapat(){
+function gunuKapat(){
   const bugun=new Date().toLocaleDateString('tr-TR');
-  if(!confirm('Bugünün ('+bugun+') tüm satışları kilitlenecek ve onaylanmış sayılacak. Kapatılan gün düzenlenemez. Devam edilsin mi?')) return;
-  try{
-    const tarih=new Date().toISOString().slice(0,10);
-    const r=await fetch('/api/satislar/gunu-kapat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, tarih})});
-    const d=await r.json();
-    if(d.ok){ showToast('🔒 Gün kapatıldı · toplam '+d.toplam+' adet'); kontrolYukle(); }
-    else showToast('⚠️ '+(d.error||'Kapatılamadı'));
-  }catch(e){ showToast('⚠️ Bağlantı hatası'); }
+  askConfirm('Günü kapat', 'Bugünün ('+bugun+') tüm satışları kilitlenecek ve onaylanmış sayılacak. Kapatılan gün düzenlenemez. Devam edilsin mi?', 'Günü Kapat', async ()=>{
+    try{
+      const tarih=new Date().toISOString().slice(0,10);
+      const r=await fetch('/api/satislar/gunu-kapat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, tarih})});
+      const d=await r.json();
+      if(d.ok){ showToast('🔒 Gün kapatıldı · toplam '+d.toplam+' adet'); kontrolYukle(); }
+      else showToast('⚠️ '+(d.error||'Kapatılamadı'));
+    }catch(e){ showToast('⚠️ Bağlantı hatası'); }
+  });
 }
 
 // Görünen satışları CSV (Excel'de açılır) olarak indir
@@ -2352,9 +3064,25 @@ function satistanGrubaGit(ev, jid, ad){
 // Grup adını panoya kopyala (telefondan grubu aratmak için)
 function grupAdiKopyala(ev, ad){
   ev.stopPropagation();
+  // EMOJI TEMIZLE: grup adinda emoji varsa kopyalamadan once cikar (kullanici istegi).
+  // Emoji aralikları + varyasyon seçici + ZWJ + bayraklar temizlenir; harf/rakam/Türkçe kalir.
+  const temiz=emojiTemizle(ad);
   try{
-    navigator.clipboard.writeText(ad).then(()=>showToast('📋 Grup adı kopyalandı'),()=>fallbackKopya(ad));
-  }catch(e){ fallbackKopya(ad); }
+    navigator.clipboard.writeText(temiz).then(()=>showToast('📋 Grup adı kopyalandı'),()=>fallbackKopya(temiz));
+  }catch(e){ fallbackKopya(temiz); }
+}
+// Bir metinden emoji/simge karakterlerini cikarip duz metin dondurur.
+function emojiTemizle(metin){
+  if(!metin) return '';
+  let s=String(metin);
+  try{
+    s=s.replace(/[\u{1F000}-\u{1FAFF}\u{1F300}-\u{1F5FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{2190}-\u{21FF}\u{2300}-\u{23FF}]/gu,'');
+  }catch(e){
+    // cok eski tarayici (unicode regex desteklemiyorsa): sadece bilinen aralik
+    s=s.replace(/[\u2600-\u27BF\uFE00-\uFE0F\u200D]/g,'');
+  }
+  // arta kalan cift bosluklari/bas-son bosluklari toparla
+  return s.replace(/\s+/g,' ').trim();
 }
 function fallbackKopya(metin){
   const ta=document.createElement('textarea'); ta.value=metin; ta.style.position='fixed'; ta.style.opacity='0';
@@ -2413,7 +3141,7 @@ function renderInternalList(d){
     return '<div class="chat'+aktif+'" onclick="openInternalChat(\''+esc(it.other_user)+'\')">'
       + '<div class="avatar" style="background:linear-gradient(140deg,#6366f1,#4f46e5)">'+esc(initials(ad))+'</div>'
       + '<div class="chat-main"><div class="chat-top"><span class="chat-name">'+esc(ad)+'</span></div>'
-      + '<div class="chat-bottom"><span class="chat-last">'+esc(sonKim)+esc((it.last_text||'').slice(0,40))+'</span>'+rozet+'</div></div>'
+      + '<div class="chat-bottom"><span class="chat-last">'+esc(sonKim)+esc(((it.last_text||'').trim()||'📎 Dosya').slice(0,40))+'</span>'+rozet+'</div></div>'
       + '</div>';
   }).join('');
 }
@@ -2449,7 +3177,27 @@ function drawInternalMessages(){
     const gun = ts?new Date(ts).toLocaleDateString('tr-TR'):'';
     if(gun && gun!==sonGun){ html+='<div class="im-day">'+esc(gun)+'</div>'; sonGun=gun; }
     const saat = ts?new Date(ts).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'';
-    html+='<div class="im-msg '+(ben?'out':'in')+'">'+esc(m.text)+'<div class="im-time">'+esc(saat)+'</div></div>';
+    // dosya var mı? (mediaUrl/media_url)
+    const medya = m.mediaUrl || m.media_url || '';
+    const kind = m.kind || 'text';
+    const dosyaAd = m.fileName || m.file_name || 'belge';
+    let icerik='';
+    if(medya){
+      if(kind==='image'){
+        icerik='<a href="'+esc(medya)+'" target="_blank"><img src="'+esc(medya)+'" class="im-img" alt="görsel"></a>';
+        if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
+      } else if(kind==='video'){
+        icerik='<video src="'+esc(medya)+'" controls class="im-img"></video>';
+        if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
+      } else {
+        // belge / ses / diğer -> indirilebilir dosya kartı
+        icerik='<a href="'+esc(medya)+'" target="_blank" download class="im-dosya"><span class="im-dosya-ik">📄</span><span class="im-dosya-ad">'+esc(dosyaAd)+'</span><span class="im-dosya-in">⬇ indir</span></a>';
+        if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
+      }
+    } else {
+      icerik=esc(m.text);
+    }
+    html+='<div class="im-msg '+(ben?'out':'in')+'">'+icerik+'<div class="im-time">'+esc(saat)+'</div></div>';
   }
   box.innerHTML=html;
   box.scrollTop=box.scrollHeight;
@@ -2482,6 +3230,27 @@ function sendInternal(){
   inp.value=''; inp.style.height='auto';
 }
 
+// İÇ MESAJ DOSYA GÖNDER (ekip arkadaşına) — /internal-upload'a gider, WhatsApp'a DOKUNMAZ.
+async function internalDosyaGonder(files){
+  if(!_internalOther){ showToast('Önce bir ekip arkadaşı seç.'); return; }
+  if(!files || !files.length) return;
+  // alıcıyı en başta sabitle (yükleme sırasında değişmesin)
+  const hedef=_internalOther;
+  for(const file of files){
+    const q=new URLSearchParams({to:hedef, name:file.name, mime:file.type||'application/octet-stream'});
+    if(authToken) q.set('token', authToken);
+    const boyutMB=(file.size/1048576).toFixed(1);
+    showToast('📎 '+file.name+' gönderiliyor… ('+boyutMB+' MB)');
+    try{
+      const r=await fetch('/internal-upload?'+q.toString(), {method:'POST', headers:{'Content-Type':'application/octet-stream'}, body:file});
+      let j;
+      try{ j=await r.json(); }catch(e){ j={ok:false, error:'sunucu yanıtı okunamadı'}; }
+      if(!r.ok || !j.ok){ showToast('⚠️ '+file.name+' gönderilemedi: '+(j.error||('hata '+r.status))); }
+      else { showToast('✓ '+file.name+' gönderildi'); }
+    }catch(err){ showToast('⚠️ Yükleme hatası: '+err.message); }
+  }
+}
+
 // Sekme rozeti (okunmamis ic mesaj sayisi)
 function setInternalBadge(n){
   const b=document.getElementById('internalBadge');
@@ -2496,15 +3265,26 @@ function openInternalNew(){
   // kendim haric ekip uyeleri
   const digerleri=_internalUsers.filter(u=>u.username!==_internalMe);
   if(!digerleri.length){ showToast('Mesajlaşacak başka kullanıcı yok.'); return; }
-  // basit secim modali (mevcut askConfirm tarzi yerine kucuk liste)
+  const as=document.getElementById('internalUserSearch'); if(as) as.value=''; // arama sıfırla
+  _internalPickerListe=digerleri; // filtre için sakla
+  cizInternalPicker(digerleri);
+  document.getElementById('internalNewModal').classList.add('show');
+}
+let _internalPickerListe=[];
+function cizInternalPicker(liste){
   const sec=document.getElementById('internalUserPicker');
-  sec.innerHTML=digerleri.map(u=>(
+  if(!liste.length){ sec.innerHTML='<div style="color:var(--faint);font-size:13px;padding:14px;text-align:center">Eşleşen kullanıcı yok</div>'; return; }
+  sec.innerHTML=liste.map(u=>(
     '<div class="iup-item" onclick="pickInternalUser(\''+esc(u.username)+'\')">'
     + '<div class="avatar" style="background:linear-gradient(140deg,#6366f1,#4f46e5);width:38px;height:38px">'+esc(initials(u.displayName||u.username))+'</div>'
     + '<div><div style="font-weight:600;font-size:14px">'+esc(u.displayName||u.username)+'</div><div style="font-size:12px;color:var(--muted)">@'+esc(u.username)+'</div></div>'
     + '</div>'
   )).join('');
-  document.getElementById('internalNewModal').classList.add('show');
+}
+function filterInternalPicker(){
+  const q=(document.getElementById('internalUserSearch')?.value||'').toLocaleLowerCase('tr').trim();
+  const liste=q ? _internalPickerListe.filter(u=>(u.displayName||'').toLocaleLowerCase('tr').includes(q)||(u.username||'').toLocaleLowerCase('tr').includes(q)) : _internalPickerListe;
+  cizInternalPicker(liste);
 }
 function pickInternalUser(username){
   document.getElementById('internalNewModal').classList.remove('show');
@@ -2567,13 +3347,30 @@ function applyUser(){
   // "Izinli IP'ler" menusu sadece yoneticide gorunur
   const ipm=document.getElementById('ipMgmtItem');
   if(ipm) ipm.style.display = currentUser.role==='admin' ? 'flex' : 'none';
-  // "WhatsApp cikis / Numara degistir" SADECE yoneticide gorunur.
-  // (Normal kullanici WhatsApp baglantisini kesemez/numara degistiremez — ofis ortak hatti korunur.)
+  // "WhatsApp cikis / Numara degistir":
+  //  - YÖNETİCİ: görür (ofis ortak hattını yönetir).
+  //  - PAZARLAMACI: görür (KENDİ hattını kullanır, kendi WhatsApp'ından çıkabilmeli).
+  //  - Ofis TEMSİLCİSİ: GÖRMEZ (ortak hattı kesemez, korunur).
   const wac=document.getElementById('waCikisItem');
-  if(wac) wac.style.display = currentUser.role==='admin' ? 'flex' : 'none';
+  if(wac){
+    const waCikabilir = (currentUser.role==='admin') || (currentUser.lineTip==='pazarlama');
+    wac.style.display = waCikabilir ? 'flex' : 'none';
+  }
   // "Tehlikeli islemler" (grup sifirlama) SADECE yoneticide gorunur.
   const tb=document.getElementById('tehlikeliBolge');
   if(tb) tb.style.display = currentUser.role==='admin' ? 'block' : 'none';
+  // KONTROL sekmesi: ofis temsilcileri (normal agent) GÖRMESİN.
+  // Sadece YÖNETİCİ (admin) veya PAZARLAMACI (lineTip='pazarlama') görür.
+  const kt=document.getElementById('kontrolTab');
+  if(kt){
+    const kontrolGorebilir = (currentUser.role==='admin') || (currentUser.lineTip==='pazarlama');
+    kt.style.display = kontrolGorebilir ? '' : 'none';
+    // ofis temsilcisi kontrol sekmesindeyken yetkisi kalkarsa sohbetlere dön
+    if(!kontrolGorebilir && _mainTab==='kontrol') switchMainTab('chats');
+  }
+  // PERFORMANS alt sekmesi: SADECE yönetici (admin) görür.
+  const kp=document.getElementById('kasPerformans');
+  if(kp) kp.style.display = currentUser.role==='admin' ? '' : 'none';
 }
 
 // TEHLIKELI BOLGE: ic ice ac/kapa (yanlislikla basilmasin diye gizli durur)
@@ -2694,12 +3491,15 @@ async function loadUserList(){
       else rozet='<span class="um-badge agent">Temsilci</span>';
       let actions='';
       if(!benim){
+        // DÜZENLE (isim/şifre/giriş adı)
+        actions+='<button class="um-btn" onclick="userDuzenleAc('+u.id+',\''+esc(u.username).replace(/'/g,"\\'")+'\',\''+esc(u.display_name||'').replace(/'/g,"\\'")+'\')">Düzenle</button>';
         // yonetici yap / geri al
         if(u.role==='admin') actions+='<button class="um-btn" onclick="setRole('+u.id+',\'agent\')">Yöneticiliği al</button>';
         else actions+='<button class="um-btn" onclick="setRole('+u.id+',\'admin\')">Yönetici yap</button>';
         actions+='<button class="um-btn danger" onclick="delUser('+u.id+',\''+esc(u.username)+'\')">Sil</button>';
       } else {
-        actions='<span style="font-size:11px;color:var(--faint)">sen</span>';
+        // KENDİNİ de düzenleyebilsin (isim/şifre değiştir)
+        actions='<button class="um-btn" onclick="userDuzenleAc('+u.id+',\''+esc(u.username).replace(/'/g,"\\'")+'\',\''+esc(u.display_name||'').replace(/'/g,"\\'")+'\')">Düzenle</button><span style="font-size:11px;color:var(--faint);margin-left:6px">sen</span>';
       }
       return '<div class="um-row"><div class="um-info"><span class="um-name">'+esc(u.display_name||u.username)+' '+rozet+'</span><span class="um-meta">@'+esc(u.username)+'</span></div><div class="um-actions">'+actions+'</div></div>';
     }).join('');
@@ -2741,6 +3541,41 @@ function delUser(id,uname){
       .then(r=>r.json()).then(d=>{ if(d.ok){ showToast('Kullanıcı silindi'); loadUserList(); } else showToast(d.error||'Silinemedi'); });
   });
 }
+
+// ─── KULLANICI DÜZENLE (isim / giriş adı / şifre) ───
+let _editUserId=null;
+function userDuzenleAc(id, username, displayName){
+  _editUserId=id;
+  document.getElementById('editUserName').value=displayName||'';
+  document.getElementById('editUserLogin').value=username||'';
+  document.getElementById('editUserPass').value='';
+  document.getElementById('editUserMsg').textContent='';
+  document.getElementById('userEditModal').classList.add('show');
+  setTimeout(()=>document.getElementById('editUserName').focus(),100);
+}
+async function userDuzenleKaydet(){
+  if(!_editUserId) return;
+  const displayName=document.getElementById('editUserName').value.trim();
+  const username=document.getElementById('editUserLogin').value.trim();
+  const password=document.getElementById('editUserPass').value;
+  const msg=document.getElementById('editUserMsg');
+  const btn=document.getElementById('editUserSaveBtn');
+  msg.style.color='#dc2626';
+  if(!username){ msg.textContent='Giriş adı boş olamaz'; return; }
+  btn.disabled=true; btn.textContent='Kaydediliyor…';
+  try{
+    const r=await fetch('/api/users/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, id:_editUserId, displayName, username, password})});
+    const d=await r.json();
+    if(d.ok){
+      showToast('✓ Kullanıcı güncellendi');
+      document.getElementById('userEditModal').classList.remove('show');
+      loadUserList();
+    } else { msg.textContent=d.error||'Güncellenemedi'; }
+  }catch(e){ msg.textContent='Sunucu hatası'; }
+  btn.disabled=false; btn.textContent='Kaydet';
+}
+// modal dışına tıkla = kapat
+document.getElementById('userEditModal').addEventListener('click',e=>{ if(e.target.id==='userEditModal') document.getElementById('userEditModal').classList.remove('show'); });
 document.getElementById('userMgmtClose').onclick=()=>document.getElementById('userMgmtModal').classList.remove('show');
 
 // ---- IZINLI IP YONETIMI (iki liste: ofis / disari) ----
@@ -2820,9 +3655,10 @@ async function ipEkle(ip, aciklama, kapsam){
   }catch(e){ msg.style.color='#ef4444'; msg.textContent='Sunucu hatası'; }
 }
 function ipCikar(ip){
-  if(!confirm('"'+ip+'" adresini izinli listeden çıkar?\n\nBu IP\'den giren normal kullanıcılar artık giremez.')) return;
-  fetch('/api/ips/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, ip})})
-    .then(r=>r.json()).then(d=>{ if(d.ok){ showToast('IP çıkarıldı'); loadIpList(); } else showToast(d.error||'Çıkarılamadı'); });
+  askConfirm('IP çıkar', '"'+ip+'" adresini izinli listeden çıkar? Bu IP\'den giren normal kullanıcılar artık giremez.', 'Çıkar', ()=>{
+    fetch('/api/ips/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, ip})})
+      .then(r=>r.json()).then(d=>{ if(d.ok){ showToast('IP çıkarıldı'); loadIpList(); } else showToast(d.error||'Çıkarılamadı'); });
+  });
 }
 document.getElementById('ipMgmtClose').onclick=()=>document.getElementById('ipMgmtModal').classList.remove('show');
 document.getElementById('ipMgmtModal').addEventListener('click',e=>{ if(e.target.id==='ipMgmtModal') document.getElementById('ipMgmtModal').classList.remove('show'); });
@@ -2935,7 +3771,7 @@ function previewText(c){
   const last=c.messages[c.messages.length-1];
   if(!last)return'';
   const who=(c.isGroup&&!last.fromMe&&last.sender)?last.sender+': ':(last.fromMe?'Siz: ':'');
-  let body=last.text;
+  let body=last.text||''; // undefined gelirse boş (sol listede "undefined" yazmasın)
   if(last.deleted)body=last.silenKisi?('🚫 '+last.silenKisi+' sildi'):'🚫 Bu mesaj silindi';
   else if(last.kind==='undecryptable')body='🔒 Şifrelenemeyen mesaj';
   else if(last.kind==='image')body='📷 Fotoğraf'+(last.text?' '+last.text:'');
@@ -2945,7 +3781,7 @@ function previewText(c){
   else if(last.kind==='sticker')body='Çıkartma';
   else if(last.kind==='contact')body='👤 '+(last.contact?.name||'Kişi');
   else if(last.kind==='contacts')body='👤 '+(last.contacts?.length||0)+' kişi';
-  return who+body;
+  return who+(body||'');
 }
 // avatar HTML'i: foto varsa arka plan resmi, yoksa bas harfler
 function avatarHtml(c){
@@ -3010,6 +3846,8 @@ function visible(){
         // grup uyelerinin isim/numarasinda ara (yuklenmis uyeler icinde)
         bulundu = c.members.some(mb => (aramaNormalize(mb.name).includes(st)) || ((mb.number||'').includes(st.replace(/\D/g,''))&&st.replace(/\D/g,'').length>0));
       }
+      // MESAJ İÇERİĞİNDE eşleşme (sunucudan gelen _mesajAramaSonuc) — sohbet adında olmasa bile göster
+      if(!bulundu && _mesajAramaSonuc && _mesajAramaSonuc[c.jid]) bulundu=true;
       if(!bulundu) return false;
     }
     return true;
@@ -3056,8 +3894,23 @@ _renderListRaw=function(){
   if(_listTruncated){
     html+='<div style="padding:18px 16px;text-align:center;color:var(--faint);font-size:12.5px;line-height:1.5">Son '+LIST_LIMIT+' sohbet gösteriliyor.<br>Diğerlerini bulmak için yukarıdan <b>aratın</b>.</div>';
   }
+  // ── WhatsApp gibi "MESAJLAR" bölümü: arama yapılırken eşleşen mesajları ayrı listele ──
+  if(searchTerm && searchTerm.trim().length>=2){
+    // sohbet bölümü başlığı (mesaj bölümünden ayırmak için)
+    if(vis.length) html='<div class="list-section">Sohbetler</div>'+html;
+    if(_mesajAramaListesi && _mesajAramaListesi.length){
+      const kelime=searchTerm.trim();
+      html+='<div class="list-section">Mesajlar</div>';
+      html+=_mesajAramaListesi.map(m=>mesajSonucRow(m, kelime)).join('');
+    }
+  }
   list.innerHTML=html;
-  if(!vis.length) list.innerHTML='<div style="padding:40px 20px;text-align:center;color:var(--faint);font-size:13px">'+(currentFilter==='archived'?'Arsivde sohbet yok.':(searchTerm?'Sonuç bulunamadı.':'Henuz mesaj yok.<br>Birinden mesaj gelince burada gorunecek.'))+'</div>';
+  // "Sonuç bulunamadı" SADECE hem sohbet hem mesaj sonucu yoksa gösterilsin.
+  // (Eskiden vis.length=0 olunca mesaj sonuçlarını da eziyordu -> mesaj araması görünmüyordu.)
+  const mesajSonucVar = searchTerm && _mesajAramaListesi && _mesajAramaListesi.length>0;
+  if(!vis.length && !mesajSonucVar){
+    list.innerHTML='<div style="padding:40px 20px;text-align:center;color:var(--faint);font-size:13px">'+(currentFilter==='archived'?'Arsivde sohbet yok.':(searchTerm?'Sonuç bulunamadı.':'Henuz mesaj yok.<br>Birinden mesaj gelince burada gorunecek.'))+'</div>';
+  }
   // SAYAÇLAR: tek geciste hesapla (eskiden chatArray()+filter 7-8 kez cagriliyordu -> yavaslik).
   let nAll=0,nGroup=0,nPeople=0,nMention=0,nAssigned=0,nUnread=0;
   const u=currentUser&&currentUser.username;
@@ -3094,7 +3947,7 @@ function chatRow(c){
   return `<div class="chat ${c.jid===activeJid?'active':''}" onclick="openChat('${c.jid}')" oncontextmenu="openCtxMenu(event,'${c.jid}');return false;">
     ${avatarHtml(c)}
     <div class="chat-main">
-      <div class="chat-top"><span class="chat-name">${esc(c.name||c.jid)}${pinIc}${menIc}${atamaIc}${etiketNoktalari}</span>
+      <div class="chat-top"><span class="chat-name">${etiketNoktalari}${esc(c.name||c.jid)}${pinIc}${menIc}${atamaIc}</span>
         <span class="chat-time ${c.unread?'unread-time':''}">${esc(c.lastTime||'')}</span></div>
       <div class="chat-bottom"><span class="chat-preview">${esc(previewText(c))}</span>
         ${c.unread?'<span class="badge">'+c.unread+'</span>':''}</div>
@@ -3104,8 +3957,44 @@ function chatRow(c){
   </div>`;
 }
 
-// ---- Baglam menusu (sabitle / arsivle) ----
-const ctxMenu=document.getElementById('ctxMenu');
+// WhatsApp gibi "Mesajlar" bölümündeki bir mesaj sonucu satırı.
+// Tıklayınca o sohbeti açar + o mesaja zıplar.
+function mesajSonucRow(m, kelime){
+  const c=chats[m.chatJid];
+  const grupAd = m.chatName || (c&&c.name) || (m.chatJid||'').split('@')[0];
+  // mesaj metninde aranan kelimeyi vurgula (kalın/renkli)
+  let metin = m.text || '';
+  if(metin.length>90) metin=metin.slice(0,90)+'…';
+  const vurgulu = kelimeVurgula(esc(metin), kelime);
+  // gönderen: kendi mesajımız mı, grupta biri mi
+  const gonderen = m.fromMe ? 'Siz' : (m.sender || '');
+  const av = c ? avatarHtml(c) : '<div class="chat-avatar" style="background:var(--brand)">'+esc((grupAd||'?').slice(0,1).toUpperCase())+'</div>';
+  return '<div class="chat msg-sonuc" onclick="mesajSonucAc(\''+m.chatJid+'\',\''+esc(m.id)+'\')">'+
+    av+
+    '<div class="chat-main">'+
+      '<div class="chat-top"><span class="chat-name">'+esc(grupAd)+'</span><span class="chat-time">'+esc(m.time||'')+'</span></div>'+
+      '<div class="chat-bottom"><span class="chat-preview">'+(gonderen?('<b style="color:var(--muted);font-weight:600">'+esc(gonderen)+':</b> '):'')+vurgulu+'</span></div>'+
+    '</div>'+
+  '</div>';
+}
+// Metinde aranan kelimeyi <mark> ile vurgula (Türkçe duyarsız)
+function kelimeVurgula(metin, kelime){
+  if(!kelime) return metin;
+  try{
+    // Türkçe karaktere duyarsız eşleştirmek zor; basit yaklaşım: kelimeyi olduğu gibi ara (case-insensitive)
+    const escKelime=kelime.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const re=new RegExp('('+escKelime+')','gi');
+    return metin.replace(re,'<mark class="arama-vurgu">$1</mark>');
+  }catch(e){ return metin; }
+}
+// Mesaj sonucuna tıklandı: sohbeti aç + o mesaja zıpla
+function mesajSonucAc(jid, msgId){
+  if(!chats[jid]){ showToast('Sohbet bulunamadı'); return; }
+  openChat(jid);
+  // sohbet açılıp mesajlar render olunca o mesaja kaydır + vurgula (jumpToMsg hazır fonksiyon)
+  setTimeout(()=>jumpToMsg(msgId), 450);
+}
+
 function openCtxMenu(e,jid){
   const isPin=pinned.has(jid), isArch=archived.has(jid);
   ctxMenu.innerHTML=`
@@ -3188,6 +4077,11 @@ function baslatTazeleme(jid){
 function openChat(jid){
   activeJid=jid; clearReply();
   _typingActive=false; clearTimeout(_typingTimer); // onceki sohbetin yaziyor durumunu temizle
+  // sonsuz scroll durumunu sıfırla (yeni sohbette baştan başlasın)
+  _eskiYukleniyor=false;
+  const eskiYukNot=document.getElementById('eskiYukNot'); if(eskiYukNot) eskiYukNot.style.display='none';
+  // alta in bildirimini sıfırla (yeni sohbette eski sayaç kalmasın)
+  _altaInSonSayi=null; sifirlaAltaInBadge();
   const c=chats[jid]; c.unread=0; c.hasMention=false;
   document.getElementById('emptyState').style.display='none';
   document.getElementById('convContent').style.display='flex';
@@ -3278,7 +4172,7 @@ function scrollToLastMention(c){
 }
 
 function hlight(text, q, mentions){
-  let e=esc(text);
+  let e=esc(text==null?'':text);
   // arama vurgusu
   if(q){
     try{
@@ -3368,6 +4262,8 @@ function _sektorelMi(kelime){
 // adi temizle -> asil isletme adi
 function grupAdiTemizle(ad){
   if(!ad) return '';
+  // ÖNCE EMOJI TEMIZLE (kullanici istegi): isimde emoji varsa cikar.
+  ad = emojiTemizle(ad);
   // ayraçlari bosluga cevir, kelimelere bol
   const parcalar = ad.replace(/[\-|/–—]+/g,' ').split(/\s+/).filter(Boolean);
   // bastan ve ortadaki gercek isim kelimelerini tut, sektorel ekleri at.
@@ -3415,6 +4311,7 @@ function kopyalaFallback(metin){
 // atama butonuna basinca modal ac
 function grupAtamaAc(){
   if(!activeJid || !chats[activeJid] || !chats[activeJid].isGroup){ showToast('Önce bir grup aç.'); return; }
+  const as=document.getElementById('assignSearch'); if(as) as.value=''; // arama sıfırla
   document.getElementById('assignModal').classList.add('show');
   renderAssignList();
   // ekip listesi yoksa iste
@@ -3426,7 +4323,11 @@ function renderAssignList(){
   const c=chats[activeJid];
   const atananlar=(c&&c.atananlar)||[];
   if(!_team.length){ box.innerHTML='<div style="color:var(--faint);font-size:13px;padding:10px">Ekip yükleniyor…</div>'; return; }
-  box.innerHTML=_team.map(u=>{
+  // arama filtresi (isim veya kullanıcı adı)
+  const q=(document.getElementById('assignSearch')?.value||'').toLocaleLowerCase('tr').trim();
+  const liste=q ? _team.filter(u=>(u.displayName||'').toLocaleLowerCase('tr').includes(q)||(u.username||'').toLocaleLowerCase('tr').includes(q)) : _team;
+  if(!liste.length){ box.innerHTML='<div style="color:var(--faint);font-size:13px;padding:14px;text-align:center">Eşleşen kullanıcı yok</div>'; return; }
+  box.innerHTML=liste.map(u=>{
     const atanmis=atananlar.includes(u.username);
     const benim = currentUser && u.username===currentUser.username;
     return '<div class="assign-row'+(atanmis?' atanmis':'')+'" onclick="atamaToggle(\''+esc(u.username)+'\','+(atanmis?'true':'false')+')">'+
@@ -3556,8 +4457,9 @@ function etiketOlustur(){
   document.getElementById('newLabelName').value='';
 }
 function etiketSil(id){
-  if(!confirm('Bu etiket silinsin mi? Tüm gruplardan kaldırılır.')) return;
-  ws.send(JSON.stringify({type:'deleteLabel', id}));
+  askConfirm('Etiketi sil', 'Bu etiket silinsin mi? Tüm gruplardan kaldırılır.', 'Sil', ()=>{
+    ws.send(JSON.stringify({type:'deleteLabel', id}));
+  });
 }
 // SOL taraftaki etiket bolumu (etikete tiklayinca o gruplar filtrelenir)
 let _aktifEtiketFiltre=null;
@@ -3570,12 +4472,16 @@ function renderEtiketBolum(){
   const toplamGrup=Object.keys(_chatLabels).filter(j=>(_chatLabels[j]||[]).length).length;
   // BASLIK (her zaman gorunur, tiklayinca acilir/kapanir)
   let html='<div class="etiket-baslik" onclick="etiketBolumToggle()" style="cursor:pointer">'+
-    '<span>🏷️ Etiketler ('+_labels.length+')</span>';
+    '<span>🏷️ Etiketler ('+_labels.length+')</span>'+
+    '<span style="display:flex;align-items:center;gap:8px">';
+  // filtre aktifse "✕ Tümü" (filtreyi kaldirir) + her durumda ac/kapa oku
   if(_aktifEtiketFiltre) html+='<span class="etiket-temizle" onclick="event.stopPropagation();etiketFiltreTemizle()">✕ Tümü</span>';
-  else html+='<span class="etiket-ok">'+(_etiketBolumAcik?'▲':'▼')+'</span>';
-  html+='</div>';
-  // ICERIK (sadece acikken VEYA bir filtre aktifken)
-  if(_etiketBolumAcik || _aktifEtiketFiltre){
+  html+='<span class="etiket-ok">'+(_etiketBolumAcik?'▲':'▼')+'</span>';
+  html+='</span></div>';
+  // ICERIK: SADECE bolum acikken goster. (Eskiden 'filtre aktifse de goster' vardi;
+  // bu yuzden bir etikete girince liste kapanmiyor, yer kapliyordu. Artik filtre aktif
+  // olsa bile baslıga tiklayinca liste kapanir — filtre yine calisir, sadece liste gizlenir.)
+  if(_etiketBolumAcik){
     html+='<div class="etiket-liste">'+_labels.map(l=>{
       const sayi=Object.values(_chatLabels).filter(ids=>ids.includes(l.id)).length;
       const aktif=_aktifEtiketFiltre===l.id;
@@ -3608,12 +4514,10 @@ function renderRailEtiketler(){
 // Etiket bolumu basligina tiklayinca ac/kapa. Filtre aktif olsa bile KAPANABILMELI
 // (eskiden filtre varken kapanmiyordu — kullanici sikayet etti, duzeltildi).
 function etiketBolumToggle(){
+  // Sadece liste gorunurlugunu degistir. Filtre AKTIFSE bile liste kapanabilir
+  // (filtre devam eder — filtreli sohbetler gorunur kalir). Filtreyi kaldirmak icin
+  // basliktaki "✕ Tümü" butonu kullanilir. Boylece liste yer kaplamaz.
   _etiketBolumAcik=!_etiketBolumAcik;
-  // Kapatiliyorsa ve bir filtre aktifse, filtreyi de temizle ki liste gercekten kapansin
-  if(!_etiketBolumAcik && _aktifEtiketFiltre){
-    _aktifEtiketFiltre=null;
-    renderList();
-  }
   renderEtiketBolum();
 }
 function etiketFiltreTemizle(){
@@ -3624,7 +4528,9 @@ function etiketFiltreTemizle(){
 function etiketFiltrele(labelId){
   // ayni etikete tekrar tiklayinca filtreyi kaldir
   _aktifEtiketFiltre = (_aktifEtiketFiltre===labelId) ? null : labelId;
-  if(_aktifEtiketFiltre) _etiketBolumAcik=true; // filtre acikken liste gorunsun
+  // NOT: listeyi zorla ACMIYORUZ artik. Kullanici bir etikete girince listeyi
+  // kapatabilsin (yer kaplamasin). Filtre yine calisir, sadece liste gorunurlugu
+  // kullanicinin kontrolunde (basliktaki ok ile ac/kapa).
   renderEtiketBolum();
   renderList();
 }
@@ -3822,15 +4728,18 @@ function renderMessages(c, searchQ){
     let name='';
     if(isimGoster){
       const sn=esc(m.sender);
-      // OFIS EKIBI ROZETI: adinda PEKCAN/PKC turevleri gecen kisiler ofis ekibidir.
-      // (Sunucudan gelen senderOfis bayragi VEYA isim icerigi — ikisinden biri yeterli.)
-      const ofisMu = m.senderOfis || ofisIsmiMi(m.sender);
-      const ofisRozet = ofisMu ? '<span class="ofis-rozet" title="Ofis ekibi">🏢</span>' : '';
+      // İKİ FARKLI DURUM (karışmasın):
+      //  1) GİDEN mesaj (fromMe) = PANEL KULLANICISI (sen/ekip, panelden yazdı) -> kalkan rozeti, "team-name"
+      //  2) GELEN mesaj ama adı Pekcan/ofis = gruptaki ofis kişisi (TELEFONDAN yazdı) -> bina rozeti, "ofis-uye"
+      // İkisi AYRI görünür: panel kullanıcısı ≠ gruptaki ofis ismi.
       if(m.fromMe){
-        // GIDEN ekip mesaji: ad sabit etiket (tiklanmaz — bir WhatsApp kisisi degil, ekip uyesi)
-        name='<div class="sender-name team-name" style="color:'+colorFor(m.sender)+'">'+ofisRozet+sn+'</div>';
+        // PANEL KULLANICISI: kalkan ikonlu yeşil pill (tıklanmaz — WhatsApp kişisi değil, ekip üyesi)
+        const panelRozet='<span class="panel-rozet" title="Panel kullanıcısı"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></span>';
+        name='<div class="sender-name team-name">'+panelRozet+sn+'</div>';
       } else {
-        // GELEN grup mesaji: tiklayinca gonderen bilgisi acilir
+        // GELEN grup mesajı: ofis ekibinden mi? (adı Pekcan vb. VEYA sunucu işaretledi)
+        const ofisMu = m.senderOfis || ofisIsmiMi(m.sender);
+        const ofisRozet = ofisMu ? '<span class="ofis-rozet" title="Ofis ekibi (gruptan)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"/></svg></span>' : '';
         const sj=esc(m.senderJid||'');
         name='<div class="sender-name clickable'+(ofisMu?' ofis-uye':'')+'" style="color:'+colorFor(m.sender)+'" onclick="showSenderInfo(\''+sj+'\',\''+sn.replace(/'/g,"\\'")+'\')">'+ofisRozet+sn+'</div>';
       }
@@ -3874,13 +4783,14 @@ function renderMessages(c, searchQ){
         ? '<span class="doc-thumb" style="background-image:url('+esc(m.thumb)+')"></span>'
         : '<span class="doc-icon" style="background:'+dcolor+'">'+docSvg()+'<span class="doc-ext">'+dlabel+'</span></span>';
       const dlUrl = esc(m.mediaUrl) + '?name=' + encodeURIComponent(fname);
+      const indirUrl = esc(m.mediaUrl) + '?name=' + encodeURIComponent(fname) + '&download=1';
       // Belgeye TIKLAYINCA: dosya inmisse ic icerigi yeni sekmede ac (PDF/resim icini gor),
       // inmemisse "henuz indirilmedi" uyari. Alt satirda ayri "indir" baglantisi.
       const acHandler = m.mediaUrl
-        ? 'onclick="event.preventDefault();belgeOnizle(\''+esc(m.mediaUrl)+'\',\''+esc(ext)+'\',\''+esc(m.thumb||'')+'\')"'
+        ? 'onclick="event.preventDefault();belgeOnizle(\''+esc(m.mediaUrl)+'\',\''+esc(ext)+'\',\''+esc(m.thumb||'')+'\',\''+esc(fname)+'\')"'
         : 'onclick="event.preventDefault();showToast(\'Belge henüz indirilmedi, birazdan tekrar deneyin.\')"';
       const altYazi = m.mediaUrl ? 'Görüntülemek için tıkla' : 'İndiriliyor…';
-      body='<a class="msg-doc'+(m.thumb?' has-thumb':'')+'" href="'+dlUrl+'" '+acHandler+' style="cursor:pointer">'+icon+'<span class="doc-info"><span class="dn">'+hlight(fname,searchQ)+'</span><span class="dm">'+altYazi+'</span>'+(m.mediaUrl?'<a class="doc-indir" href="'+dlUrl+'" download="'+esc(fname)+'" onclick="event.stopPropagation()" style="font-size:11.5px;color:var(--accent);text-decoration:none;display:inline-block;margin-top:2px">⬇ İndir</a>':'')+'</span></a>';
+      body='<a class="msg-doc'+(m.thumb?' has-thumb':'')+'" href="'+dlUrl+'" '+acHandler+' style="cursor:pointer">'+icon+'<span class="doc-info"><span class="dn">'+hlight(fname,searchQ)+'</span><span class="dm">'+altYazi+'</span>'+(m.mediaUrl?'<a class="doc-indir" href="'+indirUrl+'" download="'+esc(fname)+'" onclick="event.stopPropagation()" style="font-size:11.5px;color:var(--accent);text-decoration:none;display:inline-block;margin-top:2px">⬇ İndir</a>':'')+'</span></a>';
       // belgeye yazilan ACIKLAMA (caption) varsa dosyanin altinda goster
       if(m.caption){ body+='<div class="caption">'+hlight(m.caption,searchQ,m.mentions)+'</div>'; }
     } else if(m.kind==='contact'&&m.contact){
@@ -3897,7 +4807,7 @@ function renderMessages(c, searchQ){
         return b;
       }).join('');
     } else {
-      body='<span class="msg-text">'+hlight(m.text,searchQ,m.mentions)+'</span>';
+      body='<span class="msg-text">'+hlight(m.text||'',searchQ,m.mentions)+'</span>';
     }
     const editedTag = m.edited ? '<span class="edited-tag">düzenlendi</span>' : '';
     // reaksiyon: karsi tarafin (m.reaction) veya bizim (m.myReaction)
@@ -3928,17 +4838,45 @@ function renderMessages(c, searchQ){
     // 3=iletildi(cift tik gri), 4=okundu(cift tik mavi), -1=gonderilemedi(kirmizi).
     const tik = (cls.indexOf('out')>=0 && !m.deleted) ? tikHtml(m.durum) : '';
     // SECIM MODU: secim aciksa her mesajda bir kutu (○/✓) goster. Tiklayinca sec/birak.
-    const secimModu = selectedMsgs.size>0;
-    const secKutu = secimModu ? ('<span class="sec-kutu'+(selectedMsgs.has(m.id)?' dolu':'')+'" onclick="event.stopPropagation();secimToggle(\''+esc(m.id||'')+'\')">'+(selectedMsgs.has(m.id)?'✓':'')+'</span>') : '';
+    // SEÇİM DAİRESİ: HER ZAMAN solda görünür (WhatsApp gibi). Sadece bu daireye
+    // tıklayınca seçilir/bırakılır; mesajın kendisine tıklamak seçim YAPMAZ.
+    const secimModu = _secimModuAcik || selectedMsgs.size>0;
+    const secKutu = '<span class="sec-kutu'+(selectedMsgs.has(m.id)?' dolu':'')+'" onclick="event.stopPropagation();secimToggle(\''+esc(m.id||'')+'\')" title="Seç">'+(selectedMsgs.has(m.id)?'✓':'')+'</span>';
     return sep+'<div class="msg '+cls+grpCls+selCls+menCls+failCls+(secimModu?' secim-modu':'')+'" data-mid="'+esc(m.id||'')+'">'+secKutu+actions+name+fwd+quote+body+reaction+'<span class="meta">'+editedTag+esc(m.time||'')+tik+'</span></div>';
   }).join('');
   // Render ONCESI: kullanici en altta miydi? (tazeleme sirasinda yukarida okuyorsa
   // ekrani zorla asagi atmayalim — sadece zaten en alttaysa takip et.)
   const altaYakin = (box.scrollHeight - box.scrollTop - box.clientHeight) < 120;
+  const oncekiMesajSayisi = (c.messages||[]).length;  // render edilen mesaj sayısı
   box.innerHTML=html;
   // Arama yapilirken pozisyonu koru. Sohbet yeni acildiysa VEYA kullanici zaten
   // en alttaysa alta in; kullanici yukari kaydirip okuyorsa pozisyonu bozma.
-  if(!searchQ && (sohbetDegisti || altaYakin)) box.scrollTop=box.scrollHeight;
+  if(!searchQ && (sohbetDegisti || altaYakin)){
+    box.scrollTop=box.scrollHeight;
+    sifirlaAltaInBadge(); // alta indik -> bildirim sıfırlansın
+  } else if(!searchQ && !sohbetDegisti && !altaYakin){
+    // Kullanıcı YUKARIDA okuyor ve yeni mesaj geldi -> bildirim rozetini artır.
+    // AMA en son gelen mesaj KENDİ mesajımsa artırma (zaten alta inecek).
+    const sonMesaj=(c.messages||[])[(c.messages||[]).length-1];
+    const sonFromMe = sonMesaj && sonMesaj.fromMe;
+    if(_altaInSonSayi!==null && oncekiMesajSayisi>_altaInSonSayi && !sonFromMe){
+      _altaInBildirim += (oncekiMesajSayisi - _altaInSonSayi);
+      const badge=document.getElementById('altaInBadge');
+      const btn=document.getElementById('altaInBtn');
+      if(badge && btn){
+        badge.textContent = _altaInBildirim>99 ? '99+' : _altaInBildirim;
+        badge.style.display='grid';
+        btn.style.display='grid'; // buton görünür olsun (yukarıdayız zaten ama garanti)
+      }
+    }
+  }
+  _altaInSonSayi = oncekiMesajSayisi;
+}
+// Alta in bildirimini sıfırla (alta inince çağrılır)
+function sifirlaAltaInBadge(){
+  _altaInBildirim=0;
+  const badge=document.getElementById('altaInBadge');
+  if(badge) badge.style.display='none';
 }
 // Acik sohbette gereksiz yeniden cizimi onlemek icin son mesaj sayisini hatirla
 let box_sonMesajSayisi=null;
@@ -3952,22 +4890,39 @@ function renderMessagesDebounced(c){
   _rmTimer=setTimeout(()=>{ if(_rmChat) renderMessages(_rmChat); }, 20);
 }
 const selectedMsgs=new Set();
-document.getElementById('messages').addEventListener('click',e=>{
-  const msgEl=e.target.closest('.msg');
-  if(!msgEl)return;
-  const id=msgEl.getAttribute('data-mid');
-  if(!id)return;
-  // link/buton/medyaya tiklandiysa karisma
-  if(e.target.closest('a,button,img,video,.voice-player,.mention'))return;
-  // SECIM: SADECE zaten secim modundaysa (menudeki "Seç" ile baslatildiysa) sec/birak.
-  // Ctrl ile coklu secim KALDIRILDI (yanlislikla secim olmasin, metin kopyalamayi bozmasin).
-  if(selectedMsgs.size>0){
-    e.preventDefault();
-    if(window.getSelection) window.getSelection().removeAllRanges();
-    if(selectedMsgs.has(id)) selectedMsgs.delete(id); else selectedMsgs.add(id);
-    msgEl.classList.toggle('selected');
-    updateSelectionBar();
+// ── SONSUZ SCROLL: en yukarı yaklaşınca daha eski mesajları getir ──
+document.getElementById('messages').addEventListener('scroll',e=>{
+  const box=e.target;
+  // "en alta in" butonu: en alttan 300px+ yukarıdaysak göster, değilse gizle
+  const altaUzaklik = box.scrollHeight - box.scrollTop - box.clientHeight;
+  const altaInBtn=document.getElementById('altaInBtn');
+  if(altaInBtn) altaInBtn.style.display = altaUzaklik>300 ? 'grid' : 'none';
+  // en alta yaklaşınca (120px) bildirim rozetini sıfırla (kullanıcı yeni mesajları gördü)
+  if(altaUzaklik<120) sifirlaAltaInBadge();
+  // en üste 80px yaklaşıldıysa ve yükleme yoksa ve daha eski varsa: iste
+  if(box.scrollTop<80 && !_eskiYukleniyor && activeJid && !_eskiBitti[activeJid]){
+    const c=chats[activeJid];
+    if(!c || !c.messages || !c.messages.length) return;
+    // en eski mesajın zamanı (ondan öncesini iste)
+    const enEski=c.messages[0];
+    if(!enEski || !enEski.ts) return;
+    _eskiYukleniyor=true;
+    // görsel: üstte "yükleniyor" göster
+    const eskiYukNot=document.getElementById('eskiYukNot');
+    if(eskiYukNot) eskiYukNot.style.display='block';
+    ws.send(JSON.stringify({type:'loadOlder', jid:activeJid, beforeTs:enEski.ts}));
   }
+});
+// En alta kaydır (sağ alt buton)
+function enAltaIn(){
+  const box=document.getElementById('messages');
+  if(box){ box.scrollTo({top:box.scrollHeight, behavior:'smooth'}); }
+  sifirlaAltaInBadge(); // bildirimi temizle
+}
+document.getElementById('messages').addEventListener('click',e=>{
+  // SEÇİM artık SADECE soldaki daireye tıklayınca olur (secimToggle).
+  // Mesajın kendisine tıklamak ARTIK seçim YAPMAZ — metin seçip kopyalamayı bozmasın,
+  // yanlışlıkla seçim olmasın. (Eskiden seçim modunda mesaja tıklayınca da seçiliyordu.)
 });
 // CIFT TIKLA YANITLA: mesaj balonunun SAGINDAKI/ETRAFINDAKI BOSLUGA cift tik -> yanitla.
 // Balonun ICINE cift tik KARISMAZ -> metin secip kopyalanabilir.
@@ -3999,8 +4954,14 @@ document.getElementById('messages').addEventListener('dblclick',e=>{
 });
 function updateSelectionBar(){
   const bar=document.getElementById('selectionBar');
-  if(selectedMsgs.size>0){ bar.classList.add('show'); document.getElementById('selCount').textContent=selectedMsgs.size+' seçildi'; }
-  else bar.classList.remove('show');
+  // Çubuk: seçim modu açıksa VEYA seçili mesaj varsa görünür.
+  if(_secimModuAcik || selectedMsgs.size>0){
+    bar.classList.add('show');
+    const n=selectedMsgs.size;
+    document.getElementById('selCount').textContent = n>0 ? (n+' seçildi') : 'Daireden seç';
+  } else {
+    bar.classList.remove('show');
+  }
 }
 // Secim modunda mesaj kutusuna tiklayinca sec/birak
 function secimToggle(id){
@@ -4013,6 +4974,7 @@ function secimToggle(id){
 }
 function clearSelection(){
   selectedMsgs.clear();
+  _secimModuAcik=false;   // seçim modunu kapat (daireler gizlensin)
   document.querySelectorAll('.msg.selected').forEach(el=>el.classList.remove('selected'));
   updateSelectionBar();
   // secim kutularini kaldirmak icin mesajlari yeniden ciz
@@ -4024,6 +4986,45 @@ function forwardSelected(){
   // secili mesajlari ilet modalini ac (ilk mesaji baz al, hepsini gonder)
   fwdMsgIds=[...selectedMsgs]; fwdFromJid=activeJid; fwdSelected.clear();
   acIletmeModali();
+}
+
+// ═══════════════════════════════════════════════════════════
+// TOPLU SİLME: seçili mesajları SIRAYLA sil (aynı anda silmek
+// WhatsApp'ı kasar/bazıları gitmez — tıpkı toplu iletmedeki gibi).
+// ═══════════════════════════════════════════════════════════
+let _topluSilSira=[], _topluSilToplam=0, _topluSilJid=null, _topluSilSonGonderim=0;
+function silSelected(){
+  if(!selectedMsgs.size) return;
+  const n=selectedMsgs.size;
+  const mesaj = n===1 ? 'Bu mesajı herkesten silmek istiyor musun?'
+                      : (n+' mesajı herkesten silmek istiyor musun? Hepsi tek tek silinecek.');
+  askConfirm('Mesajları sil', mesaj, n===1?'Sil':(n+' mesajı sil'), ()=>{
+    _topluSilSira=[...selectedMsgs];
+    _topluSilToplam=_topluSilSira.length;
+    _topluSilJid=activeJid;       // silme sırasında sohbet değişse bile doğru sohbetten sil
+    clearSelection();             // seçim kutularını kaldır
+    if(_topluSilToplam>1) showToast('Siliniyor… (1/'+_topluSilToplam+')');
+    gonderSiradakiSil();
+  });
+}
+function gonderSiradakiSil(){
+  if(!_topluSilSira.length){
+    if(_topluSilToplam>1) showToast('✓ '+_topluSilToplam+' mesaj silindi');
+    _topluSilToplam=0; _topluSilJid=null;
+    return;
+  }
+  const id=_topluSilSira.shift();
+  _topluSilSonGonderim=Date.now();
+  ws.send(JSON.stringify({type:'delete', jid:_topluSilJid, id, agent:benimAdim()}));
+  // GÜVENLİK: opOk/opError gelmezse sıra takılmasın — kısa süre sonra sonrakine geç.
+  // (Silme onayı genelde 1-2sn'de gelir; 6sn'de gelmezse devam et.)
+  setTimeout(()=>{
+    if(_topluSilSira.length && (Date.now()-_topluSilSonGonderim)>=5900){
+      const kalan=_topluSilToplam-_topluSilSira.length+1;
+      if(_topluSilToplam>1) showToast('Siliniyor… ('+kalan+'/'+_topluSilToplam+')');
+      gonderSiradakiSil();
+    }
+  }, 6000);
 }
 // Iletme modalini ac + sifirla (hem secili mesajlardan hem tek mesajdan cagrilir)
 function acIletmeModali(){
@@ -4157,12 +5158,16 @@ function clearReply(){ replyTarget=null; editTarget=null; document.getElementByI
 document.getElementById('rpClose').onclick=clearReply;
 
 // Menudeki "Seç" -> coklu secim modunu baslat (o mesaji secili yaparak)
+// Menüdeki "Seç": mesajı SEÇMEZ, sadece SEÇİM MODUNU açar (tüm daireler belirir).
+// Kullanıcı seçimi dairelerden kendi yapar.
+let _secimModuAcik=false;
 function startSelect(id){
-  const el=document.querySelector('.msg[data-mid="'+CSS.escape(id)+'"]');
-  selectedMsgs.add(id);
-  if(el) el.classList.add('selected');
-  // acik menuleri kapat
+  _secimModuAcik=true;
+  // açık menüleri kapat
   document.querySelectorAll('.msg-actions.open').forEach(m=>m.classList.remove('open'));
+  // mesajları yeniden çiz ki tüm daireler görünsün (mesaj SEÇİLMEZ)
+  const c=chats[activeJid];
+  if(c) renderMessagesDebounced(c);
   updateSelectionBar();
 }
 
@@ -4180,9 +5185,9 @@ function startEdit(id){
 
 // ---- Silme ----
 function askDelete(id){
-  if(confirm('Bu mesajı herkesten silmek istiyor musun?')){
+  askConfirm('Mesajı sil', 'Bu mesajı herkesten silmek istiyor musun?', 'Sil', ()=>{
     ws.send(JSON.stringify({type:'delete', jid:activeJid, id, agent:benimAdim()}));
-  }
+  });
 }
 
 // ---- Ozelden yanitla (gruptaki mesaja, kisinin DM'inden) ----
@@ -4292,15 +5297,43 @@ document.getElementById('fwdCancel').onclick=()=>document.getElementById('forwar
 document.getElementById('forwardModal').addEventListener('click',e=>{ if(e.target.id==='forwardModal') document.getElementById('forwardModal').classList.remove('show'); });
 document.getElementById('fwdGo').onclick=()=>{
   if(!fwdSelected.size){ showToast('En az bir sohbet seç'); return; }
-  // her secili mesaji, her hedefe ilet
-  fwdMsgIds.forEach(mid=>{
-    ws.send(JSON.stringify({type:'forward', fromJid:fwdFromJid, msgId:mid, targets:[...fwdSelected], agent:benimAdim()}));
-  });
-  const n=fwdSelected.size;
+  // SIRALI ILETME: mesajlari AYNI ANDA gondermek (ozellikle 2 PDF/medya) WhatsApp'ta
+  // cakismaya yol aciyordu -> biri sessizce dusuyordu ("bazen gitmiyor"). Cozum: her
+  // mesaji SIRAYLA gonder; biri bitince (forwardResult gelince) sonrakine gec. Boylece
+  // iki PDF de saglam gider. Tek mesajda davranis aynidir (aninda gider).
+  const hedefler=[...fwdSelected];
+  const sira=[...fwdMsgIds];          // gonderilecek mesajlar (sirayla)
+  const n=hedefler.length;
   document.getElementById('forwardModal').classList.remove('show');
   clearSelection();
-  showToast('✓ '+n+' sohbete iletildi');
+  _fwdSiraToplam=sira.length;
+  _fwdSiraKalan=sira.length;
+  if(sira.length>1) showToast('İletiliyor… (1/'+sira.length+')');
+  // sirayi baslat: ilk mesaji gonder, gerisi forwardResult geldikce gidecek
+  _fwdSira=sira;
+  _fwdSiraHedefler=hedefler;
+  _fwdSiraN=n;
+  gonderSiradakiForward();
 };
+// Sirali iletme durumu (ayni anda tek mesaj gonderilir, cakisma olmaz)
+let _fwdSira=[], _fwdSiraHedefler=[], _fwdSiraN=0, _fwdSiraToplam=0, _fwdSiraKalan=0;
+let _fwdSonGonderim=0;
+function gonderSiradakiForward(){
+  if(!_fwdSira.length){
+    // hepsi bitti
+    if(_fwdSiraToplam>1) showToast('✓ '+_fwdSiraN+' sohbete iletildi ('+_fwdSiraToplam+' mesaj)');
+    else showToast('✓ '+_fwdSiraN+' sohbete iletildi');
+    return;
+  }
+  const mid=_fwdSira.shift();
+  _fwdSonGonderim=Date.now();
+  ws.send(JSON.stringify({type:'forward', fromJid:fwdFromJid, msgId:mid, targets:[..._fwdSiraHedefler], agent:benimAdim()}));
+  // GUVENLIK: forwardResult bir sebeple gelmezse (baglanti) sira takilmasin —
+  // 90sn icinde cevap gelmezse otomatik sonrakine gec.
+  setTimeout(()=>{
+    if(_fwdSira.length && (Date.now()-_fwdSonGonderim)>=89000) gonderSiradakiForward();
+  }, 90000);
+}
 
 // ---- Rail filtreleri (sol kenar) ----
 function railFilter(f, el){
@@ -4707,23 +5740,41 @@ let lbScale=1, lbX=0, lbY=0, lbDragging=false, lbStartX=0, lbStartY=0;
 const lbImg=document.getElementById('lightboxImg'), lb=document.getElementById('lightbox');
 function lbApply(){ lbImg.style.transform='translate('+lbX+'px,'+lbY+'px) scale('+lbScale+')'; }
 function openLightbox(url){ lbImg.src=url; lbScale=1;lbX=0;lbY=0;lbApply(); lb.classList.add('show'); }
-// BELGE ONIZLEME: PDF veya resim ise GERCEK dosyayi yeni sekmede ac (net, tam ekran,
-// tarayicinin kendi PDF/resim goruntuleyicisi kaliteli gosterir). Diger belgelerde
-// kucuk thumb'i lightbox'ta buyut (yine de zoom yapilabilir).
-function belgeOnizle(mediaUrl, ext, thumb){
+// BELGE ONIZLEME: PDF panel ICINDE lightbox'ta acilir (foto gibi, hizli ac-kapa).
+// Resim de lightbox'ta. Word/Excel tarayicida gosterilemez -> yeni sekmede acilir/iner.
+// fname: gercek dosya adi — PDF'i "farkli kaydet" ile indirince dogru isim gelsin diye.
+// BELGE ONIZLEME: PDF/resim yeni sekmede acilir (tarayicinin kendi goruntuleyicisi —
+// net, tam ekran, "farkli kaydet"/yazdir hepsi calisir). BASIT ve GUVENILIR yontem.
+function belgeOnizle(mediaUrl, ext, thumb, fname){
   ext=(ext||'').toLowerCase();
   const resimMi=['jpg','jpeg','png','webp','gif','bmp'].includes(ext);
   const pdfMi=ext==='pdf';
-  if(pdfMi || resimMi){
-    // gercek dosyayi yeni sekmede ac — net ve tam ekran
-    try{ window.open(mediaUrl, '_blank'); }
-    catch(e){ if(thumb) openLightbox(thumb); }
+  // gercek isimle: sunucu 'inline' + dogru isim verir ("farkli kaydet"te dogru ad gelir)
+  const src = mediaUrl + (fname ? ('?name='+encodeURIComponent(fname)) : '');
+  const img=document.getElementById('lightboxImg');
+  const pdf=document.getElementById('lightboxPdf');
+  if(pdfMi){
+    // PDF: PANEL ICINDE iframe'de goster (yeni sekme degil). X/ESC ile kapanir.
+    if(img) img.style.display='none';
+    if(pdf){ pdf.src=src; pdf.style.display='block'; }
+    lb.classList.add('show');
+  } else if(resimMi){
+    // Resim: normal lightbox (zoom'lu)
+    if(pdf){ pdf.src=''; pdf.style.display='none'; }
+    if(img) img.style.display='';
+    openLightbox(src);
   } else {
-    // word/excel vs: onizleme resmini buyut (gercek dosya tarayicida acilmaz)
-    if(thumb) openLightbox(thumb);
+    // word/excel vs: tarayicida gosterilemez -> yeni sekmede ac (iner)
+    try{ window.open(src, '_blank'); }catch(e){ if(thumb) openLightbox(thumb); }
   }
 }
-function lbClose(){ lb.classList.remove('show'); lbScale=1; lbX=0; lbY=0; lbApply(); }
+function lbClose(){
+  lb.classList.remove('show'); lbScale=1; lbX=0; lbY=0; lbApply();
+  const pdf=document.getElementById('lightboxPdf');
+  const img=document.getElementById('lightboxImg');
+  if(pdf){ pdf.src=''; pdf.style.display='none'; }
+  if(img) img.style.display='';
+}
 document.getElementById('lbClose').onclick=lbClose;
 document.getElementById('lbZoomIn').onclick=()=>{ lbScale=Math.min(5,lbScale+0.3); lbApply(); };
 document.getElementById('lbZoomOut').onclick=()=>{ lbScale=Math.max(1,lbScale-0.3); if(lbScale===1){lbX=0;lbY=0;} lbApply(); };
@@ -4759,6 +5810,8 @@ lbImg.addEventListener('mousedown',e=>{ if(lbScale<=1)return; lbDragging=true; l
 window.addEventListener('mousemove',e=>{ if(!lbDragging)return; lbX=e.clientX-lbStartX; lbY=e.clientY-lbStartY; lbApply(); });
 window.addEventListener('mouseup',()=>{ lbDragging=false; lbImg.classList.remove('grabbing'); });
 lb.addEventListener('click',e=>{ if(e.target===lb||e.target.id==='lbStage'){ lbClose(); } });
+// ESC tusu ile lightbox'i kapat (PDF/foto hizli kapansin — kullanici istedi)
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && lb.classList.contains('show')) lbClose(); });
 
 function send(){
   const inp=document.getElementById('msgInput');
@@ -4774,10 +5827,23 @@ function send(){
   if(replyTarget) payload.replyId=replyTarget.id;
   ws.send(JSON.stringify(payload));
   inp.value=''; inp.style.height='auto'; clearReply();
+  // KENDİ mesajını attın -> en alta in (yukarıdaysan bile). Mesaj gelince render olacak ama
+  // hemen alta inip bildirimi temizleyelim, gönderdiğini gör.
+  sifirlaAltaInBadge();
+  const box=document.getElementById('messages');
+  if(box) setTimeout(()=>{ box.scrollTo({top:box.scrollHeight, behavior:'smooth'}); }, 60);
 }
 document.getElementById('sendBtn').onclick=send;
 // IC MESAJ gonderme
 document.getElementById('internalSendBtn').onclick=sendInternal;
+// İç mesaj dosya ekleme butonu
+document.getElementById('internalAttachBtn').onclick=()=>{
+  if(!_internalOther){ showToast('Önce bir ekip arkadaşı seç.'); return; }
+  document.getElementById('internalFileInput').click();
+};
+document.getElementById('internalFileInput').addEventListener('change',e=>{
+  internalDosyaGonder([...e.target.files]); e.target.value='';
+});
 document.getElementById('internalInput').addEventListener('keydown',e=>{
   if(e.key==='Enter' && !e.shiftKey && !e.altKey){ e.preventDefault(); sendInternal(); }
 });
@@ -4864,11 +5930,25 @@ document.getElementById('search').addEventListener('input',e=>{
   // metin varsa carpiyi goster, yoksa gizle
   document.getElementById('searchClear').style.display = searchTerm ? 'flex' : 'none';
   renderList();
+  // MESAJ İÇERİĞİNDE ARAMA (WhatsApp gibi): 2+ harf yazınca sunucuya sor (debounce 350ms).
+  clearTimeout(_msgSearchTimer);
+  const kelime=searchTerm.trim();
+  if(kelime.length>=2 && connected){
+    _msgSearchTimer=setTimeout(()=>{
+      ws.send(JSON.stringify({type:'searchMessages', q:kelime}));
+    }, 350);
+  } else {
+    _mesajAramaSonuc={}; // arama temizlenince mesaj sonuçlarını sıfırla
+  }
 });
+let _msgSearchTimer=null;
+let _mesajAramaSonuc={}; // jid -> {eslesme} mesaj içinde eşleşen sohbetler
+let _mesajAramaListesi=[]; // WhatsApp gibi "Mesajlar" başlığı altında gösterilecek eşleşen mesajlar
 // arama temizleme carpisi
 document.getElementById('searchClear').onclick=()=>{
   const inp=document.getElementById('search');
   inp.value=''; searchTerm='';
+  _mesajAramaSonuc={}; clearTimeout(_msgSearchTimer); // mesaj arama sonuçlarını sıfırla
   document.getElementById('searchClear').style.display='none';
   inp.focus();
   renderList();
@@ -4892,6 +5972,13 @@ document.querySelectorAll('#filters .filter').forEach(f=>{
 // Dosya secilince/suruklenince: DIREKT gondermez, once onizleme modali acar
 let _pendingFiles=[];
 function uploadFiles(files){
+  // KRİTİK GÜVENLİK: İç mesaj (ekip içi) modundayken dosya gönderimi ENGELLENİR.
+  // Yoksa iç mesajda sürüklenen PDF, en son açık WhatsApp grubuna (activeJid) gidiyordu
+  // -> MÜŞTERİYE YANLIŞ BELGE. İç mesajda dosya gönderme özelliği yok.
+  if(_mainTab==='internal'){
+    showToast('⚠️ İç mesajlarda dosya gönderilemez. Önce bir WhatsApp sohbeti açın.');
+    return;
+  }
   if(!activeJid){ showToast('Önce bir sohbet seç.'); return; }
   if(!connected){ showToast('WhatsApp bağlı değil.'); return; }
   if(!files||!files.length) return;
@@ -4927,12 +6014,18 @@ async function doSendFiles(){
   // gonderim hep bu sabit 'hedefJid'e yapilir, yukleme bitene kadar degismez.
   const hedefJid = activeJid;
   const hedefAd = (chats[hedefJid] && chats[hedefJid].name) ? chats[hedefJid].name : '';
+  // YANIT (reply): bir mesaji yanitlayip dosya gonderiliyorsa, dosya o mesaja YANIT
+  // olarak gitsin. Eskiden dosya gonderince yanit bilgisi kayboluyordu (duz gidiyordu).
+  // Yaniti basta sabitle + ilk dosyaya uygula, sonra yanit kutusunu temizle.
+  const yanitId = (replyTarget && replyTarget.id) ? replyTarget.id : null;
+  clearReply(); // yanit kutusunu kapat (dosya gonderildikten sonra durmamali)
   for(let i=0;i<files.length;i++){
     const file=files[i];
     // aciklama sadece ilk dosyaya eklensin (WhatsApp da boyle yapar)
     const q=new URLSearchParams({jid:hedefJid, name:file.name, mime:file.type||'application/octet-stream', agent:benimAdim()});
     if(authToken) q.set('token', authToken);
     if(caption && i===0) q.set('caption', caption);
+    if(yanitId && i===0) q.set('replyId', yanitId); // yanit SADECE ilk dosyaya
     const boyutMB=(file.size/1048576).toFixed(1);
     showToast('📎 '+file.name+(hedefAd?(' → '+hedefAd):'')+' gönderiliyor… ('+boyutMB+' MB)');
     try{
@@ -4979,6 +6072,8 @@ async function qrFetch(){
   qrRender();
 }
 
+let _qrSecili=-1;        // klavyeyle seçili öğenin indeksi (-1 = yok)
+let _qrGosterilen=[];    // o an listede görünen öğeler (ok tuşları için)
 function qrRender(filtre=''){
   const list=document.getElementById('qrList');
   const bos=document.getElementById('qrEmpty');
@@ -4986,6 +6081,9 @@ function qrRender(filtre=''){
   const gosterilecek = _qrItems.filter(x =>
     !f || (x.title||'').toLocaleLowerCase('tr').includes(f) || (x.text||'').toLocaleLowerCase('tr').includes(f)
   );
+  _qrGosterilen = gosterilecek;
+  // filtre değişince seçimi başa al (sonuç varsa ilkini seç ki Enter direkt çalışsın)
+  _qrSecili = gosterilecek.length ? 0 : -1;
   if(gosterilecek.length===0){
     list.innerHTML='';
     bos.style.display='block';
@@ -4993,12 +6091,27 @@ function qrRender(filtre=''){
     return;
   }
   bos.style.display='none';
-  list.innerHTML = gosterilecek.map(x=>(
-    '<div class="qr-item" onclick="qrUse(\''+x.id+'\')">'
+  list.innerHTML = gosterilecek.map((x,i)=>(
+    '<div class="qr-item'+(i===_qrSecili?' secili':'')+'" data-qri="'+i+'" onclick="qrUse(\''+x.id+'\')">'
     + '<div class="qr-title"><span class="qr-tag">EKİP</span>'+esc(x.title)+'</div>'
     + '<div class="qr-text">'+esc(x.text)+'</div>'
     + '</div>'
   )).join('');
+}
+
+// Klavye seçimini güncelle (vurgu + görünür alana kaydır)
+function qrSeciliGuncelle(yeni){
+  if(!_qrGosterilen.length) return;
+  // sınırların içinde tut (döngüsel: sondan sonra başa, baştan önce sona)
+  if(yeni<0) yeni=_qrGosterilen.length-1;
+  if(yeni>=_qrGosterilen.length) yeni=0;
+  _qrSecili=yeni;
+  const list=document.getElementById('qrList');
+  list.querySelectorAll('.qr-item').forEach(el=>{
+    const i=parseInt(el.getAttribute('data-qri'),10);
+    el.classList.toggle('secili', i===_qrSecili);
+    if(i===_qrSecili) el.scrollIntoView({block:'nearest'});
+  });
 }
 
 // Hizli yanit sec -> mesaj kutusuna koy (gondermez, kullanici kontrol edip gonderir)
@@ -5032,6 +6145,33 @@ function qrToggle(){
   const acik=document.getElementById('qrPanel').classList.contains('show');
   if(acik) qrClose(); else qrOpen();
 }
+
+// ── ALT tuşu KISAYOLU: hızlı mesaj kutusunu aç/kapat ──
+// Sadece mesaj kutusu BOŞKEN ve ALT başka tuşla kombinlenmediyse çalışır.
+// (Alt+Tab, Alt+harf gibi sistem/menü kısayollarıyla karışmaz.)
+let _altTemiz=false;
+document.addEventListener('keydown',e=>{
+  if(e.key==='Alt' && !e.repeat){
+    _altTemiz=true;   // ALT'a basıldı, henüz temiz
+  } else {
+    _altTemiz=false;  // başka bir tuş basıldı -> ALT artık "tek başına" değil
+  }
+});
+document.addEventListener('keyup',e=>{
+  if(e.key!=='Alt') return;
+  if(!_altTemiz) return;     // araya başka tuş girmişse iptal
+  _altTemiz=false;
+  // sohbet açık değilse anlamsız
+  if(!activeJid) return;
+  // mesaj kutusu: sadece BOŞSA çalış (yazı varken karışmasın)
+  const inp=document.getElementById('msgInput');
+  if(inp && inp.value.trim()) return;
+  // başka bir input/modal aktifse karışma (hızlı mesaj arama kutusu hariç)
+  const aktif=document.activeElement;
+  if(aktif && (aktif.tagName==='INPUT'||aktif.tagName==='TEXTAREA') && aktif.id!=='msgInput' && aktif.id!=='qrSearch') return;
+  e.preventDefault();
+  qrToggle();
+});
 
 // ---- Hizli yanit YONETIMI (modal — prompt/confirm yerine duzgun arayuz) ----
 let _qrEditId = null; // null = ekleme modu, dolu = duzenleme modu
@@ -5123,6 +6263,17 @@ async function qrDoDelete(id){
 document.getElementById('qrBtn').onclick=(e)=>{ e.stopPropagation(); qrToggle(); };
 document.getElementById('qrManageBtn').onclick=qrMgmtOpen;
 document.getElementById('qrSearch').addEventListener('input',e=>qrRender(e.target.value));
+// HIZLI MESAJ klavye kontrolü: ↓/↑ ile gez, Enter ile seçili olanı kutuya yaz, Esc kapat.
+document.getElementById('qrSearch').addEventListener('keydown',e=>{
+  if(e.key==='ArrowDown'){ e.preventDefault(); qrSeciliGuncelle(_qrSecili+1); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); qrSeciliGuncelle(_qrSecili-1); }
+  else if(e.key==='Enter'){
+    e.preventDefault();
+    // seçili olan varsa onu kutuya yaz (qrUse) — sonra kullanıcı tekrar Enter ile gönderir
+    if(_qrSecili>=0 && _qrGosterilen[_qrSecili]) qrUse(_qrGosterilen[_qrSecili].id);
+  }
+  else if(e.key==='Escape'){ e.preventDefault(); qrClose(); }
+});
 document.getElementById('qrSaveBtn').onclick=qrSave;
 document.getElementById('qrCancelEditBtn').onclick=()=>{ _qrEditId=null; qrFormReset(); };
 document.getElementById('qrMgmtClose').onclick=qrMgmtClose;
@@ -5136,9 +6287,11 @@ document.addEventListener('click',(e)=>{
   const modalAcik=document.getElementById('qrMgmtModal').classList.contains('show');
   if(!modalAcik && panel.classList.contains('show') && !panel.contains(e.target) && !e.target.closest('#qrBtn')) qrClose();
 });
-// Escape: once modal, sonra panel
+// Escape: once mesaj secimi, sonra modal, sonra panel
 document.addEventListener('keydown',(e)=>{
   if(e.key!=='Escape') return;
+  // 1) Seçim modu aktifse (Seç'e basıldı VEYA mesaj seçildi) ONCE onu iptal et.
+  if((typeof _secimModuAcik!=='undefined' && _secimModuAcik) || (typeof selectedMsgs!=='undefined' && selectedMsgs.size>0)){ clearSelection(); return; }
   if(document.getElementById('qrMgmtModal').classList.contains('show')){ qrMgmtClose(); return; }
   if(document.getElementById('qrPanel').classList.contains('show')) qrClose();
 });
@@ -5146,11 +6299,13 @@ document.addEventListener('keydown',(e)=>{
 // ---- Surukle-birak (coklu dosya dahil) ----
 const conv=document.getElementById('conv'), dropOverlay=document.getElementById('dropOverlay');
 let dragCounter=0;
-conv.addEventListener('dragenter',e=>{ e.preventDefault(); if(!activeJid)return; dragCounter++; dropOverlay.classList.add('show'); });
+conv.addEventListener('dragenter',e=>{ e.preventDefault(); if(!activeJid || _mainTab==='internal')return; dragCounter++; dropOverlay.classList.add('show'); });
 conv.addEventListener('dragover',e=>{ e.preventDefault(); });
 conv.addEventListener('dragleave',e=>{ e.preventDefault(); dragCounter--; if(dragCounter<=0){dragCounter=0;dropOverlay.classList.remove('show');} });
 conv.addEventListener('drop',e=>{
   e.preventDefault(); dragCounter=0; dropOverlay.classList.remove('show');
+  // İç mesaj modunda dosya bırakmayı engelle (yanlış gruba gitmesin)
+  if(_mainTab==='internal'){ showToast('⚠️ İç mesajlarda dosya gönderilemez.'); return; }
   if(!activeJid){ showToast('Önce bir sohbet seç.'); return; }
   const files=[...(e.dataTransfer?.files||[])];
   if(files.length) uploadFiles(files);
