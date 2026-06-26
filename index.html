@@ -1432,6 +1432,10 @@
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
     Bildirim sesi <span class="set-toggle on" id="soundToggle"></span>
   </div>
+  <div class="set-item" id="takipToggleItem" onclick="toggleTakipUyari()" style="display:none">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+    Takip uyarıları <span class="set-toggle on" id="takipToggle"></span>
+  </div>
   <div class="set-item" onclick="openSelfChat()">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
     Kendime mesaj
@@ -1908,6 +1912,8 @@ function showToast(msg){
 // TAKİP UYARI KARTI: sağ altta, yöneticiye. Tıklayınca o grup açılır.
 const _takipKartGosterilen=new Set(); // aynı grup için üst üste kart yığılmasın
 function takipKartiGoster(d){
+  // kullanıcı takip uyarılarını KAPATMIŞSA gösterme (kişiye özel ayar)
+  if(!takipUyariAcik) return;
   const kaplar=document.getElementById('takipKartlar');
   if(!kaplar) return;
   // aynı grup için zaten kart varsa tekrar gösterme
@@ -1988,6 +1994,15 @@ document.addEventListener('click',e=>{ if(!settingsMenu.contains(e.target)&&e.ta
 function toggleSound(){
   soundOn=!soundOn;
   document.getElementById('soundToggle').classList.toggle('on', soundOn);
+}
+// TAKİP UYARILARI aç/kapa (kişiye özel — tarayıcıda saklanır). Varsayılan AÇIK.
+let takipUyariAcik = true;
+try{ const v=localStorage.getItem('takipUyariAcik'); if(v==='0') takipUyariAcik=false; }catch(e){}
+function toggleTakipUyari(){
+  takipUyariAcik=!takipUyariAcik;
+  document.getElementById('takipToggle').classList.toggle('on', takipUyariAcik);
+  try{ localStorage.setItem('takipUyariAcik', takipUyariAcik?'1':'0'); }catch(e){}
+  showToast(takipUyariAcik ? '🔔 Takip uyarıları açıldı' : '🔕 Takip uyarıları kapatıldı');
 }
 function toggleThemeFromMenu(){
   if(typeof skin!=='undefined' && skin!=='klasik') setSkin('klasik');
@@ -3344,6 +3359,13 @@ function applyUser(){
   // "Aktif kullanicilar" menusu sadece yoneticide gorunur
   const au=document.getElementById('activeUsersItem');
   if(au) au.style.display = currentUser.role==='admin' ? 'flex' : 'none';
+  // "Takip uyarıları" aç/kapa SADECE yöneticide görünür + mevcut durumu yansıt
+  const tt=document.getElementById('takipToggleItem');
+  if(tt){
+    tt.style.display = currentUser.role==='admin' ? 'flex' : 'none';
+    const ts=document.getElementById('takipToggle');
+    if(ts) ts.classList.toggle('on', takipUyariAcik);
+  }
   // "Izinli IP'ler" menusu sadece yoneticide gorunur
   const ipm=document.getElementById('ipMgmtItem');
   if(ipm) ipm.style.display = currentUser.role==='admin' ? 'flex' : 'none';
@@ -5977,11 +5999,13 @@ document.querySelectorAll('#filters .filter').forEach(f=>{
 // Dosya secilince/suruklenince: DIREKT gondermez, once onizleme modali acar
 let _pendingFiles=[];
 function uploadFiles(files){
-  // KRİTİK GÜVENLİK: İç mesaj (ekip içi) modundayken dosya gönderimi ENGELLENİR.
-  // Yoksa iç mesajda sürüklenen PDF, en son açık WhatsApp grubuna (activeJid) gidiyordu
-  // -> MÜŞTERİYE YANLIŞ BELGE. İç mesajda dosya gönderme özelliği yok.
+  // KRİTİK GÜVENLİK: uploadFiles SADECE WhatsApp sohbetine gönderir. İç mesaj modunda
+  // ASLA çağrılmamalı (iç mesaj dosyaları internalDosyaGonder ile gider). Bu bir güvenlik ağı:
+  // yanlışlıkla çağrılırsa, dosyanın WhatsApp grubuna gitmesini önler.
   if(_mainTab==='internal'){
-    showToast('⚠️ İç mesajlarda dosya gönderilemez. Önce bir WhatsApp sohbeti açın.');
+    // iç mesajda dosya gönderme: doğru fonksiyona yönlendir (ekip arkadaşına)
+    if(_internalOther){ internalDosyaGonder(files); }
+    else { showToast('Önce bir ekip arkadaşı seç.'); }
     return;
   }
   if(!activeJid){ showToast('Önce bir sohbet seç.'); return; }
@@ -6304,16 +6328,28 @@ document.addEventListener('keydown',(e)=>{
 // ---- Surukle-birak (coklu dosya dahil) ----
 const conv=document.getElementById('conv'), dropOverlay=document.getElementById('dropOverlay');
 let dragCounter=0;
-conv.addEventListener('dragenter',e=>{ e.preventDefault(); if(!activeJid || _mainTab==='internal')return; dragCounter++; dropOverlay.classList.add('show'); });
+conv.addEventListener('dragenter',e=>{
+  e.preventDefault();
+  // iç mesaj modunda: ekip arkadaşı seçiliyse overlay göster (dosya iç mesaja gidecek)
+  if(_mainTab==='internal'){ if(_internalOther){ dragCounter++; dropOverlay.classList.add('show'); } return; }
+  if(!activeJid)return;
+  dragCounter++; dropOverlay.classList.add('show');
+});
 conv.addEventListener('dragover',e=>{ e.preventDefault(); });
 conv.addEventListener('dragleave',e=>{ e.preventDefault(); dragCounter--; if(dragCounter<=0){dragCounter=0;dropOverlay.classList.remove('show');} });
 conv.addEventListener('drop',e=>{
   e.preventDefault(); dragCounter=0; dropOverlay.classList.remove('show');
-  // İç mesaj modunda dosya bırakmayı engelle (yanlış gruba gitmesin)
-  if(_mainTab==='internal'){ showToast('⚠️ İç mesajlarda dosya gönderilemez.'); return; }
-  if(!activeJid){ showToast('Önce bir sohbet seç.'); return; }
   const files=[...(e.dataTransfer?.files||[])];
-  if(files.length) uploadFiles(files);
+  if(!files.length) return;
+  // İÇ MESAJ modu: dosyayı İÇ MESAJ olarak gönder (WhatsApp'a değil, ekip arkadaşına)
+  if(_mainTab==='internal'){
+    if(!_internalOther){ showToast('Önce bir ekip arkadaşı seç.'); return; }
+    internalDosyaGonder(files);
+    return;
+  }
+  // Normal WhatsApp sohbeti
+  if(!activeJid){ showToast('Önce bir sohbet seç.'); return; }
+  uploadFiles(files);
 });
 
 // ---- Yeni sohbet ----
