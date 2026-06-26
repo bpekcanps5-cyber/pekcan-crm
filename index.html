@@ -5979,25 +5979,46 @@ let lbScale=1, lbX=0, lbY=0, lbDragging=false, lbStartX=0, lbStartY=0;
 const lbImg=document.getElementById('lightboxImg'), lb=document.getElementById('lightbox');
 function lbApply(){ lbImg.style.transform='translate('+lbX+'px,'+lbY+'px) scale('+lbScale+')'; }
 // ─── LIGHTBOX GALERİ ───
-// Açık sohbetteki TÜM fotoğrafları toplar, tıklanan fotodan başlar, ←/→ ile gezinilir.
-let _lbGaleri=[];   // {url} listesi (açık sohbetin tüm fotoğrafları)
+// Tıklanan fotoğraf bir ALBÜMdeyse (arka arkaya gönderilmiş), SADECE o albümün fotoğrafları
+// arasında gezinilir. Tek gönderilmiş foto ise yalnız kendisi gösterilir.
+let _lbGaleri=[];   // {url} listesi (gezilecek fotoğraflar)
 let _lbIndex=0;     // şu an gösterilen fotoğrafın indexi
-function lbGaleriTopla(){
-  // açık sohbetin image mesajlarının URL'lerini sırayla topla
+function lbGaleriTopla(tiklananUrl){
   _lbGaleri=[];
   const c = activeJid ? chats[activeJid] : null;
-  if(!c || !c.messages) return;
-  for(const m of c.messages){
-    if(m.kind==='image' && (m.mediaUrl||m.thumb)){
-      _lbGaleri.push(m.mediaUrl || m.thumb);
-    }
+  if(!c || !c.messages){ _lbGaleri=[tiklananUrl]; return; }
+  const msgs=c.messages;
+  const fotoMu=(x)=> x && x.kind==='image' && (x.mediaUrl||x.thumb) && !x.deleted;
+  // tıklanan fotoğrafın mesaj index'ini bul (url eşleşmesi)
+  let tikIdx=-1;
+  for(let i=0;i<msgs.length;i++){
+    if(fotoMu(msgs[i]) && (msgs[i].mediaUrl===tiklananUrl || msgs[i].thumb===tiklananUrl)){ tikIdx=i; break; }
+  }
+  if(tikIdx<0){ _lbGaleri=[tiklananUrl]; return; }
+  // bu fotoğrafın ait olduğu ALBÜMÜ bul (arka arkaya, aynı gönderen, 90sn içinde, açıklamasız)
+  // geriye doğru albüm başını bul
+  let bas=tikIdx;
+  while(bas>0 && fotoMu(msgs[bas-1]) && fotoMu(msgs[bas])
+        && msgs[bas-1].fromMe===msgs[bas].fromMe
+        && (msgs[bas-1].sender||'')===(msgs[bas].sender||'')
+        && Math.abs((msgs[bas].ts||0)-(msgs[bas-1].ts||0))<90000
+        && !msgs[bas].caption && !msgs[bas-1].caption){ bas--; }
+  // ileriye doğru albüm sonunu bul + url'leri topla
+  let i=bas;
+  _lbGaleri.push(msgs[i].mediaUrl||msgs[i].thumb);
+  while(i+1<msgs.length && fotoMu(msgs[i+1]) && fotoMu(msgs[i])
+        && msgs[i+1].fromMe===msgs[i].fromMe
+        && (msgs[i+1].sender||'')===(msgs[i].sender||'')
+        && Math.abs((msgs[i+1].ts||0)-(msgs[i].ts||0))<90000
+        && !msgs[i+1].caption && !msgs[i].caption){
+    i++; _lbGaleri.push(msgs[i].mediaUrl||msgs[i].thumb);
   }
 }
 function openLightbox(url){
-  // galeriyi topla, tıklanan fotoğrafın index'ini bul
-  lbGaleriTopla();
+  // tıklanan fotonun albümünü topla, index'ini bul
+  lbGaleriTopla(url);
   _lbIndex = _lbGaleri.indexOf(url);
-  if(_lbIndex<0){ _lbGaleri=[url]; _lbIndex=0; } // listede yoksa tek foto göster
+  if(_lbIndex<0){ _lbGaleri=[url]; _lbIndex=0; }
   lbGoster();
   lb.classList.add('show');
 }
