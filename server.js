@@ -2470,25 +2470,46 @@ function aktiviteMesajiTespit(text) {
 // O GRUPTA HİÇ MESAJ gelmezse, YÖNETİCİ paneline "takipte kalmış olabilir" kartı düşer.
 // O grupta herhangi biri (gelen/giden) yazınca uyarı İPTAL olur.
 // ════════════════════════════════════════════════════════════════
-const TAKIP_BEKLEME_MS = 4 * 60 * 1000; // 4 dakika
-const _takipUyari = new Map(); // jid -> { timer, kisi, tur, grupAd, lineId, ts }
+const TAKIP_BEKLEME_MS = 3 * 60 * 1000; // 3 dakika
+const _takipUyari = new Map(); // jid -> { timer, sonKisi, grupAd, lineId, ts }
 
-function takipUyarisiBaslat(jid, kisi, tur, grupAd, lineId) {
-  // önceki timer varsa iptal et (yeni aktivite, süre baştan)
+// ÇİZGİ TESPİTİ: "------", "======", "____" gibi mesajlar "işlem bitti" işaretidir.
+// Çizginin yanında birkaç harf olsa bile sayılır (örn "--------e", "=====xyz" — yanlış
+// yazım/fazladan tuş). Mantık: mesajda en az 5 ardışık çizgi karakteri varsa = çizgi.
+function cizgiMesajiMi(text) {
+  if (!text || typeof text !== 'string') return false;
+  const t = text.trim();
+  if (t.length < 3) return false;
+  // 1) Tamamen çizgi karakterlerinden oluşuyorsa (en az 3 çizgi) -> çizgi
+  if (/^[-=_.\s─—–]+$/.test(t)) {
+    const cizgiSayisi = (t.match(/[-=_─—–]/g) || []).length;
+    if (cizgiSayisi >= 3) return true;
+  }
+  // 2) İçinde EN AZ 5 ARDIŞIK çizgi karakteri varsa (yanında harf olsa bile) -> çizgi
+  //    "--------e", "====son", "iş bitti ------" gibi durumları yakalar.
+  if (/[-=_─—–]{5,}/.test(t)) return true;
+  return false;
+}
+
+// Bir grupta mesaj geldi. Çizgi DEĞİLSE 3dk takip başlat/yenile. Çizgi İSE iptal (iş bitti).
+function takipKontrol(jid, text, sonKisi, grupAd, lineId, isGroup) {
+  if (!isGroup) return; // sadece gruplarda
+  if (cizgiMesajiMi(text)) {
+    // ÇİZGİ çekildi = işlem tamamlandı -> bekleyen uyarıyı iptal et
+    takipUyarisiIptal(jid);
+    return;
+  }
+  // çizgi DEĞİL -> 3 dk sonra hâlâ çizgi/mesaj gelmezse uyar (süreyi baştan başlat)
   const eski = _takipUyari.get(jid);
   if (eski && eski.timer) clearTimeout(eski.timer);
   const timer = setTimeout(() => {
-    // 4 dk doldu, hiç mesaj gelmedi -> yöneticilere kart gönder
     _takipUyari.delete(jid);
-    const turYazi = tur === 'kesim' ? 'kesim/işlem' : 'ilgileniyorum';
     const payload = {
       type: 'takipUyari',
       jid,
       grupAd: grupAd || (jid || '').split('@')[0],
-      kisi: kisi || '',
-      tur,
-      turYazi,
-      mesaj: `"${kisi || 'Biri'}" ${turYazi} dedi ama 4 dk'dır bu grupta işlem yok. Takipte kalmış olabilir mi?`,
+      kisi: sonKisi || '',
+      mesaj: `"${grupAd || 'Bu grup'}" grubunda 3 dk'dır işlem yok ve çizgi çekilmemiş. İş yarım kalmış olabilir.`,
     };
     // SADECE bu hattın YÖNETİCİ panellerine gönder
     wss.clients.forEach((c) => {
@@ -2498,12 +2519,12 @@ function takipUyarisiBaslat(jid, kisi, tur, grupAd, lineId) {
         }
       } catch (e) {}
     });
-    console.log(`🔔 TAKİP UYARISI: ${grupAd} | ${kisi} ${turYazi} dedi, 4dk işlem yok -> yöneticiye bildirildi`);
+    console.log(`🔔 TAKİP UYARISI: ${grupAd} | 3dk işlem yok + çizgi çekilmemiş -> yöneticiye bildirildi`);
   }, TAKIP_BEKLEME_MS);
-  _takipUyari.set(jid, { timer, kisi, tur, grupAd, lineId, ts: Date.now() });
+  _takipUyari.set(jid, { timer, sonKisi, grupAd, lineId, ts: Date.now() });
 }
 
-// O grupta herhangi bir mesaj gelince takip uyarısını iptal et (sorun yok demektir)
+// Takip uyarısını iptal et
 function takipUyarisiIptal(jid) {
   const v = _takipUyari.get(jid);
   if (v && v.timer) { clearTimeout(v.timer); _takipUyari.delete(jid); }
@@ -4256,13 +4277,13 @@ async function startWA(lineId = 'ofis') {
         }
       }
 
-      // TAKİP UYARISI İPTALİ: bu grupta yeni bir mesaj geldi -> bekleyen takip uyarısı varsa iptal et.
-      // (Aktivite mesajının KENDİSİ timer'ı başlatır; o yüzden aktivite DEĞİLSE iptal ediyoruz.
-      //  Böylece "ilgileniyorum" yazan mesaj kendi timer'ını iptal etmez, ama sonraki herhangi
-      //  bir mesaj -gelen ya da giden- iptal eder = "grupta hareket var, sorun yok".)
-      if (isGroup && _takipUyari.has(jid)) {
-        const buAktivite = aktiviteMesajiTespit(info.text);
-        if (!buAktivite) takipUyarisiIptal(jid);
+      // TAKİP UYARISI (çizgi mantığı): grupta mesaj geldi. En son mesaj ÇİZGİ (---- ====)
+      // DEĞİLSE 3 dk sonra hâlâ çizgi/mesaj gelmezse yöneticiye "iş yarım kalmış olabilir" uyarısı.
+      // Çizgi gelirse = işlem bitti, uyarı iptal. (Hem bizim hem müşteri mesajı sayılır.)
+      if (isGroup) {
+        const takipKisi = fromMe ? 'Ekip' : (senderName || senderPush || '');
+        const takipGrupAd = (CC.get(jid)?.name) || (jid || '').split('@')[0];
+        takipKontrol(jid, info.text, takipKisi, takipGrupAd, lineId, isGroup);
       }
 
       addMessage(jid, {
@@ -4324,11 +4345,6 @@ async function startWA(lineId = 'ofis') {
               hamMesaj: (info.text || '').slice(0, 80),
               ts: m.messageTimestamp ? Number(m.messageTimestamp) * 1000 : Date.now(),
             }).catch(() => {});
-            // TAKİP UYARISI: bu gruba 4 dk içinde işlem gelmezse yöneticiye haber ver.
-            // (sadece GRUPTA mantıklı — kişi sohbetinde takip uyarısı yok)
-            if (isGroup) {
-              takipUyarisiBaslat(jid, aktKisiAdi, akt.tur, chatObj2?.name || (jid || '').split('@')[0], lineId);
-            }
           }
         }
       }
