@@ -2003,6 +2003,25 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ type: 'opOk', message: 'Çıkarıldı.' }));
       }
 
+      // FOTO/MEDYA İŞARETLEME (ortak "yapıldı" tiki): bellekte işaretle + DB'ye yaz + tüm panellere yay.
+      else if (msg.type === 'mesajIsaretle') {
+        const cjid = msg.jid;
+        const msgId = msg.msgId;
+        const isaretli = !!msg.isaretli;
+        if (!cjid || !msgId) return;
+        // bellekteki mesaja işaretle
+        const chat = (ws._lineId === 'ofis' || !ws._lineId) ? CC.get(cjid) : null;
+        const hedefChat = chat || CC.get(cjid);
+        if (hedefChat && hedefChat.messages) {
+          const m = hedefChat.messages.find(x => x.id === msgId);
+          if (m) m.isaretli = isaretli;
+        }
+        // DB'ye yaz (kalıcı olsun)
+        db.setMesajIsaret(msgId, isaretli).catch(() => {});
+        // tüm ofis panellerine yay (ortak)
+        broadcastHat(ws._lineId || 'ofis', { type: 'mesajIsaretleGuncelle', jid: cjid, msgId, isaretli });
+      }
+
       else if (msg.type === 'getContacts') {
         // Panele kayitli kisileri (isim + numara) gonder — gruba isimle ekleme icin.
         // Hem manuel/ofis kisileri (savedContacts) hem kisi sohbetleri toplanir.
@@ -2134,7 +2153,7 @@ wss.on('connection', (ws) => {
                 reaction: r.reaction || null, myReaction: r.my_reaction || null,
                 forwarded: r.forwarded || false, mentionsMe: r.mentions_me || false,
                 edited: r.edited || false, deleted: r.deleted || false,
-                time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null, mentions: r.mentions || null, caption: r.caption || '',
+                time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null, mentions: r.mentions || null, caption: r.caption || '', isaretli: r.isaretli || false,
               }));
               // bellek + DB birlestir (id'ye gore tekilastir)
               const birlesik = new Map();
@@ -2184,7 +2203,7 @@ wss.on('connection', (ws) => {
                 forwarded: r.forwarded || false, mentionsMe: r.mentions_me || false,
                 edited: r.edited || false, deleted: r.deleted || false,
                 time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null,
-                mentions: r.mentions || null, caption: r.caption || '',
+                mentions: r.mentions || null, caption: r.caption || '', isaretli: r.isaretli || false,
               });
               eklenen++;
             }
@@ -2225,7 +2244,7 @@ wss.on('connection', (ws) => {
             forwarded: r.forwarded || false, mentionsMe: r.mentions_me || false,
             edited: r.edited || false, deleted: r.deleted || false,
             time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null,
-            mentions: r.mentions || null, caption: r.caption || '',
+            mentions: r.mentions || null, caption: r.caption || '', isaretli: r.isaretli || false,
           }));
           // belleğe de ekle (varsa tekrar etme) ki bir daha sorulmasın
           if (eskiMsgs.length) {
@@ -3475,11 +3494,58 @@ async function saveMedia(m, kind, sock = waSock) {
     }
     const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
     fs.writeFileSync(path.join(MEDIA_DIR, fileName), buffer);
-    return '/media/' + fileName;
+    const webYol = '/media/' + fileName;
+    // VIDEO ise: tarayıcıda sesi olmayabilir (HEVC/uyumsuz codec). ffmpeg ile
+    // H.264 + AAC'ye çevir (tarayıcı kesin destekler, ses gelir). Arka planda yapılır;
+    // bitince videoUpdate ile panele yeni (sesli) sürüm bildirilir.
+    if (kind === 'video' && FFMPEG_VAR) {
+      videoSesliCevir(path.join(MEDIA_DIR, fileName), fileName, m);
+    }
+    return webYol;
   } catch (e) {
     console.error('Medya indirilemedi:', e.message);
     return null;
   }
+}
+
+// ffmpeg kurulu mu? (başlangıçta bir kez kontrol edilir)
+let FFMPEG_VAR = false;
+try {
+  require('child_process').execSync('ffmpeg -version', { stdio: 'ignore' });
+  FFMPEG_VAR = true;
+  console.log('✅ ffmpeg bulundu — videolar tarayıcı-dostu (sesli) formata çevrilecek.');
+} catch (e) {
+  console.log('⚠️  ffmpeg YOK — video ses dönüşümü kapalı. Kurmak için: apt install ffmpeg -y');
+}
+
+// Bir videoyu H.264 + AAC'ye çevir (tarayıcıda sesli oynar). Başarılıysa orijinalin
+// yerine kullanılır; başarısızsa orijinal kalır (güvenlik ağı).
+const _videoCevrilenler = new Set(); // aynı dosyayı tekrar çevirme
+function videoSesliCevir(tamYol, fileName, m) {
+  if (_videoCevrilenler.has(fileName)) return;
+  _videoCevrilenler.add(fileName);
+  const { exec } = require('child_process');
+  const ciktiAd = fileName.replace(/\.[^.]+$/, '') + '_web.mp4';
+  const ciktiYol = path.join(MEDIA_DIR, ciktiAd);
+  // -movflags +faststart: web'de hızlı başlasın. -c:v libx264 -c:a aac: tarayıcı dostu.
+  const komut = `ffmpeg -y -i "${tamYol}" -c:v libx264 -preset veryfast -crf 26 -c:a aac -b:a 128k -movflags +faststart "${ciktiYol}"`;
+  exec(komut, { timeout: 120000 }, (err) => {
+    if (err) { console.error('🎬 video dönüşüm hatası:', err.message); return; }
+    try {
+      // orijinali sil, web sürümünü orijinal adına taşı (URL değişmesin)
+      fs.unlinkSync(tamYol);
+      fs.renameSync(ciktiYol, tamYol);
+      console.log(`🎬 video sesli formata çevrildi: ${fileName}`);
+      // panellere "bu video güncellendi" de (yeniden yüklensin, sesli gelsin)
+      try {
+        const jid = m.key?.remoteJid;
+        if (jid) {
+          // tüm hatlara değil, ofis + varsa ilgili hatta yayınla (basit: ofis)
+          broadcastHat('ofis', { type: 'videoGuncellendi', jid, msgId: m.key?.id, mediaUrl: '/media/' + fileName });
+        }
+      } catch (e2) {}
+    } catch (e3) { console.error('🎬 video taşıma hatası:', e3.message); }
+  });
 }
 
 // ---- WhatsApp baglantisi ----

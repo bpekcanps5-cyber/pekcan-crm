@@ -2404,6 +2404,19 @@ function connect(){
         if(m){ m.isaretli=d.isaretli; if(activeJid===d.jid) renderMessagesDebounced(c); }
       }
     }
+    else if(d.type==='videoGuncellendi'){
+      // video sesli formata çevrildi (sunucuda ffmpeg) -> video elementini tazele (sesli oynasın)
+      const c=chats[d.jid];
+      if(c && c.messages){
+        const m=c.messages.find(x=>x.id===d.msgId);
+        if(m){
+          // URL'e zaman damgası ekle ki tarayıcı eski (sessiz) sürümü önbellekten almasın
+          m.mediaUrl=d.mediaUrl;
+          m._videoTazele=Date.now();
+          if(activeJid===d.jid) renderMessagesDebounced(c);
+        }
+      }
+    }
     else if(d.type==='contactsList'){ addMemberContactsGeldi(d.contacts); }
     else if(d.type==='msgStatus'){
       // mesaj durumu (tik) guncellemesi
@@ -5067,7 +5080,8 @@ function renderMessages(c, searchQ){
       body='<div class="foto-sarmal"><img class="photo'+yukleniyorCls+'" src="'+esc(fotoSrc)+'" loading="lazy" decoding="async" onclick="openLightbox(\''+esc(tiklaSrc)+'\')">'+tikEt+'</div>';
       if(m.text)body+='<div class="caption">'+hlight(m.text,searchQ,m.mentions)+'</div>';
     } else if(m.kind==='video'&&m.mediaUrl){
-      body='<video class="clip" src="'+esc(m.mediaUrl)+'" controls></video>';
+      const vsrc = m._videoTazele ? (m.mediaUrl+'?v='+m._videoTazele) : m.mediaUrl;
+      body='<video class="clip" src="'+esc(vsrc)+'" controls preload="metadata"></video>';
       if(m.text)body+='<div class="caption">'+hlight(m.text,searchQ,m.mentions)+'</div>';
     } else if(m.kind==='audio'&&m.mediaUrl){
       const aid='aud_'+(m.id||Math.random().toString(36).slice(2,8));
