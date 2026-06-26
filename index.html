@@ -3262,7 +3262,7 @@ function renderInternalList(d){
     const rozet = unread>0?'<span class="badge">'+unread+'</span>':'';
     const aktif = it.other_user===_internalOther?' active':'';
     return '<div class="chat'+aktif+'" onclick="openInternalChat(\''+esc(it.other_user)+'\')">'
-      + '<div class="avatar" style="background:linear-gradient(140deg,#6366f1,#4f46e5)">'+esc(initials(ad))+'</div>'
+      + '<div class="avatar" style="background:'+gradientFor(ad)+'">'+esc(initials(ad))+'</div>'
       + '<div class="chat-main"><div class="chat-top"><span class="chat-name">'+esc(ad)+'</span></div>'
       + '<div class="chat-bottom"><span class="chat-last">'+esc(sonKim)+esc(((it.last_text||'').trim()||'📎 Dosya').slice(0,40))+'</span>'+rozet+'</div></div>'
       + '</div>';
@@ -3276,7 +3276,7 @@ function openInternalChat(other){
   const ad=u?(u.displayName||u.username):other;
   document.getElementById('iconvName').textContent=ad;
   document.getElementById('iconvAvatar').textContent=initials(ad);
-  document.getElementById('iconvAvatar').style.background='linear-gradient(140deg,#6366f1,#4f46e5)';
+  document.getElementById('iconvAvatar').style.background=gradientFor(ad);
   document.getElementById('internalEmpty').style.display='none';
   document.getElementById('internalContent').style.display='flex';
   if(connected) ws.send(JSON.stringify({type:'internalLoad', other}));
@@ -3401,7 +3401,7 @@ function cizInternalPicker(liste){
   if(!liste.length){ sec.innerHTML='<div style="color:var(--faint);font-size:13px;padding:14px;text-align:center">Eşleşen kullanıcı yok</div>'; return; }
   sec.innerHTML=liste.map(u=>(
     '<div class="iup-item" onclick="pickInternalUser(\''+esc(u.username)+'\')">'
-    + '<div class="avatar" style="background:linear-gradient(140deg,#6366f1,#4f46e5);width:38px;height:38px">'+esc(initials(u.displayName||u.username))+'</div>'
+    + '<div class="avatar" style="background:'+gradientFor(u.displayName||u.username)+';width:38px;height:38px">'+esc(initials(u.displayName||u.username))+'</div>'
     + '<div><div style="font-weight:600;font-size:14px">'+esc(u.displayName||u.username)+'</div><div style="font-size:12px;color:var(--muted)">@'+esc(u.username)+'</div></div>'
     + '</div>'
   )).join('');
@@ -3628,7 +3628,7 @@ async function loadActiveUsers(){
       const rol = u.role==='admin'?'<span class="um-badge">Yönetici</span>':'';
       return '<div style="display:flex;align-items:center;gap:12px;background:var(--panel-2);border-radius:10px;padding:11px 13px">'
         + nokta
-        + '<div class="avatar" style="width:34px;height:34px;background:linear-gradient(140deg,#6366f1,#4f46e5);font-size:13px">'+esc(initials(u.displayName))+'</div>'
+        + '<div class="avatar" style="width:34px;height:34px;background:'+gradientFor(u.displayName)+';font-size:13px">'+esc(initials(u.displayName))+'</div>'
         + '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px">'+esc(u.displayName)+' '+rol+'</div><div style="font-size:12px;color:var(--muted)">@'+esc(u.username)+'</div></div>'
         + durum
         + '</div>';
