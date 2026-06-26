@@ -3559,7 +3559,7 @@ function openUserMgmt(){
   document.getElementById('userMgmtModal').classList.add('show');
   document.getElementById('addUserMsg').textContent='';
   const us=document.getElementById('userSearch');
-  if(us){ us.value=''; us.oninput=()=>userListeCiz(); }
+  if(us){ us.value=''; us.oninput=()=>userListeCiz(); setTimeout(()=>us.focus(),50); }
   loadUserList();
 }
 
@@ -4514,6 +4514,8 @@ function grupAtamaAc(){
   renderAssignList();
   // ekip listesi yoksa iste
   if(!_team.length) ws.send(JSON.stringify({type:'getTeam'}));
+  // Modal açılınca arama kutusuna ODAKLAN (direkt klavyeden yazmaya başlayabilsin)
+  setTimeout(()=>{ if(as) as.focus(); }, 50);
 }
 function teamGeldi(liste){ _team=liste||[]; if(document.getElementById('assignModal').classList.contains('show')) renderAssignList(); }
 function renderAssignList(){
