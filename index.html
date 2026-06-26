@@ -449,11 +449,11 @@
   /* iç mesaj dosya/resim */
   .im-img{max-width:240px;max-height:280px;border-radius:10px;display:block;cursor:pointer;margin:2px 0}
   .im-caption{margin-top:5px;font-size:13.5px}
-  .im-dosya{display:flex;align-items:center;gap:9px;padding:9px 12px;background:rgba(0,0,0,.12);border-radius:10px;text-decoration:none;color:inherit;min-width:180px}
+  .im-dosya{display:flex;align-items:center;gap:9px;padding:9px 12px;background:rgba(0,0,0,.12);border-radius:10px;text-decoration:none;color:inherit;min-width:180px;max-width:280px}
   .im-msg.out .im-dosya{background:rgba(255,255,255,.15)}
   .im-dosya-ik{font-size:24px;flex-shrink:0}
-  .im-dosya-ad{flex:1;min-width:0;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .im-dosya-in{font-size:11px;opacity:.8;flex-shrink:0}
+  .im-dosya-ad{flex:1;min-width:0;font-size:13px;font-weight:600;word-break:break-word;line-height:1.3}
+  .im-dosya-in{font-size:11px;opacity:.8;flex-shrink:0;align-self:flex-end}
   .im-msg.out{align-self:flex-end;background:linear-gradient(140deg,#14b8a6,#0f766e);color:#fff;border-bottom-right-radius:4px}
   .im-msg.in{align-self:flex-start;background:var(--panel-2);color:var(--text);border-bottom-left-radius:4px}
   .im-msg .im-time{font-size:10px;opacity:.7;margin-top:3px;text-align:right}
@@ -688,6 +688,12 @@
   .album-karo img.photo{width:100%;height:100%;object-fit:cover;max-width:none;border-radius:0;margin:0;cursor:zoom-in}
   .album-grid.album-3 .album-karo:first-child{aspect-ratio:2/1}
   .album-fazla{position:absolute;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;color:#fff;font-size:26px;font-weight:700}
+  /* FOTO İŞARET tiki (yapıldı) — köşede yeşil daire */
+  .foto-sarmal{position:relative;display:inline-block}
+  .foto-isaret{position:absolute;top:8px;right:8px;width:26px;height:26px;border-radius:50%;background:var(--brand);display:grid;place-items:center;box-shadow:0 2px 8px rgba(0,0,0,.35);z-index:2}
+  .foto-isaret svg{width:17px;height:17px;color:#fff}
+  .album-karo .foto-isaret{top:5px;right:5px;width:22px;height:22px}
+  .album-karo .foto-isaret svg{width:14px;height:14px}
   /* tam cozunurluk inene kadar onizleme hafif bulanik (yukleniyor hissi) */
   .msg img.photo.loading-thumb{filter:blur(1.5px) brightness(.92);transition:filter .3s}
   .msg video.clip{max-width:300px;width:100%;border-radius:13px;display:block;margin-bottom:3px}
@@ -1966,6 +1972,20 @@
 
 <script>
 const avatarColors=['#6a4c93','#1982c4','#8ac926','#ff924c','#ff595e','#1d9e75','#c77dff','#0fa3b1'];
+// Renk geçişli (gradient) avatar arka planı — düz renkten daha modern/şık durur.
+const avatarGradients=[
+  'linear-gradient(135deg,#667eea,#764ba2)', // mor-lacivert
+  'linear-gradient(135deg,#2193b0,#6dd5ed)', // mavi
+  'linear-gradient(135deg,#11998e,#38ef7d)', // yeşil
+  'linear-gradient(135deg,#ee9ca7,#ffdde1)', // pembe-soft
+  'linear-gradient(135deg,#f7971e,#ffd200)', // turuncu-sarı
+  'linear-gradient(135deg,#fc466b,#3f5efb)', // pembe-mavi
+  'linear-gradient(135deg,#c471f5,#fa71cd)', // mor-pembe
+  'linear-gradient(135deg,#43cea2,#185a9d)', // turkuaz-lacivert
+  'linear-gradient(135deg,#ff6e7f,#bfe9ff)', // mercan-mavi
+  'linear-gradient(135deg,#f12711,#f5af19)', // kırmızı-turuncu
+];
+function gradientFor(n){let s=0;for(const c of (n||'?'))s+=c.charCodeAt(0);return avatarGradients[s%avatarGradients.length];}
 function colorFor(n){let s=0;for(const c of n)s+=c.charCodeAt(0);return avatarColors[s%avatarColors.length];}
 function initials(n){const p=n.trim().split(/\s+/);return((p[0]?.[0]||'')+(p[1]?.[0]||'')).toUpperCase();}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
@@ -2034,6 +2054,8 @@ function pinSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="
 function archiveSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z"/></svg>';}
 function dotsSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>';}
 function kisiSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';}
+function tikSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';}
+function okSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';}
 function sunSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 000-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/></svg>';}
 function moonSvg(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>';}
 
@@ -2370,6 +2392,14 @@ function connect(){
       if(activeJid===d.jid){ guncelleAtamaBilgisi(); if(document.getElementById('assignModal').classList.contains('show')) renderAssignList(); }
       renderList();
     }
+    else if(d.type==='mesajIsaretleGuncelle'){
+      // bir fotoğraf/medya işaretlendi/kaldırıldı (ortak — başka panel yaptı)
+      const c=chats[d.jid];
+      if(c && c.messages){
+        const m=c.messages.find(x=>x.id===d.msgId);
+        if(m){ m.isaretli=d.isaretli; if(activeJid===d.jid) renderMessagesDebounced(c); }
+      }
+    }
     else if(d.type==='contactsList'){ addMemberContactsGeldi(d.contacts); }
     else if(d.type==='msgStatus'){
       // mesaj durumu (tik) guncellemesi
@@ -2522,6 +2552,7 @@ function benimAdim(){
 
 function startApp(){
   // panele giris yapildi - WebSocket'i baslat (bir kez)
+  pinnedYukle(); // sabitlenen sohbetleri tarayıcıdan geri yükle (kaybolmasın)
   if(!_wsStarted){ _wsStarted=true; connect(); }
   document.getElementById('loginScreen').classList.remove('show');
   // HENUZ baglantiyi bilmiyoruz. Bos panelde takilmamak icin: eger bu kullanici
@@ -3283,7 +3314,9 @@ function drawInternalMessages(){
         if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
       } else {
         // belge / ses / diğer -> indirilebilir dosya kartı
-        icerik='<a href="'+esc(medya)+'" target="_blank" download class="im-dosya"><span class="im-dosya-ik">📄</span><span class="im-dosya-ad">'+esc(dosyaAd)+'</span><span class="im-dosya-in">⬇ indir</span></a>';
+        // download="dosyaAd": GERÇEK adıyla insin. İsim sunucuya da ?name= ile gider.
+        const inSrc = esc(medya) + (medya.includes('?')?'&':'?') + 'name=' + encodeURIComponent(dosyaAd);
+        icerik='<a href="'+inSrc+'" download="'+esc(dosyaAd)+'" class="im-dosya"><span class="im-dosya-ik">📄</span><span class="im-dosya-ad">'+esc(dosyaAd)+'</span><span class="im-dosya-in">⬇ indir</span></a>';
         if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
       }
     } else {
@@ -3964,7 +3997,8 @@ function previewText(c){
 // avatar HTML'i: foto varsa arka plan resmi, yoksa bas harfler
 function avatarHtml(c){
   const cls='chat-avatar'+(c.isGroup?' group':'')+(c.avatar?' has-img':'');
-  const style=c.avatar?('background-image:url('+c.avatar+')'):('background:'+colorFor(c.name||c.jid));
+  // resim varsa onu, yoksa renk GEÇİŞLİ (gradient) arka plan — daha modern/şık
+  const style=c.avatar?('background-image:url('+c.avatar+')'):('background:'+gradientFor(c.name||c.jid));
   const inner=c.avatar?'':(c.isGroup?groupSvg():initials(c.name||c.jid));
   const gicon=c.isGroup?'<span class="group-icon">'+groupSvg()+'</span>':'';
   return '<div class="'+cls+'" style="'+style+'">'+inner+gicon+'</div>';
@@ -4202,7 +4236,22 @@ function openCtxMenu(e,jid){
   ctxMenu.style.top=e.clientY+'px';
   ctxMenu.classList.add('show');
 }
-function togglePin(jid){ pinned.has(jid)?pinned.delete(jid):pinned.add(jid); ctxMenu.classList.remove('show'); renderList(); }
+function togglePin(jid){
+  pinned.has(jid)?pinned.delete(jid):pinned.add(jid);
+  pinnedKaydet(); // KALICI yap (yenilense/yeniden yüklense de kaybolmasın)
+  ctxMenu.classList.remove('show');
+  renderList();
+}
+// Sabitlenen sohbetleri tarayıcıda KALICI sakla — yenileme/yeniden bağlanmada kaybolmasın.
+function pinnedKaydet(){
+  try{ localStorage.setItem('sabitliSohbetler', JSON.stringify([...pinned])); }catch(e){}
+}
+function pinnedYukle(){
+  try{
+    const v=localStorage.getItem('sabitliSohbetler');
+    if(v){ const arr=JSON.parse(v); if(Array.isArray(arr)){ arr.forEach(jid=>pinned.add(jid)); } }
+  }catch(e){}
+}
 function toggleArchive(jid){ archived.has(jid)?archived.delete(jid):archived.add(jid); ctxMenu.classList.remove('show'); if(jid===activeJid){activeJid=null;document.getElementById('convContent').style.display='none';document.getElementById('emptyState').style.display='grid';} renderList(); }
 document.addEventListener('click',e=>{ if(!ctxMenu.contains(e.target)&&!e.target.closest('.chat-menu-btn')) ctxMenu.classList.remove('show'); });
 
@@ -4999,8 +5048,9 @@ function renderMessages(c, searchQ){
         const yukCls=(!fm.mediaUrl&&fm.thumb)?' loading-thumb':'';
         const sonKaro=(gi===3 && kalan>0);
         const fazlaEt = sonKaro ? '<div class="album-fazla">+'+kalan+'</div>' : '';
+        const tikEt = fm.isaretli ? '<div class="foto-isaret" title="İşaretlendi">'+okSvg()+'</div>' : '';
         return '<div class="album-karo'+(sonKaro?' album-karo-son':'')+'" onclick="openLightbox(\''+esc(src)+'\')">'+
-          '<img class="photo'+yukCls+'" src="'+esc(src)+'" loading="lazy" decoding="async">'+fazlaEt+'</div>';
+          '<img class="photo'+yukCls+'" src="'+esc(src)+'" loading="lazy" decoding="async">'+fazlaEt+tikEt+'</div>';
       }).join('');
       body='<div class="album-grid '+gridCls+'">'+karolar+'</div>';
     } else if(m.kind==='image'&&(m.mediaUrl||m.thumb)){
@@ -5009,7 +5059,8 @@ function renderMessages(c, searchQ){
       const tiklaSrc = m.mediaUrl || m.thumb;
       // tam hali henuz inmediyse hafif bulanik goster (yukleniyor hissi)
       const yukleniyorCls = (!m.mediaUrl && m.thumb) ? ' loading-thumb' : '';
-      body='<img class="photo'+yukleniyorCls+'" src="'+esc(fotoSrc)+'" loading="lazy" decoding="async" onclick="openLightbox(\''+esc(tiklaSrc)+'\')">';
+      const tikEt = m.isaretli ? '<div class="foto-isaret" title="İşaretlendi">'+okSvg()+'</div>' : '';
+      body='<div class="foto-sarmal"><img class="photo'+yukleniyorCls+'" src="'+esc(fotoSrc)+'" loading="lazy" decoding="async" onclick="openLightbox(\''+esc(tiklaSrc)+'\')">'+tikEt+'</div>';
       if(m.text)body+='<div class="caption">'+hlight(m.text,searchQ,m.mentions)+'</div>';
     } else if(m.kind==='video'&&m.mediaUrl){
       body='<video class="clip" src="'+esc(m.mediaUrl)+'" controls></video>';
@@ -5082,6 +5133,11 @@ function renderMessages(c, searchQ){
       }
       // Seç: coklu secim modunu baslatir (WhatsApp gibi). Sonra normal tik ile devam edilir.
       btns+='<button onclick="startSelect(\''+m.id+'\')">'+selectSvg()+'<span>Seç</span></button>';
+      // İŞARETLE: foto/belge gibi medya işlerine "yapıldı" tiki (ortak — herkes görür)
+      if(m.kind==='image' || m.kind==='document' || m.kind==='video'){
+        const isaretliMi = m.isaretli;
+        btns+='<button onclick="isaretleToggle(\''+m.id+'\')">'+(isaretliMi?okSvg():tikSvg())+'<span>'+(isaretliMi?'İşareti kaldır':'İşaretle (✓)')+'</span></button>';
+      }
       // tetikleyici ▾ + gizli menu
       actions='<div class="msg-menu-wrap"><button class="msg-menu-btn" onclick="toggleMsgMenu(event)" aria-label="Menü"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button><div class="msg-actions">'+btns+'</div></div>';
     }
@@ -5433,6 +5489,20 @@ function startSelect(id){
   const c=chats[activeJid];
   if(c) renderMessagesDebounced(c);
   updateSelectionBar();
+}
+// FOTO İŞARETLEME: foto/belgeye "yapıldı" tiki (ortak — sunucuda saklanır, herkes görür)
+function isaretleToggle(id){
+  document.querySelectorAll('.msg-actions.open').forEach(m=>m.classList.remove('open'));
+  const c=chats[activeJid];
+  if(!c)return;
+  const m=(c.messages||[]).find(x=>x.id===id);
+  if(!m)return;
+  const yeniDurum=!m.isaretli;
+  m.isaretli=yeniDurum; // anlık göster (optimistic)
+  renderMessagesDebounced(c);
+  // sunucuya bildir (ortak kayıt + diğer panellere yayılır)
+  ws.send(JSON.stringify({type:'mesajIsaretle', jid:activeJid, msgId:id, isaretli:yeniDurum}));
+  showToast(yeniDurum?'✓ İşaretlendi':'İşaret kaldırıldı');
 }
 
 // ---- Duzenleme ----
