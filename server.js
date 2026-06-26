@@ -4261,6 +4261,12 @@ async function startWA(lineId = 'ofis') {
       }
 
       addMessage(jid, {
+        id: m.key.id,
+        raw: m,
+        key: m.key,
+        fromMe: fromMe,
+        kind: info.kind,
+        text: info.text,
         caption: info.caption || '', // belge/dosya aciklamasi (varsa)
         fileName: info._fileName || undefined, // belge adi (iletme icin saklanir)
         mime: info._mime || undefined,         // belge tipi (iletme icin saklanir)
