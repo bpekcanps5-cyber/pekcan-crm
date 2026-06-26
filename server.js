@@ -1884,6 +1884,11 @@ wss.on('connection', (ws) => {
       }
       // Etiketi sil
       else if (msg.type === 'deleteLabel') {
+        // GÜVENLİK: etiketi SADECE yönetici silebilir (normal kullanıcı silemez).
+        if (ws._role !== 'admin') {
+          ws.send(JSON.stringify({ type: 'opError', error: 'Etiketleri sadece yönetici silebilir.' }));
+          return;
+        }
         const id = msg.id;
         labels = labels.filter(l => l.id !== id);
         // tum gruplardan bu etiketi cikar

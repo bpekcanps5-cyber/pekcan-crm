@@ -4421,10 +4421,15 @@ function renderLabelModal(){
   if(!_labels.length){ box.innerHTML='<div style="color:var(--faint);font-size:13px;padding:10px;text-align:center">Henüz etiket yok. Aşağıdan oluştur.</div>'; return; }
   box.innerHTML=_labels.map(l=>{
     const ekli=grupEtiketleri.includes(l.id);
+    // SİLME butonu (🗑) SADECE yöneticiye görünür (normal kullanıcı etiket silemez)
+    const benAdmin = currentUser && currentUser.role==='admin';
+    const silBtn = benAdmin
+      ? '<span class="lbl-sil" onclick="event.stopPropagation();etiketSil(\''+esc(l.id)+'\')" title="Etiketi sil">🗑</span>'
+      : '';
     return '<div class="lbl-row'+(ekli?' ekli':'')+'" onclick="grupEtiketToggle(\''+esc(l.id)+'\')">'+
       '<span class="lbl-nokta" style="background:'+esc(l.color)+'"></span>'+
       '<span class="lbl-ad">'+esc(l.name)+'</span>'+
-      '<span class="lbl-sil" onclick="event.stopPropagation();etiketSil(\''+esc(l.id)+'\')" title="Etiketi sil">🗑</span>'+
+      silBtn+
       '<span class="lbl-check">'+(ekli?'✓':'')+'</span></div>';
   }).join('');
 }
