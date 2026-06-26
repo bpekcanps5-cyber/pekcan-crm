@@ -1544,8 +1544,9 @@
           <div style="font-size:12.5px;color:var(--muted);font-weight:600">Kullanıcı tipi:</div>
           <label class="um-check"><input type="radio" name="userTip" value="ofis" checked> 🏢 Ofis (ortak hattı kullanır, herkesle aynı grupları görür)</label>
           <label class="um-check"><input type="radio" name="userTip" value="pazarlama"> 📱 Pazarlama (kendi numarasını bağlar, sadece kendi sohbetlerini görür)</label>
+          <label class="um-check"><input type="radio" name="userTip" value="pzr_yonetici"> 📊 Pazarlama Yöneticisi (sadece pazarlama satışlarını görür/kontrol eder)</label>
         </div>
-        <label class="um-check">
+        <label class="um-check" id="newUserAdminWrap">
           <input type="checkbox" id="newUserAdmin"> Yönetici yap (kullanıcı açabilir)
         </label>
         <button class="btn primary" id="addUserBtn" style="align-self:flex-start;margin-top:4px">Kullanıcı oluştur</button>
@@ -2767,8 +2768,10 @@ async function kontrolYukle(){
     const d=await r.json();
     if(!d.ok){ if(liste) liste.innerHTML='<div class="kontrol-bos">'+(d.error||'Satışlar alınamadı')+'</div>'; return; }
     _kontrolVeri=d.satislar||[];
-    _kontrolAdmin=!!d.isAdmin;
-    document.getElementById('kontrolYonetici').style.display = _kontrolAdmin?'flex':'none';
+    // Düzenleme/silme yetkisi: admin VEYA pazarlama yöneticisi
+    _kontrolAdmin=!!d.isAdmin || !!d.pzrYonetici;
+    // Yönetici araç çubuğu (hat seçimi vs.) sadece GERÇEK admin'e; pazarlama yöneticisine gerek yok
+    document.getElementById('kontrolYonetici').style.display = (!!d.isAdmin)?'flex':'none';
     // satıcı dropdown'ını doldur (mevcut seçimi koru)
     satiriciDropdownDoldur(d.saticilar||[]);
     kontrolDashCiz();
@@ -3348,8 +3351,14 @@ async function doLogin(){
 
 function applyUser(){
   if(!currentUser) return;
+  const pzrYonetici = currentUser.role==='pzr_yonetici'; // pazarlama yöneticisi
   // ayarlar menusunde ismi goster
   const sn=document.getElementById('settingsName'); if(sn) sn.textContent=currentUser.displayName||currentUser.username;
+  // PAZARLAMA YÖNETİCİSİ: sadece Satış Kontrol görür. Sohbetler/İç Mesajlar gizlenir.
+  if(pzrYonetici){
+    pazarlamaYoneticiArayuzu();
+    return; // diğer menü ayarlarına gerek yok (hepsi gizli kalacak)
+  }
   // yonetici degilse "kullanici yonetimi" gizli kalir (asagida eklenecek)
   const um=document.getElementById('userMgmtItem');
   if(um) um.style.display = currentUser.role==='admin' ? 'flex' : 'none';
@@ -3393,6 +3402,27 @@ function applyUser(){
   // PERFORMANS alt sekmesi: SADECE yönetici (admin) görür.
   const kp=document.getElementById('kasPerformans');
   if(kp) kp.style.display = currentUser.role==='admin' ? '' : 'none';
+}
+
+// PAZARLAMA YÖNETİCİSİ arayüzü: sadece "Kontrol" (satış kontrol) sekmesi görünür.
+// Sohbetler, İç Mesajlar ve tüm yönetici menüleri gizlenir.
+function pazarlamaYoneticiArayuzu(){
+  // Sohbetler ve İç Mesajlar sekmelerini gizle
+  document.querySelectorAll('.main-tab').forEach(t=>{
+    const tab=t.dataset.tab;
+    if(tab==='chats' || tab==='internal') t.style.display='none';
+  });
+  // Kontrol sekmesini göster
+  const kt=document.getElementById('kontrolTab');
+  if(kt) kt.style.display='';
+  // Kontrol sekmesine geç (başka bir şey görmesin)
+  switchMainTab('kontrol');
+  // TÜM yönetici menülerini gizle (ayarlar içindeki)
+  ['userMgmtItem','qrManageBtn','activeUsersItem','takipToggleItem','ipMgmtItem','waCikisItem','tehlikeliBolge'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display='none';
+  });
+  // Performans alt sekmesi gizli (sadece admin görür)
+  const kp=document.getElementById('kasPerformans'); if(kp) kp.style.display='none';
 }
 
 // TEHLIKELI BOLGE: ic ice ac/kapa (yanlislikla basilmasin diye gizli durur)
@@ -3534,16 +3564,23 @@ async function addNewUser(){
   const isAdmin=document.getElementById('newUserAdmin').checked;
   const tipEl=document.querySelector('input[name="userTip"]:checked');
   const tip=tipEl?tipEl.value:'ofis';
+  // ROL belirleme: pazarlama yöneticisi seçildiyse pzr_yonetici, admin işaretliyse admin, değilse agent
+  let rol='agent';
+  if(tip==='pzr_yonetici') rol='pzr_yonetici';
+  else if(isAdmin) rol='admin';
   const msg=document.getElementById('addUserMsg');
   const btn=document.getElementById('addUserBtn');
   msg.style.color='#dc2626';
   if(!login||!pass){ msg.textContent='Kullanıcı adı ve şifre gerekli'; return; }
   btn.disabled=true; btn.textContent='Ekleniyor…';
   try{
-    const r=await fetch('/api/users/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,username:login,password:pass,displayName:name,role:isAdmin?'admin':'agent',tip})});
+    const r=await fetch('/api/users/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,username:login,password:pass,displayName:name,role:rol,tip})});
     const d=await r.json();
     if(d.ok){
-      msg.style.color='var(--brand)'; msg.textContent=tip==='pazarlama'?'✓ Pazarlamacı oluşturuldu (ilk girişte kendi QR\'ını okutacak)':'✓ Kullanıcı oluşturuldu';
+      let basariMsg='✓ Kullanıcı oluşturuldu';
+      if(tip==='pazarlama') basariMsg='✓ Pazarlamacı oluşturuldu (ilk girişte kendi QR\'ını okutacak)';
+      else if(tip==='pzr_yonetici') basariMsg='✓ Pazarlama yöneticisi oluşturuldu (sadece satış kontrol görür)';
+      msg.style.color='var(--brand)'; msg.textContent=basariMsg;
       document.getElementById('newUserName').value='';
       document.getElementById('newUserLogin').value='';
       document.getElementById('newUserPass').value='';

@@ -336,16 +336,25 @@ app.post('/api/users/add', express.json(), async (req, res) => {
   const { username, password, displayName, role, tip } = req.body || {};
   if (!username || !password) return res.json({ ok: false, error: 'Kullanıcı adı ve şifre gerekli' });
   const uname = username.trim();
-  const r = await db.addUser(uname, password, displayName, role === 'admin' ? 'admin' : 'agent');
+  // Rol: admin, pzr_yonetici (pazarlama yöneticisi) veya agent (normal)
+  let gecerliRol = 'agent';
+  if (role === 'admin') gecerliRol = 'admin';
+  else if (role === 'pzr_yonetici') gecerliRol = 'pzr_yonetici';
+  const r = await db.addUser(uname, password, displayName, gecerliRol);
   if (r.ok) {
-    // KULLANICI TIPI: 'pazarlama' ise kendi ayri hattini olustur, 'ofis' ise ortak hatta bagla.
-    const kullaniciTipi = (tip === 'pazarlama') ? 'pazarlama' : 'ofis';
-    if (kullaniciTipi === 'pazarlama') {
-      const lineId = 'pzr_' + uname; // her pazarlamaciya ozel hat (orn. pzr_fatma)
-      await db.saveLine(lineId, (displayName || uname) + ' (Pazarlama)', 'pazarlama', uname);
-      await db.setUserLine(uname, lineId, 'pazarlama');
+    // Pazarlama yöneticisi: hat gerekmez (sadece satış kontrol görür), ofis hattına bağla (zararsız).
+    if (gecerliRol === 'pzr_yonetici') {
+      await db.setUserLine(uname, 'ofis', 'ofis');
     } else {
-      await db.setUserLine(uname, 'ofis', 'ofis'); // ofis kullanicisi ortak hatta
+      // KULLANICI TIPI: 'pazarlama' ise kendi ayri hattini olustur, 'ofis' ise ortak hatta bagla.
+      const kullaniciTipi = (tip === 'pazarlama') ? 'pazarlama' : 'ofis';
+      if (kullaniciTipi === 'pazarlama') {
+        const lineId = 'pzr_' + uname; // her pazarlamaciya ozel hat (orn. pzr_fatma)
+        await db.saveLine(lineId, (displayName || uname) + ' (Pazarlama)', 'pazarlama', uname);
+        await db.setUserLine(uname, lineId, 'pazarlama');
+      } else {
+        await db.setUserLine(uname, 'ofis', 'ofis'); // ofis kullanicisi ortak hatta
+      }
     }
   }
   res.json(r);
@@ -415,7 +424,20 @@ app.post('/api/users/setline', express.json(), async (req, res) => {
 function satisYetki(token) {
   const s = token && sessions.get(token);
   if (!s) return null;
-  return { s, lineId: s.lineId || 'ofis', isAdmin: s.role === 'admin', username: s.username, displayName: s.displayName };
+  const pzrYonetici = (s.role === 'pzr_yonetici'); // pazarlama yöneticisi: sadece pazarlama satışları
+  return {
+    s, lineId: s.lineId || 'ofis',
+    isAdmin: s.role === 'admin',
+    pzrYonetici,                       // pazarlama yöneticisi mi
+    username: s.username, displayName: s.displayName,
+  };
+}
+
+// Sadece PAZARLAMA hatlarının satışlarını yükle (pazarlama yöneticisi için).
+async function pazarlamaSatislariYukle(basTs, bitTs) {
+  // tüm satışları al, sonra sadece pazarlama hatlarınkini süz (lineId 'pzr_' ile başlar)
+  const tum = (basTs && bitTs) ? await db.loadTumSatislar(basTs, bitTs) : await db.loadTumSatislar();
+  return tum.filter(x => (x.line_id || x.lineId || '').startsWith('pzr_'));
 }
 // Tarih araligi yardimcisi: 'bugun' | 'hafta' | 'tum' -> {bas, bit} (epoch ms) veya null
 function tarihAraligi(kapsam) {
@@ -448,7 +470,10 @@ app.post('/api/satislar', express.json(), async (req, res) => {
   const saticiFiltre = (req.body?.satici || '').trim().toLowerCase(); // opsiyonel: belirli satici
   try {
     let satislar;
-    if (y.isAdmin) {
+    if (y.pzrYonetici) {
+      // PAZARLAMA YÖNETİCİSİ: sadece pazarlama hatlarının satışları (tüm pazarlamacılar)
+      satislar = await pazarlamaSatislariYukle(ar?.bas ?? null, ar?.bit ?? null);
+    } else if (y.isAdmin) {
       const istenenHat = req.body?.lineId; // opsiyonel hat filtresi
       if (istenenHat) {
         satislar = await db.loadSatislar(istenenHat, ar?.bas ?? null, ar?.bit ?? null);
@@ -467,7 +492,7 @@ app.post('/api/satislar', express.json(), async (req, res) => {
     if (saticiFiltre) {
       satislar = satislar.filter(s => (s.satici || '').toLowerCase().includes(saticiFiltre));
     }
-    res.json({ ok: true, satislar, kapsam, isAdmin: y.isAdmin, lineId: y.lineId, saticilar });
+    res.json({ ok: true, satislar, kapsam, isAdmin: y.isAdmin, pzrYonetici: y.pzrYonetici, lineId: y.lineId, saticilar });
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }
@@ -490,8 +515,13 @@ app.post('/api/satislar/duzenle', express.json(), async (req, res) => {
     if (!yeniUrun) return res.json({ ok: false, error: 'Geçersiz branş. Sadece tanımlı branşlar seçilebilir.' });
   }
   try {
-    // YETKI: pazarlamaci sadece KENDI hattindaki satisi duzenleyebilir
-    if (!y.isAdmin) {
+    // YETKI: pazarlamaci sadece KENDI hattindaki satisi duzenleyebilir.
+    // Pazarlama yöneticisi: TÜM pazarlama satışlarını düzenleyebilir. Admin: hepsini.
+    if (y.pzrYonetici) {
+      const pzrSatislar = await pazarlamaSatislariYukle(null, null);
+      const varMi = pzrSatislar.find(x => x.id === id);
+      if (!varMi) return res.json({ ok: false, error: 'Bu satış pazarlama hatlarında değil, düzenleyemezsiniz.' });
+    } else if (!y.isAdmin) {
       const kontrol = await db.loadSatislar(y.lineId, null, null);
       const benimMi = kontrol.find(x => x.id === id);
       if (!benimMi) return res.json({ ok: false, error: 'Bu satışı düzenleme yetkiniz yok.' });
@@ -522,9 +552,18 @@ app.post('/api/satislar/onayla', express.json(), async (req, res) => {
   res.json(r.ok ? { ok: true, satis: r.row } : { ok: false, error: r.error });
 });
 
-// Satis SIL (SADECE yonetici — yanlis/mukerrer kayit)
+// Satis SIL (yonetici VEYA pazarlama yöneticisi — yanlis/mukerrer kayit)
 app.post('/api/satislar/sil', express.json(), async (req, res) => {
-  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Sadece yönetici silebilir' });
+  const y = satisYetki(req.body?.token);
+  if (!y) return res.json({ ok: false, error: 'Oturum yok' });
+  // Admin her satışı siler. Pazarlama yöneticisi SADECE pazarlama satışlarını siler.
+  if (!y.isAdmin) {
+    if (!y.pzrYonetici) return res.json({ ok: false, error: 'Sadece yönetici silebilir' });
+    const pzrSatislar = await pazarlamaSatislariYukle(null, null);
+    if (!pzrSatislar.find(x => x.id === req.body?.id)) {
+      return res.json({ ok: false, error: 'Bu satış pazarlama hatlarında değil, silemezsiniz.' });
+    }
+  }
   const r = await db.deleteSatis(req.body?.id);
   res.json(r);
 });
@@ -4037,6 +4076,7 @@ async function startWA(lineId = 'ofis') {
       if (!jid || jid === 'status@broadcast' || jid.endsWith('@newsletter')) continue;
       const isGroup = jid.endsWith('@g.us');
       let fromMe = !!m.key.fromMe; // baska cihazdan gonderdigin mesajlar da gelir
+      const fromMeOrijinal = !!m.key.fromMe; // YANSIMA düzeltmesinden ÖNCEki hal (takip uyarısı için)
 
       // ════════════════════════════════════════════════════════════════
       // ORTAK GRUP YANSIMASI DUZELTMESI (kritik bug):
@@ -4298,9 +4338,11 @@ async function startWA(lineId = 'ofis') {
       // DEĞİLSE 3 dk sonra hâlâ çizgi/mesaj gelmezse yöneticiye "iş yarım kalmış olabilir" uyarısı.
       // Çizgi gelirse = işlem bitti, uyarı iptal. (Hem bizim hem müşteri mesajı sayılır.)
       if (isGroup) {
-        const takipKisi = fromMe ? 'Ekip' : (senderName || senderPush || '');
+        // "Bizden" sayılma: panel/hat üzerinden (fromMeOrijinal) VEYA kayıtlı ofis ekibi kişisi (senderOfis).
+        const bizdenMi = fromMeOrijinal || senderOfis;
+        const takipKisi = bizdenMi ? 'Ekip' : (senderName || senderPush || '');
         const takipGrupAd = (CC.get(jid)?.name) || (jid || '').split('@')[0];
-        takipKontrol(jid, info.text, takipKisi, takipGrupAd, lineId, isGroup, fromMe);
+        takipKontrol(jid, info.text, takipKisi, takipGrupAd, lineId, isGroup, bizdenMi);
       }
 
       addMessage(jid, {
