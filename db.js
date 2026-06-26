@@ -250,7 +250,7 @@ async function loadMessages(chatJid, limit = 60, lineId = 'ofis', beforeTs = nul
       params = [lineId, chatJid, eskiEsikMs(), limit];
     }
     const r = await pool.query(sql, params);
-    return r.rows.reverse(); // eskiden yeniye
+    return r.rows.reverse(); // eskiden yeniye (snake_case; çağıran taraf camelCase'e çevirir)
   } catch (e) {
     console.error('⚠️  DB loadMessages hatasi:', e.message);
     return [];
@@ -788,6 +788,17 @@ async function updateSessionRole(username, role) {
   catch (e) {}
 }
 
+// Kullanıcının rolünü users tablosunda güncelle (admin/pzr_yonetici/agent)
+async function updateUserRole(username, role) {
+  if (!aktif) return { ok: false, error: 'DB kapalı' };
+  try {
+    await pool.query('UPDATE users SET role=$1 WHERE username=$2', [role, username]);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 // ============================================================
 // GRUBA ATAMA (chat_assignments): hangi ekip uyesi hangi grupla ilgileniyor
 // ============================================================
@@ -1094,7 +1105,7 @@ module.exports = {
   ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, updateUser,
   saveInternalMessage, loadInternalConversation, listInternalConversations,
   markInternalRead, internalUnreadCount,
-  saveSession, loadSessions, deleteSession, updateSessionRole,
+  saveSession, loadSessions, deleteSession, updateSessionRole, updateUserRole,
   addAssignment, removeAssignment, loadAssignments,
   addLabel, deleteLabel, loadLabels, addChatLabel, removeChatLabel, loadChatLabels,
   addAllowedIp, removeAllowedIp, loadAllowedIps,

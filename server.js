@@ -740,18 +740,23 @@ app.post('/api/performans', express.json(), async (req, res) => {
 // Rol degistir - yonetici yap/geri al (sadece yonetici)
 app.post('/api/users/role', express.json(), async (req, res) => {
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
-  const yeniRol = req.body?.role === 'admin' ? 'admin' : 'agent';
-  // bu kullanicinin acik oturumlarinin rolunu de guncelle (bellek + DB)
-  // (id -> username: kullanici listesinden bul)
+  // Geçerli roller: admin, pzr_yonetici (pazarlama yöneticisi), agent (normal)
+  let yeniRol = 'agent';
+  if (req.body?.role === 'admin') yeniRol = 'admin';
+  else if (req.body?.role === 'pzr_yonetici') yeniRol = 'pzr_yonetici';
   try {
     const users = await db.listUsers();
     const u = users.find(x => String(x.id) === String(req.body?.id));
-    if (u) {
-      for (const [tok, s] of sessions) { if (s.username === u.username) s.role = yeniRol; }
-      db.updateSessionRole(u.username, yeniRol).catch(() => {});
-    }
-  } catch (e) {}
-  res.json(r);
+    if (!u) return res.json({ ok: false, error: 'Kullanıcı bulunamadı' });
+    // DB'de rolü güncelle
+    await db.updateUserRole(u.username, yeniRol);
+    // açık oturumların rolünü de güncelle (bellek + DB session)
+    for (const [tok, s] of sessions) { if (s.username === u.username) s.role = yeniRol; }
+    db.updateSessionRole(u.username, yeniRol).catch(() => {});
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
 });
 
 // ---- HIZLI YANITLAR (quick replies) — ortak sablonlar ----
