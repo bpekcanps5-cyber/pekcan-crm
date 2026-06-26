@@ -4062,27 +4062,63 @@ function aramaNormalize(s){
 }
 function visible(){
   const st = searchTerm ? aramaNormalize(searchTerm) : '';
+  // ÇOK KELİMELİ ARAMA: yazılan metni kelimelere böl. Her kelime ayrı aranır ve
+  // HEPSİ eşleşmeli (AND). Böylece "polat 2 aylik" -> hem polat hem 2 hem aylik geçen
+  // sohbeti bulur, kelime SIRASI önemli değil. Daha hassas + daha kolay bulma.
+  const kelimeler = st ? st.split(/\s+/).filter(Boolean) : [];
+  // SIKI metin: tüm boşluk + harf/rakam olmayan her şey silinmiş hali. "polat 2 aylik!" -> "polat2aylik"
+  // Böylece grupta ekstra boşluk/tire/özel karakter olsa bile tam metin yakalanır.
+  const stSiki = st.replace(/[^a-z0-9]/g,'');
   const filtered=chatArray().filter(c=>{
     if(!matchesFilter(c))return false;
     if(st){
-      // ARAMA: sohbet adi + kayitli isim + numara + (grup ise) UYE isimleri icinde ara.
-      // Turkce karaktere duyarsiz, kismi eslesme (birkac harf yeterli).
-      let bulundu=false;
-      if(aramaNormalize(c.name).includes(st)) bulundu=true;
-      else if(aramaNormalize(c.customName).includes(st)) bulundu=true;
-      else if((c.jid||'').split('@')[0].includes(st.replace(/\D/g,''))&&st.replace(/\D/g,'').length>0) bulundu=true; // numara ile ara
-      else if(c.members && c.members.length){
-        // grup uyelerinin isim/numarasinda ara (yuklenmis uyeler icinde)
-        bulundu = c.members.some(mb => (aramaNormalize(mb.name).includes(st)) || ((mb.number||'').includes(st.replace(/\D/g,''))&&st.replace(/\D/g,'').length>0));
+      // bu sohbet için aranabilir metni topla: ad + kayıtlı isim + numara + üye isimleri
+      let havuz = aramaNormalize(c.name) + ' ' + aramaNormalize(c.customName||'');
+      const numara = (c.jid||'').split('@')[0];
+      havuz += ' ' + numara;
+      if(c.members && c.members.length){
+        havuz += ' ' + c.members.map(mb=>aramaNormalize(mb.name||'')+' '+(mb.number||'')).join(' ');
       }
-      // MESAJ İÇERİĞİNDE eşleşme (sunucudan gelen _mesajAramaSonuc) — sohbet adında olmasa bile göster
+      const havuzSiki = havuz.replace(/[^a-z0-9]/g,''); // boşluksuz/özel karaktersiz hali
+      // EŞLEŞME 1: her kelime ayrı ayrı havuzda geçiyor mu? (kelime sırası önemsiz)
+      let kelimeEslesme = kelimeler.every(k=>{
+        if(havuz.includes(k)) return true;
+        const sadeRakam=k.replace(/\D/g,'');
+        if(sadeRakam.length>0 && numara.includes(sadeRakam)) return true;
+        return false;
+      });
+      // EŞLEŞME 2: boşluksuz tam metin havuzun boşluksuz halinde geçiyor mu?
+      //   "polat2aylik" -> "polat2aylikgrubu" içinde VAR. (tam ad yazınca kesin bulur)
+      let sikiEslesme = stSiki.length>0 && havuzSiki.includes(stSiki);
+      // ikisinden BIRI tutarsa göster
+      let bulundu = kelimeEslesme || sikiEslesme;
+      // MESAJ İÇERİĞİNDE eşleşme (sunucudan gelen) — sohbet adında olmasa bile göster
       if(!bulundu && _mesajAramaSonuc && _mesajAramaSonuc[c.jid]) bulundu=true;
       if(!bulundu) return false;
     }
     return true;
   });
-  // arama yapiliyorsa TUM sonuclari goster; aksi halde LIST_LIMIT taneyle sinirla (0=tumu)
-  if(searchTerm){ _listTruncated=false; return filtered; }
+  // arama yapiliyorsa: ALAKA düzeyine göre sırala (adında geçenler en üstte)
+  if(searchTerm){
+    _listTruncated=false;
+    if(kelimeler.length){
+      filtered.sort((a,b)=>{
+        const adA=aramaNormalize(a.name), adB=aramaNormalize(b.name);
+        // 1) tam baştan başlıyorsa en üst, 2) adında geçiyorsa orta, 3) sadece mesajda ise en alt
+        const skor=(ad)=>{
+          const tamMetin=kelimeler.join(' ');
+          if(ad.startsWith(tamMetin)) return 3;       // tam baştan eşleşme
+          if(kelimeler.every(k=>ad.includes(k))) return 2; // tüm kelimeler adında
+          if(kelimeler.some(k=>ad.includes(k))) return 1;  // bazı kelimeler adında
+          return 0;                                    // sadece mesaj/üye eşleşmesi
+        };
+        const fark=skor(adB)-skor(adA);
+        if(fark!==0) return fark;
+        return (b.lastTs||0)-(a.lastTs||0); // eşit alaka -> yeni mesaj üste
+      });
+    }
+    return filtered;
+  }
   if(!LIST_LIMIT || filtered.length<=LIST_LIMIT){ _listTruncated=false; return filtered; }
   _listTruncated = true;
   return filtered.slice(0, LIST_LIMIT);
