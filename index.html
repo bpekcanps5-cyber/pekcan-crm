@@ -570,10 +570,17 @@
   .mention.clickable:hover{text-decoration:underline}
   .msg.out .mention{color:#fff;background:rgba(255,255,255,.22)}
   .mention-badge{display:inline-grid;place-items:center;min-width:17px;height:17px;padding:0 3px;margin-left:5px;border-radius:6px;background:var(--brand);color:#fff;font-size:11px;font-weight:800;vertical-align:middle}
-  .atama-nisan{margin-left:4px;display:inline-flex;align-items:center;vertical-align:middle;opacity:.55}
-  .atama-nisan svg{width:14px;height:14px;color:var(--muted)}
-  .atama-nisan.bana{opacity:1}
+  .atama-nisan{margin-right:5px;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;width:18px;height:18px;border-radius:6px;flex-shrink:0;background:color-mix(in srgb, #8b5cf6 22%, transparent)}
+  .atama-nisan svg{width:12px;height:12px;color:#a78bfa}
+  .atama-nisan.bana{background:color-mix(in srgb, var(--brand) 28%, transparent);box-shadow:0 0 0 1.5px color-mix(in srgb, var(--brand) 45%, transparent)}
   .atama-nisan.bana svg{color:var(--brand)}
+  /* Alt satırda atama etiketi (üye sayısı yerine): logo + atanan kişi adı */
+  .atama-etiket{display:inline-flex;align-items:center;gap:0;padding:2px 9px 2px 4px;border-radius:20px;background:color-mix(in srgb,#8b5cf6 15%,transparent)}
+  .atama-etiket.bana{background:color-mix(in srgb,var(--brand) 16%,transparent)}
+  .atama-etiket .atama-nisan{margin-right:4px;width:16px;height:16px;background:transparent;box-shadow:none}
+  .atama-etiket .atama-nisan svg{width:12px;height:12px}
+  .atama-isim{font-size:11px;font-weight:600;color:#a78bfa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+  .atama-etiket.bana .atama-isim{color:var(--brand)}
   .msg.mentions-me{box-shadow:-3px 0 0 var(--brand)}
   .msg.flash{animation:msgFlash 1.2s ease}
   @keyframes msgFlash{0%{background:var(--brand-soft)}100%{background:inherit}}
@@ -2130,6 +2137,11 @@ let _eskiYukleniyor=false;     // şu an "daha eski getir" isteği gönderildi m
 let _altaInBildirim=0, _altaInSonSayi=null; // alta in butonu yeni mesaj bildirimi
 let _eskiBitti={};             // jid -> true: bu sohbette daha eski mesaj kalmadı
 let _team=[]; // ekip uyeleri {username, displayName} — atama modalinda + openChat'te kullanilir
+// kullanıcı adından görünen adı bul (yoksa kullanıcı adının kendisi)
+function ekipAdi(username){
+  const u=_team.find(x=>x.username===username);
+  return u ? (u.displayName||u.username) : username;
+}
 let replyTarget=null;
 let editTarget=null;
 const pinned=new Set();    // sabitlenen jid'ler
@@ -4098,7 +4110,6 @@ _renderListRaw=function(){
   document.getElementById('chatCount').textContent=nAll+' sohbet';
 }
 function chatRow(c){
-  const sub=c.isGroup?('<div class="chat-tags"><span class="tag grouptag">'+(c.memberCount?c.memberCount+' üye':'grup')+'</span></div>'):'';
   const pinIc=pinned.has(c.jid)?'<span class="pin-icon">'+pinSvg()+'</span>':'';
   const menIc=c.hasMention?'<span class="mention-badge" title="Burada senden bahsedildi">@</span>':'';
   // ATAMA logosu: gruba kişi atanmışsa insan ikonu göster.
@@ -4119,10 +4130,22 @@ function chatRow(c){
       return l?'<span class="liste-etiket-nokta" style="background:'+esc(l.color)+'" title="'+esc(l.name)+'"></span>':'';
     }).join('')+'</span>';
   }
+  // ALT SATIR (sub): üye sayısı yerine ATAMA göster. Atama varsa logo+isim, yoksa boş.
+  let sub='';
+  if(c.isGroup && atamaIc){
+    let atananYazi='';
+    if(banaEtiketli(c)){
+      // sana atanmış: senin de dahil olduğun isimler
+      atananYazi = (c.atananlar||[]).map(u=>ekipAdi(u)).join(', ');
+    } else if(c.atananlar && c.atananlar.length){
+      atananYazi = c.atananlar.map(u=>ekipAdi(u)).join(', ');
+    }
+    sub='<div class="chat-tags"><span class="atama-etiket'+(banaEtiketli(c)?' bana':'')+'">'+atamaIc+'<span class="atama-isim">'+esc(atananYazi)+'</span></span></div>';
+  }
   return `<div class="chat ${c.jid===activeJid?'active':''}" onclick="openChat('${c.jid}')" oncontextmenu="openCtxMenu(event,'${c.jid}');return false;">
     ${avatarHtml(c)}
     <div class="chat-main">
-      <div class="chat-top"><span class="chat-name">${etiketNoktalari}${esc(c.name||c.jid)}${pinIc}${menIc}${atamaIc}</span>
+      <div class="chat-top"><span class="chat-name">${etiketNoktalari}${esc(c.name||c.jid)}${pinIc}${menIc}</span>
         <span class="chat-time ${c.unread?'unread-time':''}">${esc(c.lastTime||'')}</span></div>
       <div class="chat-bottom"><span class="chat-preview">${esc(previewText(c))}</span>
         ${c.unread?'<span class="badge">'+c.unread+'</span>':''}</div>
