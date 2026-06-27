@@ -5302,6 +5302,37 @@ document.getElementById('messages').addEventListener('click',e=>{
 });
 // CIFT TIKLA YANITLA: mesaj balonunun SAGINDAKI/ETRAFINDAKI BOSLUGA cift tik -> yanitla.
 // Balonun ICINE cift tik KARISMAZ -> metin secip kopyalanabilir.
+// SAĞ TIK: mesaja (özellikle fotoğrafa) sağ tıklayınca tarayıcı menüsü yerine BİZİM menü açılır.
+document.getElementById('messages').addEventListener('contextmenu',e=>{
+  // tıklanan mesaj balonunu bul
+  let msgEl=e.target.closest('.msg');
+  if(!msgEl){
+    // boşluğa denk geldiyse Y hizasındaki mesajı bul
+    const satirlar=document.querySelectorAll('#messages .msg');
+    for(const el of satirlar){
+      const r=el.getBoundingClientRect();
+      if(e.clientY>=r.top && e.clientY<=r.bottom){ msgEl=el; break; }
+    }
+  }
+  if(!msgEl) return;            // mesaj yoksa tarayıcı menüsü normal çıksın
+  if(selectedMsgs && selectedMsgs.size>0) return; // seçim modunda karışmasın
+  const menu=msgEl.querySelector('.msg-actions');
+  const btn=msgEl.querySelector('.msg-menu-btn');
+  if(!menu || !btn) return;     // menüsü olmayan mesaj (silinmiş vs.) -> normal
+  e.preventDefault();           // tarayıcının kendi menüsünü ENGELLE
+  // bizim menüyü aç (toggleMsgMenu mantığı: önce hepsini kapat, sonra bunu aç + yön ayarla)
+  const acik=menu.classList.contains('open');
+  document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); });
+  if(!acik){
+    menu.classList.add('open');
+    const messagesBox=document.getElementById('messages');
+    const btnRect=btn.getBoundingClientRect();
+    const menuYuksekligi=menu.offsetHeight || 220;
+    const boxAlt=messagesBox.getBoundingClientRect().bottom;
+    if((boxAlt - btnRect.bottom) < menuYuksekligi + 10) menu.classList.add('yukari');
+    else menu.classList.remove('yukari');
+  }
+});
 document.getElementById('messages').addEventListener('dblclick',e=>{
   // 1) Dogrudan balona mi cift tiklandi?
   let msgEl=e.target.closest('.msg');
