@@ -1863,6 +1863,8 @@
   <button class="lb-nav lb-next" id="lbNext" title="Sonraki (→)" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
   <div class="lb-sayac" id="lbSayac" style="display:none"></div>
   <div class="lb-toolbar">
+    <button id="lbReply" title="Yanıtla"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/></svg></button>
+    <button id="lbRotate" title="Döndür (sağa)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11c-.17-1.39-.72-2.73-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.17 2.74-.71 3.9-1.61l-1.44-1.44c-.75.54-1.59.89-2.46 1.03zm3.89-2.42l1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z"/></svg></button>
     <button id="lbZoomOut" title="Uzaklastir"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg></button>
     <button id="lbReset" title="Sifirla"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg></button>
     <button id="lbZoomIn" title="Yakinlastir"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
@@ -6125,17 +6127,19 @@ function pickTeamMention(username, displayName){
 
 // ---- Lightbox + zoom ----
 let lbScale=1, lbX=0, lbY=0, lbDragging=false, lbStartX=0, lbStartY=0;
+let lbAngle=0; // fotoğraf döndürme açısı (her basışta +90)
 const lbImg=document.getElementById('lightboxImg'), lb=document.getElementById('lightbox');
-function lbApply(){ lbImg.style.transform='translate('+lbX+'px,'+lbY+'px) scale('+lbScale+')'; }
+function lbApply(){ lbImg.style.transform='translate('+lbX+'px,'+lbY+'px) scale('+lbScale+') rotate('+lbAngle+'deg)'; }
 // ─── LIGHTBOX GALERİ ───
 // Tıklanan fotoğraf bir ALBÜMdeyse (arka arkaya gönderilmiş), SADECE o albümün fotoğrafları
 // arasında gezinilir. Tek gönderilmiş foto ise yalnız kendisi gösterilir.
 let _lbGaleri=[];   // {url} listesi (gezilecek fotoğraflar)
+let _lbMesajIdler=[]; // paralel: her fotonun mesaj id'si (yanıt için)
 let _lbIndex=0;     // şu an gösterilen fotoğrafın indexi
 function lbGaleriTopla(tiklananUrl){
-  _lbGaleri=[];
+  _lbGaleri=[]; _lbMesajIdler=[];
   const c = activeJid ? chats[activeJid] : null;
-  if(!c || !c.messages){ _lbGaleri=[tiklananUrl]; return; }
+  if(!c || !c.messages){ _lbGaleri=[tiklananUrl]; _lbMesajIdler=['']; return; }
   const msgs=c.messages;
   const fotoMu=(x)=> x && x.kind==='image' && (x.mediaUrl||x.thumb) && !x.deleted;
   // tıklanan fotoğrafın mesaj index'ini bul (url eşleşmesi)
@@ -6143,7 +6147,7 @@ function lbGaleriTopla(tiklananUrl){
   for(let i=0;i<msgs.length;i++){
     if(fotoMu(msgs[i]) && (msgs[i].mediaUrl===tiklananUrl || msgs[i].thumb===tiklananUrl)){ tikIdx=i; break; }
   }
-  if(tikIdx<0){ _lbGaleri=[tiklananUrl]; return; }
+  if(tikIdx<0){ _lbGaleri=[tiklananUrl]; _lbMesajIdler=['']; return; }
   // bu fotoğrafın ait olduğu ALBÜMÜ bul (arka arkaya, aynı gönderen, 90sn içinde, açıklamasız)
   // geriye doğru albüm başını bul
   let bas=tikIdx;
@@ -6154,13 +6158,13 @@ function lbGaleriTopla(tiklananUrl){
         && !msgs[bas].caption && !msgs[bas-1].caption){ bas--; }
   // ileriye doğru albüm sonunu bul + url'leri topla
   let i=bas;
-  _lbGaleri.push(msgs[i].mediaUrl||msgs[i].thumb);
+  _lbGaleri.push(msgs[i].mediaUrl||msgs[i].thumb); _lbMesajIdler.push(msgs[i].id||'');
   while(i+1<msgs.length && fotoMu(msgs[i+1]) && fotoMu(msgs[i])
         && msgs[i+1].fromMe===msgs[i].fromMe
         && (msgs[i+1].sender||'')===(msgs[i].sender||'')
         && Math.abs((msgs[i+1].ts||0)-(msgs[i].ts||0))<90000
         && !msgs[i+1].caption && !msgs[i].caption){
-    i++; _lbGaleri.push(msgs[i].mediaUrl||msgs[i].thumb);
+    i++; _lbGaleri.push(msgs[i].mediaUrl||msgs[i].thumb); _lbMesajIdler.push(msgs[i].id||'');
   }
 }
 function openLightbox(url){
@@ -6173,7 +6177,7 @@ function openLightbox(url){
 }
 function lbGoster(){
   const url=_lbGaleri[_lbIndex];
-  lbImg.src=url; lbScale=1;lbX=0;lbY=0;lbApply();
+  lbImg.src=url; lbScale=1;lbX=0;lbY=0;lbAngle=0;lbApply(); // açıyı da sıfırla
   // sağ/sol ok ve sayaç: birden fazla foto varsa göster
   const cokFoto=_lbGaleri.length>1;
   const prev=document.getElementById('lbPrev');
@@ -6219,7 +6223,7 @@ function belgeOnizle(mediaUrl, ext, thumb, fname){
   }
 }
 function lbClose(){
-  lb.classList.remove('show'); lbScale=1; lbX=0; lbY=0; lbApply();
+  lb.classList.remove('show'); lbScale=1; lbX=0; lbY=0; lbAngle=0; lbApply();
   const pdf=document.getElementById('lightboxPdf');
   const img=document.getElementById('lightboxImg');
   if(pdf){ pdf.src=''; pdf.style.display='none'; }
@@ -6228,7 +6232,16 @@ function lbClose(){
 document.getElementById('lbClose').onclick=lbClose;
 document.getElementById('lbZoomIn').onclick=()=>{ lbScale=Math.min(5,lbScale+0.3); lbApply(); };
 document.getElementById('lbZoomOut').onclick=()=>{ lbScale=Math.max(1,lbScale-0.3); if(lbScale===1){lbX=0;lbY=0;} lbApply(); };
-document.getElementById('lbReset').onclick=()=>{ lbScale=1;lbX=0;lbY=0;lbApply(); };
+document.getElementById('lbReset').onclick=()=>{ lbScale=1;lbX=0;lbY=0;lbAngle=0;lbApply(); };
+// DÖNDÜR: her basışta fotoğraf 90° sağa döner
+document.getElementById('lbRotate').onclick=()=>{ lbAngle=(lbAngle+90)%360; lbApply(); };
+// YANITLA: şu an gösterilen fotoğrafın mesajını yanıtla (lightbox kapanır, yanıt kutusu açılır)
+document.getElementById('lbReply').onclick=()=>{
+  const msgId=_lbMesajIdler[_lbIndex];
+  lbClose();
+  if(msgId && typeof startReply==='function'){ startReply(msgId); }
+  else showToast('Bu fotoğraf yanıtlanamıyor');
+};
 document.getElementById('lbDownload').onclick=()=>{
   const url=lbImg.src; if(!url)return;
   const a=document.createElement('a');
