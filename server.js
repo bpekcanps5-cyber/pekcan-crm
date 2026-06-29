@@ -151,7 +151,12 @@ function makeToken() { return Math.random().toString(36).slice(2) + Date.now().t
 // IP_KISITLAMA_KAPALI=1 olursa (acil durum) tum kisitlama kapanir -> herkes girer.
 let ofisIpler = new Set();
 let disariIpler = new Set();
-const ipKisitlamaKapali = () => process.env.IP_KISITLAMA_KAPALI === '1';
+// IP kisitlamasi KAPALI mi? Iki kaynaktan kontrol:
+//  1) .env IP_KISITLAMA_KAPALI=1  -> ACIL CIKIS (her zaman oncelikli, kod degismeden kapatir)
+//  2) DB ayari 'ip_kisitlama_kapali'='1' -> PANELDEN yonetici acip kapatir (kalici)
+// Boylece yonetici .env'e dokunmadan panelden tek tusla acip kapatabilir.
+let _ipKisitlamaKapaliDB = false; // DB'den yuklenen bayrak (bellekte, hizli erisim)
+const ipKisitlamaKapali = () => (process.env.IP_KISITLAMA_KAPALI === '1') || _ipKisitlamaKapaliDB;
 // OFIS domain(ler)i: .env'de OFIS_DOMAIN=ofis.site.com (virgulle birden fazla olabilir).
 // Istek bu domain(ler)den geldiyse "ofis linki", degilse "disari linki" sayilir.
 const _ofisDomainler = () => (process.env.OFIS_DOMAIN || '')
@@ -184,7 +189,10 @@ async function izinliIpleriYukle() {
     const liste = await db.loadAllowedIps();
     ofisIpler = new Set(liste.filter(x => x.kapsam === 'ofis').map(x => x.ip));
     disariIpler = new Set(liste.filter(x => x.kapsam !== 'ofis').map(x => x.ip));
-    console.log(`🔒 IP listeleri yuklendi: ofis=${ofisIpler.size}, disari=${disariIpler.size}`);
+    // panelden ayarlanan "kisitlama kapali" bayragini da DB'den oku
+    const bayrak = await db.getSetting('ip_kisitlama_kapali', '0');
+    _ipKisitlamaKapaliDB = (bayrak === '1' || bayrak === 1 || bayrak === true);
+    console.log(`🔒 IP listeleri yuklendi: ofis=${ofisIpler.size}, disari=${disariIpler.size}, kisitlama=${ipKisitlamaKapali() ? 'KAPALI' : 'acik'}`);
   } catch (e) { console.error('izinli IP yukleme hatasi:', e.message); }
 }
 
@@ -439,6 +447,21 @@ app.post('/api/ips/remove', express.json(), async (req, res) => {
   await db.removeAllowedIp(ip);
   await izinliIpleriYukle();
   res.json({ ok: true });
+});
+// IP KISITLAMASINI AC/KAPAT (panelden tek tusla, sadece yonetici).
+// kapali=true  -> kisitlama KAPALI (herkes her IP'den girer)
+// kapali=false -> kisitlama ACIK (sadece izinli IP'ler girer)
+app.post('/api/ips/kisitlama', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  // .env'de acil kapatma varsa, panelden ACMAYA calismak bir ise yaramaz — kullaniciyi uyar.
+  if (process.env.IP_KISITLAMA_KAPALI === '1') {
+    return res.json({ ok: false, error: 'Sunucuda acil kapatma (.env) açık. Önce onu kaldırın.' });
+  }
+  const kapali = req.body?.kapali === true || req.body?.kapali === 'true' || req.body?.kapali === 1;
+  await db.saveSetting('ip_kisitlama_kapali', kapali ? '1' : '0');
+  _ipKisitlamaKapaliDB = kapali; // bellegi hemen guncelle (yeniden yukleme beklemeden)
+  console.log(`🔒 IP kisitlamasi ${kapali ? 'KAPATILDI' : 'ACILDI'} (panelden, ${req.body?.agent || 'yonetici'})`);
+  res.json({ ok: true, kisitlamaKapali: ipKisitlamaKapali() });
 });
 
 // Kullanici listesi (sadece yonetici)
