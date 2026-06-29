@@ -799,6 +799,15 @@ async function updateUserRole(username, role) {
   }
 }
 
+// FOTO/MEDYA İŞARET ("yapıldı" tiki) — messages tablosunda isaretli sütununa yaz.
+// Sütun yoksa sessizce geç (eski şema). Migration: ALTER TABLE messages ADD COLUMN isaretli boolean DEFAULT false;
+async function setMesajIsaret(msgId, isaretli) {
+  if (!aktif) return;
+  try {
+    await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2', [!!isaretli, msgId]);
+  } catch (e) { /* sütun yoksa veya hata: yoksay */ }
+}
+
 // ============================================================
 // GRUBA ATAMA (chat_assignments): hangi ekip uyesi hangi grupla ilgileniyor
 // ============================================================
@@ -1070,6 +1079,51 @@ async function saveAktivite(a) {
   }
 }
 
+// ════════════════════════════════════════════════════════════
+// SONRADAN GELEN ÖDEMELER (muhasebe onayı bekleyen yüklemeler)
+// Tablo: sonradan_odemeler (id, yukleyen_kullanici, yukleyen_ad, dosya_url, dosya_ad,
+//        dosya_tip, not, durum, created_at)
+// durum: 'bekliyor' | 'onaylandi'
+// ════════════════════════════════════════════════════════════
+async function odemeEkle(o) {
+  if (!aktif) return { ok: false, error: 'DB kapalı' };
+  try {
+    const r = await pool.query(
+      `INSERT INTO sonradan_odemeler (id, yukleyen_kullanici, yukleyen_ad, dosya_url, dosya_ad, dosya_tip, not_metni, durum, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'bekliyor', now())
+       RETURNING *`,
+      [o.id, o.yukleyenKullanici || '', o.yukleyenAd || '', o.dosyaUrl || '', o.dosyaAd || '', o.dosyaTip || '', o.not || '']
+    );
+    return { ok: true, kayit: r.rows[0] };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+async function odemeleriListele() {
+  if (!aktif) return [];
+  try {
+    const r = await pool.query(
+      `SELECT id, yukleyen_kullanici, yukleyen_ad, dosya_url, dosya_ad, dosya_tip, not_metni, durum,
+              EXTRACT(EPOCH FROM created_at)*1000 AS ts
+       FROM sonradan_odemeler WHERE durum='bekliyor' ORDER BY created_at DESC`);
+    return r.rows;
+  } catch (e) { return []; }
+}
+async function odemeSil(id) {
+  if (!aktif) return { ok: false };
+  try {
+    await pool.query('DELETE FROM sonradan_odemeler WHERE id=$1', [id]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+async function odemeBul(id) {
+  if (!aktif) return null;
+  try {
+    const r = await pool.query('SELECT * FROM sonradan_odemeler WHERE id=$1', [id]);
+    return r.rows[0] || null;
+  } catch (e) { return null; }
+}
+
 async function loadAktiviteler(baslangicTs = null, bitisTs = null, lineId = null) {
   if (!aktif) return [];
   try {
@@ -1105,11 +1159,12 @@ module.exports = {
   ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, updateUser,
   saveInternalMessage, loadInternalConversation, listInternalConversations,
   markInternalRead, internalUnreadCount,
-  saveSession, loadSessions, deleteSession, updateSessionRole, updateUserRole,
+  saveSession, loadSessions, deleteSession, updateSessionRole, updateUserRole, setMesajIsaret,
   addAssignment, removeAssignment, loadAssignments,
   addLabel, deleteLabel, loadLabels, addChatLabel, removeChatLabel, loadChatLabels,
   addAllowedIp, removeAllowedIp, loadAllowedIps,
   setUserLine, getUserLine, loadUserLines, saveLine, loadLines, deleteLineData,
   saveSatis, loadSatislar, loadTumSatislar, updateSatisAdet, setSatisOnay, deleteSatis, gunuKapat, loadKapaliGunler,
   savePoliceYukleme, loadPoliceYuklemeler, saveAktivite, loadAktiviteler,
+  odemeEkle, odemeleriListele, odemeSil, odemeBul,
 };

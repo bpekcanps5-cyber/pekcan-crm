@@ -195,9 +195,11 @@ app.post('/api/login', express.json(), async (req, res) => {
   if (!db.isReady()) return res.json({ ok: false, error: 'Veritabanı bağlı değil, giriş yapılamıyor' });
   const user = await db.checkLogin(username.trim(), password);
   if (!user) return res.json({ ok: false, error: 'Kullanıcı adı veya şifre hatalı' });
-  // IP KISITLAMA: normal kullanici sadece izinli IP'den girebilir.
-  // Yonetici (admin) her IP'den/her linkten girer ki kilitlenmesin + IP'leri yonetebilsin.
-  if (user.role !== 'admin') {
+  // IP KISITLAMA: kullanici sadece izinli IP'den girebilir.
+  // SADECE süper yönetici (burak) her IP'den girer ki sistem asla kilitlenmesin +
+  // IP listesini yönetebilsin. Diğer TÜM kullanıcılar (normal yöneticiler dahil) IP'ye tabi.
+  const superAdmin = (user.username === 'burak');
+  if (!superAdmin) {
     const ip = gercekIp(req);
     const kapsam = istekKapsami(req); // hangi linkten geldi: ofis / disari
     if (!ipIzinliMi(ip, kapsam)) {
@@ -268,6 +270,124 @@ function isAdmin(token) {
   const s = token && sessions.get(token);
   return s && s.role === 'admin';
 }
+// Ödemeleri ONAYLAYABİLİR mi? (muhasebeci veya yönetici)
+function odemeOnaylayabilir(token) {
+  const s = token && sessions.get(token);
+  return s && (s.role === 'admin' || s.role === 'muhasebeci');
+}
+// token'dan oturum bilgisi (username + ad) al
+function oturumBilgi(token) {
+  const s = token && sessions.get(token);
+  if (!s) return null;
+  return { username: s.username, ad: s.displayName || s.username, role: s.role };
+}
+
+// ════════════════════════════════════════════════════════════
+// SONRADAN GELEN ÖDEMELER API
+// - Yükleme: HERKES (giriş yapan her kullanıcı) yapabilir
+// - Listeleme: HERKES görebilir
+// - Silme: kendi yüklediğini herkes silebilir; muhasebeci/yönetici hepsini silebilir
+// - Onaylama (kaldırma): sadece muhasebeci/yönetici
+// ════════════════════════════════════════════════════════════
+// Ödeme dosyası yükle (panelden seçerek veya sürükleyerek). Dosya /media'ya kaydedilir.
+app.post('/api/odeme/yukle', express.raw({ type: '*/*', limit: '64mb' }), async (req, res) => {
+  const token = req.query.token;
+  const bilgi = oturumBilgi(token);
+  if (!bilgi) return res.json({ ok: false, error: 'Giriş gerekli' });
+  try {
+    const notMetni = req.query.not ? decodeURIComponent(req.query.not) : '';
+    const orijinalAd = req.query.ad ? decodeURIComponent(req.query.ad) : 'dosya';
+    const mime = req.query.mime ? decodeURIComponent(req.query.mime) : 'application/octet-stream';
+    const buf = req.body;
+    if (!buf || !buf.length) return res.json({ ok: false, error: 'Dosya boş' });
+    // uzantı bul
+    let ext = 'bin';
+    if (orijinalAd.includes('.')) ext = orijinalAd.split('.').pop().slice(0, 8);
+    else if (mime.startsWith('image/')) ext = mime.split('/')[1] || 'jpg';
+    else if (mime === 'application/pdf') ext = 'pdf';
+    const fileName = `odeme_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    fs.writeFileSync(path.join(MEDIA_DIR, fileName), buf);
+    const id = 'odm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const r = await db.odemeEkle({
+      id,
+      yukleyenKullanici: bilgi.username,
+      yukleyenAd: bilgi.ad,
+      dosyaUrl: '/media/' + fileName,
+      dosyaAd: orijinalAd,
+      dosyaTip: mime.startsWith('image/') ? 'image' : (mime === 'application/pdf' ? 'pdf' : 'dosya'),
+      not: notMetni,
+    });
+    if (!r.ok) return res.json({ ok: false, error: r.error || 'Kaydedilemedi' });
+    // tüm ofis panellerine "yeni ödeme" bildir (liste tazelensin)
+    broadcastHat('ofis', { type: 'odemeGuncellendi' });
+    res.json({ ok: true, kayit: r.kayit });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+// Mesajdan ödeme ekle: mevcut bir medya dosyasını (zaten /media'da) ödeme olarak kaydet.
+app.post('/api/odeme/mesajdan', express.json(), async (req, res) => {
+  const bilgi = oturumBilgi(req.body?.token);
+  if (!bilgi) return res.json({ ok: false, error: 'Giriş gerekli' });
+  try {
+    const mediaUrl = req.body?.mediaUrl || '';
+    const kind = req.body?.kind || 'dosya';
+    const notMetni = req.body?.not || '';
+    if (!mediaUrl.startsWith('/media/')) return res.json({ ok: false, error: 'Geçersiz dosya' });
+    // dosyanın gerçekten var olduğunu kontrol et + bir kopyasını oluştur (orijinal mesajda kalsın)
+    const kaynak = path.join(MEDIA_DIR, mediaUrl.replace('/media/', '').split('?')[0]);
+    if (!fs.existsSync(kaynak)) return res.json({ ok: false, error: 'Dosya bulunamadı' });
+    const ext = (kaynak.split('.').pop() || 'bin').slice(0, 8);
+    const yeniAd = `odeme_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    fs.copyFileSync(kaynak, path.join(MEDIA_DIR, yeniAd));
+    const id = 'odm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const dosyaAd = (kind === 'image' ? 'Fotoğraf' : 'Belge') + '.' + ext;
+    const r = await db.odemeEkle({
+      id,
+      yukleyenKullanici: bilgi.username,
+      yukleyenAd: bilgi.ad,
+      dosyaUrl: '/media/' + yeniAd,
+      dosyaAd,
+      dosyaTip: kind === 'image' ? 'image' : (ext === 'pdf' ? 'pdf' : 'dosya'),
+      not: notMetni,
+    });
+    if (!r.ok) return res.json({ ok: false, error: r.error || 'Kaydedilemedi' });
+    broadcastHat('ofis', { type: 'odemeGuncellendi' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// Ödemeleri listele (bekleyenler)
+app.post('/api/odeme/liste', express.json(), async (req, res) => {
+  const bilgi = oturumBilgi(req.body?.token);
+  if (!bilgi) return res.json({ ok: false, error: 'Giriş gerekli' });
+  const liste = await db.odemeleriListele();
+  // panele: bu kullanıcı onaylayabilir mi + kendi username'i (kendi sildiğini ayırt etmek için)
+  res.json({ ok: true, liste, benUsername: bilgi.username, onaylayabilir: odemeOnaylayabilir(req.body?.token) });
+});
+// Ödeme sil / onayla (kaldır). Onaylama = listeden kaldırma (muhasebeci/yönetici).
+app.post('/api/odeme/sil', express.json(), async (req, res) => {
+  const bilgi = oturumBilgi(req.body?.token);
+  if (!bilgi) return res.json({ ok: false, error: 'Giriş gerekli' });
+  const id = req.body?.id;
+  const kayit = await db.odemeBul(id);
+  if (!kayit) return res.json({ ok: false, error: 'Kayıt bulunamadı' });
+  // YETKİ: muhasebeci/yönetici her şeyi siler/onaylar; normal kullanıcı SADECE kendi yüklediğini siler
+  const yetkili = odemeOnaylayabilir(req.body?.token) || (kayit.yukleyen_kullanici === bilgi.username);
+  if (!yetkili) return res.json({ ok: false, error: 'Bunu kaldırma yetkiniz yok' });
+  // dosyayı diskten de sil (yer kaplamasın)
+  try {
+    if (kayit.dosya_url) {
+      const dosyaYolu = path.join(MEDIA_DIR, kayit.dosya_url.replace('/media/', ''));
+      if (fs.existsSync(dosyaYolu)) fs.unlinkSync(dosyaYolu);
+    }
+  } catch (e) {}
+  await db.odemeSil(id);
+  broadcastHat('ofis', { type: 'odemeGuncellendi' });
+  res.json({ ok: true });
+});
 
 // ---- IZINLI IP YONETIMI (sadece yonetici) ----
 // Iki ayri liste: ofis (ofis linki icin) ve disari (disari linki icin).
@@ -336,14 +456,15 @@ app.post('/api/users/add', express.json(), async (req, res) => {
   const { username, password, displayName, role, tip } = req.body || {};
   if (!username || !password) return res.json({ ok: false, error: 'Kullanıcı adı ve şifre gerekli' });
   const uname = username.trim();
-  // Rol: admin, pzr_yonetici (pazarlama yöneticisi) veya agent (normal)
+  // Rol: admin, pzr_yonetici (pazarlama yöneticisi), muhasebeci veya agent (normal)
   let gecerliRol = 'agent';
   if (role === 'admin') gecerliRol = 'admin';
   else if (role === 'pzr_yonetici') gecerliRol = 'pzr_yonetici';
+  else if (role === 'muhasebeci') gecerliRol = 'muhasebeci';
   const r = await db.addUser(uname, password, displayName, gecerliRol);
   if (r.ok) {
-    // Pazarlama yöneticisi: hat gerekmez (sadece satış kontrol görür), ofis hattına bağla (zararsız).
-    if (gecerliRol === 'pzr_yonetici') {
+    // Pazarlama yöneticisi + Muhasebeci: hat gerekmez, ofis hattına bağla (zararsız).
+    if (gecerliRol === 'pzr_yonetici' || gecerliRol === 'muhasebeci') {
       await db.setUserLine(uname, 'ofis', 'ofis');
     } else {
       // KULLANICI TIPI: 'pazarlama' ise kendi ayri hattini olustur, 'ofis' ise ortak hatta bagla.
@@ -685,7 +806,7 @@ app.post('/api/performans', express.json(), async (req, res) => {
     }
     function grupAl(k, ad) {
       const g = (ad || 'Bilinmeyen grup').trim() || 'Bilinmeyen grup';
-      if (!k.gruplar.has(g)) k.gruplar.set(g, { ad: g, police: 0, kesim: 0, ilgilenme: 0, branslar: {} });
+      if (!k.gruplar.has(g)) k.gruplar.set(g, { ad: g, police: 0, kesim: 0, ilgilenme: 0, branslar: {}, sonTs: 0 });
       return k.gruplar.get(g);
     }
     for (const p of policeler) {
@@ -699,6 +820,7 @@ app.post('/api/performans', express.json(), async (req, res) => {
       const g = grupAl(k, p.chat_name);
       g.police++;
       g.branslar[b] = (g.branslar[b] || 0) + 1;
+      if (p.ts && p.ts > g.sonTs) g.sonTs = p.ts;
     }
     for (const a of aktiviteler) {
       const k = kisiAl(a.kullanici_ad);
@@ -708,6 +830,7 @@ app.post('/api/performans', express.json(), async (req, res) => {
       const g = grupAl(k, a.chat_name);
       if (a.tur === 'kesim') g.kesim++;
       else if (a.tur === 'ilgileniyorum') g.ilgilenme++;
+      if (a.ts && a.ts > g.sonTs) g.sonTs = a.ts;
     }
     // diziye çevir + grupları diziye çevir (poliçeye göre sıralı) + kişiyi sırala
     const liste = Object.values(kisiler).map(k => ({
@@ -740,10 +863,11 @@ app.post('/api/performans', express.json(), async (req, res) => {
 // Rol degistir - yonetici yap/geri al (sadece yonetici)
 app.post('/api/users/role', express.json(), async (req, res) => {
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
-  // Geçerli roller: admin, pzr_yonetici (pazarlama yöneticisi), agent (normal)
+  // Geçerli roller: admin, pzr_yonetici (pazarlama yöneticisi), muhasebeci, agent (normal)
   let yeniRol = 'agent';
   if (req.body?.role === 'admin') yeniRol = 'admin';
   else if (req.body?.role === 'pzr_yonetici') yeniRol = 'pzr_yonetici';
+  else if (req.body?.role === 'muhasebeci') yeniRol = 'muhasebeci';
   try {
     const users = await db.listUsers();
     const u = users.find(x => String(x.id) === String(req.body?.id));
@@ -3214,6 +3338,26 @@ const avatarCache = new Map(); // jid -> url | null
 // Kisi isimleri onbellegi (uye listesi + etiketleme icin)
 const contactNames = new Map(); // jid -> isim (pushName veya rehber)
 const savedContacts = new Map(); // jid -> SADECE telefon rehberine kayitli isim
+// PANEL KULLANICILARI (ekip üyeleri) — displayName'leri normalize edilmiş halde tutar.
+// Performans/aktivite SADECE gerçek ekip üyeleri için sayılsın diye kullanılır.
+// (Müşteri/rastgele kayıtlı kişi sayılmaz.) Periyodik güncellenir.
+const panelKullaniciAdlari = new Set(); // normalize edilmiş displayName + username
+function _normAd(s){ return (s||'').toLocaleLowerCase('tr').replace(/i̇/g,'i').replace(/ı/g,'i').replace(/İ/g,'i').replace(/ş/g,'s').replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ö/g,'o').replace(/ç/g,'c').replace(/\s+/g,' ').trim(); }
+async function panelKullanicilariYenile(){
+  try{
+    const users = await db.listUsers();
+    panelKullaniciAdlari.clear();
+    for(const u of (users||[])){
+      if(u.display_name) panelKullaniciAdlari.add(_normAd(u.display_name));
+      if(u.username) panelKullaniciAdlari.add(_normAd(u.username));
+    }
+  }catch(e){}
+}
+// bir kişi adı panel kullanıcısı (ekip üyesi) mı?
+function ekipUyesiMi(ad){ return ad ? panelKullaniciAdlari.has(_normAd(ad)) : false; }
+// başlangıçta + her 2 dakikada bir kullanıcı listesini tazele
+panelKullanicilariYenile();
+setInterval(panelKullanicilariYenile, 120000);
 const groupMetaCache = new Map(); // grup jid -> { meta, ts } (tekrar tekrar cekmeyi onler)
 // LID -> gercek numara (PN) esleme onbellegi
 const lidToPn = new Map(); // '...@lid' -> '...@s.whatsapp.net'
@@ -4456,13 +4600,15 @@ async function startWA(lineId = 'ofis') {
           satisKaydet(m, satis, lineId, chatObj, saticiAdi, saticiJid2).catch(() => {});
         }
         // --- AKTİVİTE MESAJI: "ilgileniyorum/kesiyorum" vb. (yanlış yazım dahil) ---
-        // SADECE ofis ekibi/kayıtlı kişiler sayılır (müşteri yazınca sayma).
-        // fromMe (panelden/hat) VEYA senderOfis (kayıtlı ofis kişisi) ise geçerli.
-        if (fromMe || senderOfis) {
+        // SADECE GERÇEK EKİP ÜYELERİ (panel kullanıcısı) sayılır. Müşteri/rastgele kayıtlı
+        // kişi yazınca SAYILMAZ. fromMe (panelden gönderilen) VEYA mesajı yazan panel kullanıcısı.
+        const aktKisiAdiOn = fromMe ? (line?.myName || 'Ben') : (senderName || senderPush || '');
+        const sayilsinMi = fromMe || ekipUyesiMi(aktKisiAdiOn);
+        if (sayilsinMi) {
           const akt = aktiviteMesajiTespit(info.text);
           if (akt && db.isReady()) {
             const chatObj2 = CC.get(jid);
-            const aktKisiAdi = fromMe ? (line?.myName || 'Ben') : (senderName || senderPush || '');
+            const aktKisiAdi = aktKisiAdiOn;
             const aktId = 'akt_' + lineId + '_' + (m.key?.id || (Date.now() + '_' + Math.random().toString(36).slice(2, 8)));
             db.saveAktivite({
               id: aktId,
