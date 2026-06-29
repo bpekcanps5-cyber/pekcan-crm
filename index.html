@@ -959,6 +959,11 @@
   .lbl-row.ekli .lbl-check{background:var(--brand);border-color:var(--brand)}
   .lbl-yeni{background:var(--panel-2);border-radius:13px;padding:15px;margin-top:6px}
   .renk-secenek{width:24px;height:24px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;transition:transform .1s}
+  /* etiket sıralama okları (yönetici) */
+  .lbl-sira{display:inline-flex;flex-direction:column;gap:1px;margin-right:4px;flex-shrink:0}
+  .lbl-sira-btn{background:var(--panel-2);border:none;color:var(--muted);width:20px;height:14px;line-height:1;font-size:8px;cursor:pointer;border-radius:4px;padding:0;display:grid;place-items:center}
+  .lbl-sira-btn:hover{background:var(--brand);color:#fff}
+  .lbl-sira-btn.pasif{opacity:.25;pointer-events:none}
   .renk-secenek:hover{transform:scale(1.15)}
   .renk-secenek.secili{border-color:var(--text);transform:scale(1.1)}
   /* Sol taraf etiket bolumu */
@@ -1118,6 +1123,7 @@
   .um-badge.muhasebeci{background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;box-shadow:0 2px 6px rgba(14,165,233,.3)}
   /* ── SONRADAN ÖDEMELER ── */
   .odeme-modal{width:680px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column}
+  .odeme-alan{flex:1;display:flex;flex-direction:column;min-height:0;overflow-y:auto;padding:18px 20px 24px}
   .odeme-sayac{margin-left:auto;background:#dc2626;color:#fff;font-size:11px;font-weight:700;min-width:19px;height:19px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
   .odeme-yukle-kutu{background:var(--panel-2);border-radius:14px;padding:16px;margin-bottom:16px}
   .odeme-dropzone{border:2px dashed var(--border);border-radius:12px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;transition:all .15s}
@@ -1143,6 +1149,8 @@
   .odeme-btn{border:none;border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
   .odeme-btn.onayla{background:var(--brand);color:#fff}
   .odeme-btn.sil{background:var(--panel);color:#dc2626;border:1px solid var(--border-soft)}
+  .odeme-btn.duzenle{background:var(--panel);color:var(--text);border:1px solid var(--border-soft)}
+  .odeme-kart-sag{display:flex;flex-direction:column;gap:6px}
   @media (max-width:600px){ .odeme-kart{flex-wrap:wrap} .odeme-kart-sag{width:100%} .odeme-btn{width:100%} }
   /* rol değiştirme açılır menüsü */
   .rol-menu{position:fixed;z-index:400;background:var(--panel);border:1px solid var(--border-soft);border-radius:11px;box-shadow:var(--shadow-lg);padding:5px;display:flex;flex-direction:column;gap:2px;min-width:190px}
@@ -1359,6 +1367,7 @@
         <span class="sel-count" id="selCount">0 seçildi</span>
         <button onclick="silSelected()" class="sil-btn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>Sil</button>
         <button class="primary" onclick="forwardSelected()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z"/></svg>İlet</button>
+        <button onclick="odemelereTopluEkle()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>Ödemelere ekle</button>
       </div>
       <div class="eski-yuk-not" id="eskiYukNot" style="display:none">⏳ Daha eski mesajlar yükleniyor…</div>
       <button class="alta-in-btn" id="altaInBtn" onclick="enAltaIn()" title="En alta in" style="display:none">
@@ -1456,10 +1465,11 @@
 
     <!-- KONTROL / SATIŞ TAKİBİ PANELİ -->
     <div id="kontrolContent" style="display:none;flex-direction:column;min-height:0;flex:1;overflow:hidden">
-      <!-- Kontrol alt sekmeleri: Satışlar / Performans (Performans sadece yönetici) -->
+      <!-- Kontrol alt sekmeleri: Satışlar / Performans / Ödemeler (yetkiye göre görünür) -->
       <div class="kontrol-alt-sekme" id="kontrolAltSekme">
-        <button class="kas-btn active" data-kas="satislar" onclick="kontrolAltGec('satislar')">Satışlar</button>
+        <button class="kas-btn active" id="kasSatislar" data-kas="satislar" onclick="kontrolAltGec('satislar')">Satışlar</button>
         <button class="kas-btn" id="kasPerformans" data-kas="performans" onclick="kontrolAltGec('performans')" style="display:none">📊 Performans</button>
+        <button class="kas-btn" id="kasOdemeler" data-kas="odemeler" onclick="kontrolAltGec('odemeler')" style="display:none">💳 Ödemeler <span class="odeme-sayac" id="odemeSayac" style="display:none">0</span></button>
       </div>
       <div class="kontrol-head">
         <div class="kh-sol">
@@ -1501,6 +1511,24 @@
       <div class="kontrol-liste" id="kontrolListe"></div>
       <!-- PERFORMANS RAPORU (yönetici): kişi kişi poliçe yükleme -->
       <div class="performans-alan" id="performansAlan" style="display:none"></div>
+      <!-- SONRADAN ÖDEMELER (pazarlama hariç herkes): yükle + onayla -->
+      <div class="odeme-alan" id="odemeAlan" style="display:none">
+        <div class="odeme-yukle-kutu" id="odemeYukleKutu">
+          <div class="odeme-dropzone" id="odemeDropzone">
+            <svg viewBox="0 0 24 24" fill="currentColor" style="width:34px;height:34px;opacity:.5"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+            <div class="odeme-dz-yazi">PDF/fotoğrafları buraya sürükle (birden fazla olabilir)<br><span>veya</span></div>
+            <button class="btn primary" onclick="document.getElementById('odemeDosyaInput').click()">Dosya Seç</button>
+            <input type="file" id="odemeDosyaInput" multiple accept="image/*,application/pdf" style="display:none">
+          </div>
+          <textarea id="odemeNot" class="odeme-not" placeholder="Not ekle (opsiyonel) — örn. müşteri adı, tutar, açıklama…" rows="2"></textarea>
+          <div id="odemeYukleDurum" style="font-size:13px;min-height:18px;margin-top:4px"></div>
+        </div>
+        <div class="odeme-baslik-satir">
+          <span class="odeme-liste-baslik">Bekleyen ödemeler</span>
+          <span class="odeme-liste-sayi" id="odemeListeSayi"></span>
+        </div>
+        <div id="odemeListe" class="odeme-liste"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -1569,12 +1597,6 @@
     Tümünü okundu yap
   </div>
   <div style="height:1px;background:var(--border-soft);margin:6px 0"></div>
-  <div style="height:1px;background:var(--border-soft);margin:6px 0"></div>
-  <div class="set-item" id="odemelerItem" onclick="odemelerAc()">
-    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
-    Sonradan ödemeler
-    <span class="odeme-sayac" id="odemeSayac" style="display:none">0</span>
-  </div>
   <div class="set-item" id="userMgmtItem" onclick="openUserMgmt()" style="display:none">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
     Kullanıcı yönetimi
@@ -1624,36 +1646,6 @@
     <div class="modal-btns" style="margin-top:16px">
       <button class="btn ghost" id="sendFileCancel">İptal</button>
       <button class="btn primary" id="sendFileGo">📤 Gönder</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-bg" id="odemeModal">
-  <div class="modal odeme-modal">
-    <h3>💳 Sonradan Gelen Ödemeler</h3>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Sonradan gelen ödemeleri buraya yükle. Muhasebe kontrol edip onayladıkça listeden kaldırır.</p>
-
-    <!-- YÜKLEME ALANI -->
-    <div class="odeme-yukle-kutu" id="odemeYukleKutu">
-      <div class="odeme-dropzone" id="odemeDropzone">
-        <svg viewBox="0 0 24 24" fill="currentColor" style="width:38px;height:38px;opacity:.5"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
-        <div class="odeme-dz-yazi">Dosyayı buraya sürükle<br><span>veya</span></div>
-        <button class="btn primary" onclick="document.getElementById('odemeDosyaInput').click()">Dosya Seç</button>
-        <input type="file" id="odemeDosyaInput" multiple accept="image/*,application/pdf" style="display:none">
-      </div>
-      <textarea id="odemeNot" class="odeme-not" placeholder="Not ekle (opsiyonel) — örn. müşteri adı, tutar, açıklama…" rows="2"></textarea>
-      <div id="odemeSecilenler" class="odeme-secilenler"></div>
-      <div id="odemeYukleDurum" style="font-size:13px;min-height:18px;margin-top:4px"></div>
-    </div>
-
-    <div class="odeme-baslik-satir">
-      <span class="odeme-liste-baslik">Bekleyen ödemeler</span>
-      <span class="odeme-liste-sayi" id="odemeListeSayi"></span>
-    </div>
-    <div id="odemeListe" class="odeme-liste"></div>
-
-    <div class="modal-btns" style="margin-top:16px">
-      <button class="btn ghost" onclick="document.getElementById('odemeModal').classList.remove('show')">Kapat</button>
     </div>
   </div>
 </div>
@@ -1799,7 +1791,7 @@
       <div style="font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:9px">Yeni etiket oluştur</div>
       <div style="display:flex;gap:8px;align-items:center">
         <input type="text" id="newLabelName" placeholder="Etiket adı (örn. Kasko)" class="um-input" style="flex:1">
-        <div id="labelColorPick" style="display:flex;gap:5px"></div>
+        <div id="labelColorPick" style="display:flex;gap:6px;flex-wrap:wrap;max-width:320px"></div>
       </div>
       <button class="btn primary" id="newLabelBtn" style="margin-top:10px;width:100%">+ Oluştur</button>
     </div>
@@ -2488,9 +2480,9 @@ function connect(){
       }
     }
     else if(d.type==='odemeGuncellendi'){
-      // sonradan ödemeler değişti (biri yükledi/onayladı) -> açıksa listeyi tazele + sayacı güncelle
-      if(document.getElementById('odemeModal').classList.contains('show')) odemeListeYukle();
-      else { // modal kapalıysa sadece sayacı güncelle
+      // sonradan ödemeler değişti (biri yükledi/onayladı) -> ödemeler sekmesi açıksa tazele + sayaç
+      if(_mainTab==='kontrol' && _kontrolAltSekme==='odemeler') odemeListeYukle();
+      else { // değilse sadece sayacı güncelle
         fetch('/api/odeme/liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})})
           .then(r=>r.json()).then(dd=>{ if(dd.ok) odemeSayacGuncelle((dd.liste||[]).length); }).catch(()=>{});
       }
@@ -2649,6 +2641,11 @@ function startApp(){
   // panele giris yapildi - WebSocket'i baslat (bir kez)
   pinnedYukle(); // sabitlenen sohbetleri tarayıcıdan geri yükle (kaybolmasın)
   odemeKurulum(); // ödeme yükleme alanı (sürükle-bırak) hazırla
+  // ödeme sayacını yükle (pazarlama hariç herkes görebilir)
+  if(currentUser && currentUser.lineTip!=='pazarlama'){
+    setTimeout(()=>{ fetch('/api/odeme/liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})})
+      .then(r=>r.json()).then(dd=>{ if(dd.ok) odemeSayacGuncelle((dd.liste||[]).length); }).catch(()=>{}); }, 1000);
+  }
   if(!_wsStarted){ _wsStarted=true; connect(); }
   document.getElementById('loginScreen').classList.remove('show');
   // HENUZ baglantiyi bilmiyoruz. Bos panelde takilmamak icin: eger bu kullanici
@@ -2711,15 +2708,8 @@ function switchMainTab(tab){
     else { document.getElementById('emptyState').style.display='grid'; }
   } else if(kontrolGorunur){
     if(kc) kc.style.display='flex';
-    // alt sekmeyi her zaman Satışlar'dan başlat (performansta kalıp şaşırmasın)
-    _kontrolAltSekme='satislar';
-    document.querySelectorAll('.kas-btn').forEach(b=>b.classList.toggle('active', b.dataset.kas==='satislar'));
-    document.getElementById('performansAlan').style.display='none';
-    document.getElementById('kontrolListe').style.display='';
-    document.getElementById('kontrolDash').style.display='';
-    document.getElementById('kontrolFiltre').style.display='';
-    const kb=document.getElementById('kontrolBaslik'); if(kb) kb.textContent='Satış Kontrol';
-    kontrolYukle(); // satislari cek + dashboard ciz
+    // görebildiği İLK alt sekmeyle başlat (satış göremeyen muhasebeci/temsilci -> ödemeler)
+    kontrolAltGec(_kontrolIlkSekme || 'satislar');
   } else {
     // ic mesaj
     if(_internalOther){ document.getElementById('internalContent').style.display='flex'; }
@@ -2739,21 +2729,33 @@ let _kontrolAdmin=false;  // bu kullanıcı yönetici mi (server söyler)
 // KONTROL ALT SEKMELERİ: Satışlar / Performans
 // ═══════════════════════════════════════════════════════════
 let _kontrolAltSekme='satislar';
+let _kontrolIlkSekme='satislar'; // kullanıcının görebildiği ilk alt sekme (yetkiye göre)
 function kontrolAltGec(sekme){
   _kontrolAltSekme=sekme;
   document.querySelectorAll('.kas-btn').forEach(b=>b.classList.toggle('active', b.dataset.kas===sekme));
   const satisGorunur=(sekme==='satislar');
+  const perfGorunur=(sekme==='performans');
+  const odemeGorunur=(sekme==='odemeler');
   // Satışlar görünümü öğeleri
   document.getElementById('kontrolListe').style.display = satisGorunur?'':'none';
   document.getElementById('kontrolDash').style.display = satisGorunur?'':'none';
   document.getElementById('kontrolYonetici').style.display = (satisGorunur&&_kontrolAdmin)?'flex':'none';
   document.getElementById('kontrolFiltre').style.display = satisGorunur?'':'none';
   // Performans alanı
-  document.getElementById('performansAlan').style.display = satisGorunur?'none':'block';
+  document.getElementById('performansAlan').style.display = perfGorunur?'block':'none';
+  // Ödemeler alanı
+  const oa=document.getElementById('odemeAlan');
+  if(oa) oa.style.display = odemeGorunur?'flex':'none';
+  // kapsam seçici sadece satış/performansta görünsün (ödemede gereksiz)
+  const ks=document.getElementById('kapsamSecici');
+  if(ks) ks.style.display = odemeGorunur?'none':'';
   // başlık
   const baslik=document.getElementById('kontrolBaslik');
-  if(baslik) baslik.textContent = satisGorunur?'Satış Kontrol':'Performans Raporu';
-  if(sekme==='performans') performansYukle();
+  const altb=document.getElementById('kontrolAlt');
+  if(baslik) baslik.textContent = satisGorunur?'Satış Kontrol':(perfGorunur?'Performans Raporu':'Sonradan Ödemeler');
+  if(odemeGorunur && altb) altb.textContent='Muhasebe onayı bekleyen ödemeler';
+  if(perfGorunur) performansYukle();
+  else if(odemeGorunur) odemeListeYukle();
   else kontrolYukle();
 }
 
@@ -2787,8 +2789,10 @@ function bransGoster(b){
 }
 // Timestamp -> okunabilir tarih+saat. Bugünse "Bugün 14:32", dünse "Dün 09:15", öncesi "12 Şub 14:00"
 function perfTarihSaat(ts){
-  if(!ts) return '';
-  const d=new Date(ts), now=new Date();
+  const n = Number(ts);
+  if(!n || isNaN(n) || n<=0) return ''; // geçersiz/boş -> hiçbir şey gösterme (NaN undefined olmasın)
+  const d=new Date(n), now=new Date();
+  if(isNaN(d.getTime())) return '';
   const saat=(''+d.getHours()).padStart(2,'0')+':'+(''+d.getMinutes()).padStart(2,'0');
   const ayni=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();
   const dun=new Date(now); dun.setDate(now.getDate()-1);
@@ -2925,8 +2929,9 @@ function perfDetayAc(i){
       if(g.police>0) detaylar.push('<span class="pd-grup-rozet ana">'+g.police+' poliçe</span>');
       if(g.kesim>0) detaylar.push('<span class="pd-grup-rozet">✂️ '+g.kesim+'</span>');
       if(g.ilgilenme>0) detaylar.push('<span class="pd-grup-rozet">👀 '+g.ilgilenme+'</span>');
-      // SAAT: son işlemin tarihi+saati (örn "Bugün 14:32" veya "12 Şub 09:15")
-      const saatEt = g.sonTs ? '<span class="pd-grup-saat">🕐 '+perfTarihSaat(g.sonTs)+'</span>' : '';
+      // SAAT: son işlemin tarihi+saati (geçerliyse göster, yoksa hiç gösterme — NaN olmasın)
+      const saatYazi = perfTarihSaat(g.sonTs);
+      const saatEt = saatYazi ? '<span class="pd-grup-saat">🕐 '+saatYazi+'</span>' : '';
       h+='<div class="pd-grup"><div class="pd-grup-sol"><span class="pd-grup-ad">'+esc(g.ad)+'</span>'+saatEt+'</div><span class="pd-grup-sag">'+detaylar.join('')+'</span></div>';
     });
     h+='</div>';
@@ -3608,18 +3613,34 @@ function applyUser(){
   // "Tehlikeli islemler" (grup sifirlama) SADECE yoneticide gorunur.
   const tb=document.getElementById('tehlikeliBolge');
   if(tb) tb.style.display = currentUser.role==='admin' ? 'block' : 'none';
-  // KONTROL sekmesi: ofis temsilcileri (normal agent) GÖRMESİN.
-  // Sadece YÖNETİCİ (admin) veya PAZARLAMACI (lineTip='pazarlama') görür.
+  // ── KONTROL SEKMESİ + ALT SEKME YETKİLERİ ──
+  // Roller: admin (yönetici), pazarlama (lineTip), muhasebeci, agent (temsilci)
+  const rol = currentUser.role;
+  const pazarlamaci = currentUser.lineTip==='pazarlama';
+  const muhasebeci = rol==='muhasebeci';
+  // SATIŞLAR alt sekmesi: yönetici + pazarlamacı görür (temsilci, muhasebeci GÖRMEZ)
+  const satisGorur = (rol==='admin') || pazarlamaci;
+  // PERFORMANS alt sekmesi: SADECE yönetici
+  const perfGorur = (rol==='admin');
+  // ÖDEMELER alt sekmesi: PAZARLAMA HARİÇ herkes (yönetici, muhasebeci, temsilci) görür
+  const odemeGorur = !pazarlamaci;
+  // KONTROL sekmesi (genel): yukarıdakilerden EN AZ BİRİNİ görebilen herkes
+  const kontrolGorebilir = satisGorur || perfGorur || odemeGorur;
   const kt=document.getElementById('kontrolTab');
   if(kt){
-    const kontrolGorebilir = (currentUser.role==='admin') || (currentUser.lineTip==='pazarlama');
     kt.style.display = kontrolGorebilir ? '' : 'none';
-    // ofis temsilcisi kontrol sekmesindeyken yetkisi kalkarsa sohbetlere dön
     if(!kontrolGorebilir && _mainTab==='kontrol') switchMainTab('chats');
   }
-  // PERFORMANS alt sekmesi: SADECE yönetici (admin) görür.
+  // alt sekme butonları
+  const kasS=document.getElementById('kasSatislar');
+  if(kasS) kasS.style.display = satisGorur ? '' : 'none';
   const kp=document.getElementById('kasPerformans');
-  if(kp) kp.style.display = currentUser.role==='admin' ? '' : 'none';
+  if(kp) kp.style.display = perfGorur ? '' : 'none';
+  const kasO=document.getElementById('kasOdemeler');
+  if(kasO) kasO.style.display = odemeGorur ? '' : 'none';
+  // KONTROL sekmesi açıldığında HANGİ alt sekme varsayılan? Görebildiği ilki.
+  // (Satış göremeyen muhasebeci/temsilci direkt ödemelerde başlasın.)
+  _kontrolIlkSekme = satisGorur ? 'satislar' : (odemeGorur ? 'odemeler' : (perfGorur ? 'performans' : 'satislar'));
 }
 
 // PAZARLAMA YÖNETİCİSİ arayüzü: sadece "Kontrol" (satış kontrol) sekmesi görünür.
@@ -3639,8 +3660,11 @@ function pazarlamaYoneticiArayuzu(){
   ['userMgmtItem','qrManageBtn','activeUsersItem','takipToggleItem','ipMgmtItem','waCikisItem','tehlikeliBolge'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display='none';
   });
-  // Performans alt sekmesi gizli (sadece admin görür)
+  // Performans + Ödemeler alt sekmeleri gizli (pazarlama yöneticisi sadece SATIŞLARI görür)
   const kp=document.getElementById('kasPerformans'); if(kp) kp.style.display='none';
+  const kasO=document.getElementById('kasOdemeler'); if(kasO) kasO.style.display='none';
+  const kasS=document.getElementById('kasSatislar'); if(kasS) kasS.style.display='';
+  _kontrolIlkSekme='satislar';
 }
 
 // TEHLIKELI BOLGE: ic ice ac/kapa (yanlislikla basilmasin diye gizli durur)
@@ -3703,15 +3727,6 @@ async function appLogout(){
 // ════════════════════════════════════════════════════════════
 let _odemeOnaylayabilir=false, _odemeBenUsername='';
 let _odemeSecilenDosyalar=[]; // yüklenmeyi bekleyen dosyalar
-function odemelerAc(){
-  document.getElementById('settingsMenu').classList.remove('show');
-  document.getElementById('odemeModal').classList.add('show');
-  document.getElementById('odemeNot').value='';
-  _odemeSecilenDosyalar=[];
-  document.getElementById('odemeSecilenler').innerHTML='';
-  document.getElementById('odemeYukleDurum').textContent='';
-  odemeListeYukle();
-}
 // dosya input + sürükle-bırak bağla (bir kez)
 function odemeKurulum(){
   const inp=document.getElementById('odemeDosyaInput');
@@ -3784,14 +3799,18 @@ function odemeListeCiz(liste){
       const ik=o.dosya_tip==='pdf'?'📄':'📎';
       onizleme='<a class="odeme-dosya-ik" href="'+esc(o.dosya_url)+(o.dosya_url.includes('?')?'&':'?')+'name='+encodeURIComponent(o.dosya_ad)+'" download="'+esc(o.dosya_ad)+'" target="_blank">'+ik+'</a>';
     }
-    // silme yetkisi: onaylayabilir VEYA kendi yüklediği
+    // YETKİ: onaylayabilir (muhasebeci/yönetici) VEYA kendi yüklediği
     const benimMi = o.yukleyen_kullanici===_odemeBenUsername;
-    const silebilir = _odemeOnaylayabilir || benimMi;
     let butonlar='';
+    // Düzenle (not): kendi yüklediği VEYA onaylayabilen
+    if(benimMi || _odemeOnaylayabilir){
+      butonlar+='<button class="odeme-btn duzenle" onclick="odemeNotDuzenle(\''+o.id+'\',\''+esc(o.not_metni||'').replace(/'/g,"\\'").replace(/\n/g,' ')+'\')">✏️ Düzenle</button>';
+    }
+    // Onayla/Kaldır
     if(_odemeOnaylayabilir){
-      butonlar='<button class="odeme-btn onayla" onclick="odemeOnayla(\''+o.id+'\')">✓ Onayla & Kaldır</button>';
+      butonlar+='<button class="odeme-btn onayla" onclick="odemeOnayla(\''+o.id+'\')">✓ Onayla & Kaldır</button>';
     } else if(benimMi){
-      butonlar='<button class="odeme-btn sil" onclick="odemeOnayla(\''+o.id+'\')">🗑 Kaldır</button>';
+      butonlar+='<button class="odeme-btn sil" onclick="odemeOnayla(\''+o.id+'\')">🗑 Kaldır</button>';
     }
     const notHtml = o.not_metni ? '<div class="odeme-not-goster">'+esc(o.not_metni)+'</div>' : '';
     return '<div class="odeme-kart">'+
@@ -3804,6 +3823,17 @@ function odemeListeCiz(liste){
       '<div class="odeme-kart-sag">'+butonlar+'</div>'+
     '</div>';
   }).join('');
+}
+// not düzenle (kendi yüklediğini veya yetkiliyse)
+async function odemeNotDuzenle(id, eskiNot){
+  const yeni=prompt('Notu düzenle:', eskiNot||'');
+  if(yeni===null) return; // iptal
+  try{
+    const r=await fetch('/api/odeme/not',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,id,not:yeni})});
+    const d=await r.json();
+    if(d.ok){ showToast('✓ Not güncellendi'); odemeListeYukle(); }
+    else showToast(d.error||'Güncellenemedi');
+  }catch(e){ showToast('Bağlantı hatası'); }
 }
 // onayla/kaldır (sunucu yetkiyi kontrol eder)
 async function odemeOnayla(id){
@@ -3834,6 +3864,31 @@ async function odemeyeEkleMesaj(msgId){
     if(d.ok) showToast('✓ Ödemelere eklendi');
     else showToast(d.error||'Eklenemedi');
   }catch(e){ showToast('Bağlantı hatası'); }
+}
+// TOPLU: seçili foto/belgeleri hep birden ödemelere ekle
+async function odemelereTopluEkle(){
+  const c=chats[activeJid];
+  if(!c){ showToast('Sohbet yok'); return; }
+  // seçili mesajlardan medyası olanları (foto/belge) topla
+  const secililer=[...selectedMsgs];
+  const gonderilecek=[];
+  secililer.forEach(id=>{
+    const m=(c.messages||[]).find(x=>x.id===id);
+    if(m && m.mediaUrl && (m.kind==='image'||m.kind==='document')) gonderilecek.push(m);
+  });
+  if(!gonderilecek.length){ showToast('Seçili foto/belge yok'); return; }
+  showToast('⏳ '+gonderilecek.length+' dosya ödemelere ekleniyor…');
+  let basari=0;
+  for(const m of gonderilecek){
+    try{
+      const r=await fetch('/api/odeme/mesajdan',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:authToken, mediaUrl:m.mediaUrl, kind:m.kind, not:(m.text||'')})});
+      const d=await r.json();
+      if(d.ok) basari++;
+    }catch(e){}
+  }
+  clearSelection();
+  showToast('✓ '+basari+' dosya ödemelere eklendi');
 }
 
 // ---- KULLANICI YONETIMI (sadece yonetici) ----
@@ -4910,7 +4965,7 @@ function guncelleAtamaBilgisi(){
 let _labels=[];                 // [{id,name,color}]
 let _chatLabels={};             // { jid: [labelId,...] }
 let _seciliRenk='#22c55e';      // yeni etiket icin secili renk
-const ETIKET_RENKLERI=['#22c55e','#3b82f6','#ef4444','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#6366f1'];
+const ETIKET_RENKLERI=['#22c55e','#16a34a','#3b82f6','#0ea5e9','#06b6d4','#14b8a6','#ef4444','#dc2626','#f97316','#f59e0b','#eab308','#84cc16','#8b5cf6','#a855f7','#ec4899','#f43f5e','#6366f1','#64748b','#78716c','#0f766e'];
 // etiketleri sunucudan iste (acilista + gerektikce)
 function etiketleriIste(){ if(connected) ws.send(JSON.stringify({type:'getLabels'})); }
 // COKLU OTURUM UYARISI: ayni kullanici birden fazla yerde acik.
@@ -4958,19 +5013,42 @@ function renderLabelModal(){
   const c=chats[activeJid];
   const grupEtiketleri=(c&&c.etiketler)||[];
   if(!_labels.length){ box.innerHTML='<div style="color:var(--faint);font-size:13px;padding:10px;text-align:center">Henüz etiket yok. Aşağıdan oluştur.</div>'; return; }
-  box.innerHTML=_labels.map(l=>{
+  box.innerHTML=_labels.map((l,idx)=>{
     const ekli=grupEtiketleri.includes(l.id);
-    // SİLME butonu (🗑) SADECE yöneticiye görünür (normal kullanıcı etiket silemez)
+    // SİLME + SIRALAMA butonları SADECE yöneticiye görünür
     const benAdmin = currentUser && currentUser.role==='admin';
     const silBtn = benAdmin
       ? '<span class="lbl-sil" onclick="event.stopPropagation();etiketSil(\''+esc(l.id)+'\')" title="Etiketi sil">🗑</span>'
       : '';
+    // SIRALAMA okları (yönetici): yukarı/aşağı taşı
+    let siraBtn='';
+    if(benAdmin){
+      const yukariAktif = idx>0;
+      const asagiAktif = idx<_labels.length-1;
+      siraBtn='<span class="lbl-sira">'+
+        '<button class="lbl-sira-btn'+(yukariAktif?'':' pasif')+'" onclick="event.stopPropagation();etiketSiraTasi(\''+esc(l.id)+'\',-1)" title="Yukarı">▲</button>'+
+        '<button class="lbl-sira-btn'+(asagiAktif?'':' pasif')+'" onclick="event.stopPropagation();etiketSiraTasi(\''+esc(l.id)+'\',1)" title="Aşağı">▼</button>'+
+      '</span>';
+    }
     return '<div class="lbl-row'+(ekli?' ekli':'')+'" onclick="grupEtiketToggle(\''+esc(l.id)+'\')">'+
       '<span class="lbl-nokta" style="background:'+esc(l.color)+'"></span>'+
       '<span class="lbl-ad">'+esc(l.name)+'</span>'+
+      siraBtn+
       silBtn+
       '<span class="lbl-check">'+(ekli?'✓':'')+'</span></div>';
   }).join('');
+}
+// ETİKET SIRASINI değiştir (yönetici): yon=-1 yukarı, yon=1 aşağı
+function etiketSiraTasi(labelId, yon){
+  const idx=_labels.findIndex(l=>l.id===labelId);
+  if(idx<0) return;
+  const yeni=idx+yon;
+  if(yeni<0 || yeni>=_labels.length) return;
+  // dizide yer değiştir (anlık görsel)
+  const t=_labels[idx]; _labels[idx]=_labels[yeni]; _labels[yeni]=t;
+  renderLabelModal();
+  // sunucuya yeni sırayı bildir (kalıcı olsun)
+  ws.send(JSON.stringify({type:'etiketSirala', sira:_labels.map(l=>l.id)}));
 }
 function renderRenkSecimi(){
   const box=document.getElementById('labelColorPick');

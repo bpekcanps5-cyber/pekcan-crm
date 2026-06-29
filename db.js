@@ -973,13 +973,30 @@ async function deleteLabel(id) {
     await pool.query('DELETE FROM labels WHERE id=$1', [id]);
   } catch (e) {}
 }
-// Tum etiketleri yukle -> [{id, name, color}]
+// Tum etiketleri yukle -> [{id, name, color}] — sira_no varsa ona göre, yoksa created_at
 async function loadLabels() {
   if (!aktif) return [];
   try {
-    const r = await pool.query('SELECT id, name, color FROM labels ORDER BY created_at ASC');
+    // sira_no kolonu varsa ona göre sırala (NULLS LAST), yoksa created_at'e düş
+    const r = await pool.query(`SELECT id, name, color FROM labels ORDER BY COALESCE(sira_no, 999999) ASC, created_at ASC`);
     return r.rows.map(x => ({ id: x.id, name: x.name, color: x.color }));
-  } catch (e) { return []; }
+  } catch (e) {
+    // sira_no kolonu yoksa eski sorguya düş
+    try {
+      const r2 = await pool.query('SELECT id, name, color FROM labels ORDER BY created_at ASC');
+      return r2.rows.map(x => ({ id: x.id, name: x.name, color: x.color }));
+    } catch (e2) { return []; }
+  }
+}
+// Etiket sırasını kaydet: [{id, sira}] -> her etiketin sira_no'sunu güncelle
+async function etiketSiraKaydet(siralar) {
+  if (!aktif) return { ok: false };
+  try {
+    for (const s of siralar) {
+      await pool.query('UPDATE labels SET sira_no=$1 WHERE id=$2', [s.sira, s.id]);
+    }
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
 }
 // Bir gruba etiket ekle
 async function addChatLabel(chatJid, labelId) {
@@ -1123,6 +1140,13 @@ async function odemeBul(id) {
     return r.rows[0] || null;
   } catch (e) { return null; }
 }
+async function odemeNotGuncelle(id, notMetni) {
+  if (!aktif) return { ok: false };
+  try {
+    await pool.query('UPDATE sonradan_odemeler SET not_metni=$1 WHERE id=$2', [notMetni || '', id]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
 
 async function loadAktiviteler(baslangicTs = null, bitisTs = null, lineId = null) {
   if (!aktif) return [];
@@ -1161,10 +1185,10 @@ module.exports = {
   markInternalRead, internalUnreadCount,
   saveSession, loadSessions, deleteSession, updateSessionRole, updateUserRole, setMesajIsaret,
   addAssignment, removeAssignment, loadAssignments,
-  addLabel, deleteLabel, loadLabels, addChatLabel, removeChatLabel, loadChatLabels,
+  addLabel, deleteLabel, loadLabels, etiketSiraKaydet, addChatLabel, removeChatLabel, loadChatLabels,
   addAllowedIp, removeAllowedIp, loadAllowedIps,
   setUserLine, getUserLine, loadUserLines, saveLine, loadLines, deleteLineData,
   saveSatis, loadSatislar, loadTumSatislar, updateSatisAdet, setSatisOnay, deleteSatis, gunuKapat, loadKapaliGunler,
   savePoliceYukleme, loadPoliceYuklemeler, saveAktivite, loadAktiviteler,
-  odemeEkle, odemeleriListele, odemeSil, odemeBul,
+  odemeEkle, odemeleriListele, odemeSil, odemeBul, odemeNotGuncelle,
 };

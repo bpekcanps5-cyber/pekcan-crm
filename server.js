@@ -367,6 +367,22 @@ app.post('/api/odeme/liste', express.json(), async (req, res) => {
   // panele: bu kullanıcı onaylayabilir mi + kendi username'i (kendi sildiğini ayırt etmek için)
   res.json({ ok: true, liste, benUsername: bilgi.username, onaylayabilir: odemeOnaylayabilir(req.body?.token) });
 });
+// Ödeme notunu düzenle (kendi yüklediği VEYA yetkili)
+app.post('/api/odeme/not', express.json(), async (req, res) => {
+  const bilgi = oturumBilgi(req.body?.token);
+  if (!bilgi) return res.json({ ok: false, error: 'Giriş gerekli' });
+  const id = req.body?.id;
+  const yeniNot = (req.body?.not || '').slice(0, 500);
+  const kayit = await db.odemeBul(id);
+  if (!kayit) return res.json({ ok: false, error: 'Kayıt bulunamadı' });
+  const yetkili = odemeOnaylayabilir(req.body?.token) || (kayit.yukleyen_kullanici === bilgi.username);
+  if (!yetkili) return res.json({ ok: false, error: 'Bu notu düzenleme yetkiniz yok' });
+  const r = await db.odemeNotGuncelle(id, yeniNot);
+  if (!r.ok) return res.json({ ok: false, error: r.error || 'Güncellenemedi' });
+  broadcastHat('ofis', { type: 'odemeGuncellendi' });
+  res.json({ ok: true });
+});
+
 // Ödeme sil / onayla (kaldır). Onaylama = listeden kaldırma (muhasebeci/yönetici).
 app.post('/api/odeme/sil', express.json(), async (req, res) => {
   const bilgi = oturumBilgi(req.body?.token);
@@ -815,22 +831,24 @@ app.post('/api/performans', express.json(), async (req, res) => {
       const b = p.brans || 'diğer';
       k.branslar[b] = (k.branslar[b] || 0) + 1;
       if (p.iki_aylik) k.ikiAylik++;
-      if (p.ts && p.ts > k.sonTs) k.sonTs = p.ts;
+      const pts = Number(p.ts) || 0; // DB string döndürebilir -> sayıya çevir
+      if (pts > k.sonTs) k.sonTs = pts;
       // grup bazında döküm
       const g = grupAl(k, p.chat_name);
       g.police++;
       g.branslar[b] = (g.branslar[b] || 0) + 1;
-      if (p.ts && p.ts > g.sonTs) g.sonTs = p.ts;
+      if (pts > g.sonTs) g.sonTs = pts;
     }
     for (const a of aktiviteler) {
       const k = kisiAl(a.kullanici_ad);
       if (a.tur === 'kesim') k.kesim++;
       else if (a.tur === 'ilgileniyorum') k.ilgilenme++;
-      if (a.ts && a.ts > k.sonTs) k.sonTs = a.ts;
+      const ats = Number(a.ts) || 0; // DB string döndürebilir -> sayıya çevir
+      if (ats > k.sonTs) k.sonTs = ats;
       const g = grupAl(k, a.chat_name);
       if (a.tur === 'kesim') g.kesim++;
       else if (a.tur === 'ilgileniyorum') g.ilgilenme++;
-      if (a.ts && a.ts > g.sonTs) g.sonTs = a.ts;
+      if (ats > g.sonTs) g.sonTs = ats;
     }
     // diziye çevir + grupları diziye çevir (poliçeye göre sıralı) + kişiyi sırala
     const liste = Object.values(kisiler).map(k => ({
@@ -2067,6 +2085,25 @@ wss.on('connection', (ws) => {
         db.deleteLabel(id).catch(() => {});
         broadcastHat('ofis', { type: 'labelsUpdate', labels, chatLabels: Object.fromEntries(chatLabels) });
         ws.send(JSON.stringify({ type: 'opOk', message: 'Etiket silindi.' }));
+      }
+      // ETİKET SIRASINI değiştir (SADECE yönetici): yeni sıra dizisine göre labels'i yeniden sırala
+      else if (msg.type === 'etiketSirala') {
+        if (ws._role !== 'admin') {
+          ws.send(JSON.stringify({ type: 'opError', error: 'Etiket sırasını sadece yönetici değiştirebilir.' }));
+          return;
+        }
+        const yeniSira = Array.isArray(msg.sira) ? msg.sira : [];
+        if (yeniSira.length) {
+          // yeni sıraya göre labels'i diz (sırada olmayanlar sona)
+          const haritada = new Map(labels.map(l => [l.id, l]));
+          const sirali = [];
+          for (const id of yeniSira) { if (haritada.has(id)) { sirali.push(haritada.get(id)); haritada.delete(id); } }
+          for (const kalan of haritada.values()) sirali.push(kalan); // sırada olmayanlar
+          labels = sirali;
+          // DB'ye sıra kaydet (sira_no ile)
+          db.etiketSiraKaydet(labels.map((l, i) => ({ id: l.id, sira: i }))).catch(() => {});
+          broadcastHat('ofis', { type: 'labelsUpdate', labels, chatLabels: Object.fromEntries(chatLabels) });
+        }
       }
       // Bir gruba etiket ekle/cikar (toggle)
       else if (msg.type === 'toggleChatLabel') {
