@@ -1720,15 +1720,21 @@ wss.on('connection', (ws) => {
           return;
         }
         try {
+          // GRUP ADI: WhatsApp'ta grup uzerinden ozelden yanit verince hangi gruptan
+          // geldigi gorunur. Biz de DM'in basina grup adini ekliyoruz ki musteri anlasin.
+          const grupAdi = (groupChat?.name && !/^\d+$/.test(groupChat.name)) ? groupChat.name : '';
+          const gonderilecekMetin = grupAdi
+            ? ('💬 *' + grupAdi + '*\n' + msg.text)
+            : msg.text;
           // alintiyla birlikte DM'e gonder
           if (orig.raw) {
-            await SOCK.sendMessage(targetJid, { text: msg.text }, { quoted: orig.raw });
+            await SOCK.sendMessage(targetJid, { text: gonderilecekMetin }, { quoted: orig.raw });
           } else {
-            await SOCK.sendMessage(targetJid, { text: msg.text });
+            await SOCK.sendMessage(targetJid, { text: gonderilecekMetin });
           }
-          // DM sohbetine ekle (alinti onizlemesiyle)
+          // DM sohbetine ekle (alinti onizlemesiyle) — panelde de grup adli halini goster
           addMessage(targetJid, {
-            fromMe: true, kind: 'text', text: msg.text,
+            fromMe: true, kind: 'text', text: gonderilecekMetin,
             sender: msg.agent || 'Ben', time: nowTime(),
             replyTo: { sender: orig.sender, text: replyPreview(orig) },
           }, { name: orig.senderPush || targetJid.split('@')[0] }, _LID);
@@ -1886,10 +1892,19 @@ wss.on('connection', (ws) => {
           try {
             await SOCK.sendMessage(msg.jid, { react: { text: msg.emoji || '', key: reactKey } });
             // panelde de gosterelim (kendi reaksiyonumuz)
-            if (msg.emoji) orig.myReaction = msg.emoji;
-            else delete orig.myReaction;
+            if (msg.emoji) {
+              orig.myReaction = msg.emoji;
+              // KIM ATTI: panelden gelen kullanici adi (35 kisi tek hat kullaniyor;
+              // boylece o emojiye basinca "X tepki verdi" gorunur). Telefon/musteri
+              // tepkisinde bu bilgi YOK (WhatsApp vermiyor) — sadece panelden atilanlarda dolu.
+              orig.reactionBy = msg.agent || '';
+            } else {
+              delete orig.myReaction;
+              delete orig.reactionBy; // tepki kaldirildi -> kim attigi bilgisi de gitsin
+            }
             broadcastHat(_LID, { type: 'message', jid: msg.jid, chat: stripRaw(chat) });
-            console.log(`👍 reaksiyon gonderildi: ${msg.emoji || '(kaldirildi)'} -> ${msg.jid.split('@')[0]}`);
+            if (db.isReady()) db.saveMessage(msg.jid, orig, _LID).catch(() => {}); // kalici olsun (yenileyince kaybolmasin)
+            console.log(`👍 reaksiyon gonderildi: ${msg.emoji || '(kaldirildi)'} -> ${msg.jid.split('@')[0]}${msg.agent ? ' | ' + msg.agent : ''}`);
           } catch (e) {
             console.log(`   ⚠️  REAKSIYON HATASI: ${e.message}`);
             const rl = (e.message || '').includes('rate-overlimit') || (e.message || '').includes('429');
@@ -2311,7 +2326,7 @@ wss.on('connection', (ws) => {
                 mediaUrl: r.media_url || null, thumb: r.thumb || null,
                 sender: r.sender || '', senderJid: r.sender_jid || '', senderPush: r.sender_push || '',
                 replyTo: r.reply_to || null, contact: r.contact_data || null, contacts: r.contacts_data || null,
-                reaction: r.reaction || null, myReaction: r.my_reaction || null,
+                reaction: r.reaction || null, myReaction: r.my_reaction || null, reactionBy: r.reaction_by || null,
                 forwarded: r.forwarded || false, mentionsMe: r.mentions_me || false,
                 edited: r.edited || false, deleted: r.deleted || false,
                 time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null, mentions: r.mentions || null, caption: r.caption || '', isaretli: r.isaretli || false,
@@ -2360,7 +2375,7 @@ wss.on('connection', (ws) => {
                 mediaUrl: r.media_url || null, thumb: r.thumb || null,
                 sender: r.sender || '', senderJid: r.sender_jid || '', senderPush: r.sender_push || '',
                 replyTo: r.reply_to || null, contact: r.contact_data || null, contacts: r.contacts_data || null,
-                reaction: r.reaction || null, myReaction: r.my_reaction || null,
+                reaction: r.reaction || null, myReaction: r.my_reaction || null, reactionBy: r.reaction_by || null,
                 forwarded: r.forwarded || false, mentionsMe: r.mentions_me || false,
                 edited: r.edited || false, deleted: r.deleted || false,
                 time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null,
@@ -2401,7 +2416,7 @@ wss.on('connection', (ws) => {
             mediaUrl: r.media_url || null, thumb: r.thumb || null,
             sender: r.sender || '', senderJid: r.sender_jid || '', senderPush: r.sender_push || '',
             replyTo: r.reply_to || null, contact: r.contact_data || null, contacts: r.contacts_data || null,
-            reaction: r.reaction || null, myReaction: r.my_reaction || null,
+            reaction: r.reaction || null, myReaction: r.my_reaction || null, reactionBy: r.reaction_by || null,
             forwarded: r.forwarded || false, mentionsMe: r.mentions_me || false,
             edited: r.edited || false, deleted: r.deleted || false,
             time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null,
@@ -4407,9 +4422,19 @@ async function startWA(lineId = 'ofis') {
         if (chat && targetId) {
           const target = chat.messages.find(x => x.id === targetId);
           if (target) {
-            if (info.text) target.reaction = info.text; // emoji
-            else delete target.reaction;                // bos = reaksiyon kaldirildi
+            if (info.text) {
+              target.reaction = info.text; // emoji
+              // Bu reaksiyon TELEFONDAN/MUSTERIDEN geldi — kim attigi WhatsApp'ta belli degil.
+              // Panelden atilmis eski "kim atti" bilgisi varsa temizle (yanlis isim kalmasin).
+              delete target.reactionBy;
+              delete target.myReaction; // bizim panelden atilan degil; karsi taraf/telefon tepkisi
+            } else {
+              delete target.reaction;     // bos = reaksiyon kaldirildi
+              delete target.reactionBy;
+              delete target.myReaction;
+            }
             broadcastHat(lineId, { type: 'message', jid, chat: stripRaw(chat) });
+            if (db.isReady()) db.saveMessage(jid, target, lineId).catch(() => {}); // kalici (yenileyince kaybolmasin)
           }
         }
         continue; // reaksiyon islendi, sonraki mesaja gec

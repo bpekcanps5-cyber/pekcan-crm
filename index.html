@@ -464,6 +464,17 @@
   .im-msg.in{align-self:flex-start;background:var(--panel-2);color:var(--text);border-bottom-left-radius:4px}
   .im-msg .im-time{font-size:10px;opacity:.7;margin-top:3px;text-align:right}
   .im-day{align-self:center;background:var(--panel-2);color:var(--muted);font-size:11.5px;padding:3px 12px;border-radius:10px;margin:8px 0}
+  /* iç mesaj: gönderen ismi (gelen mesajda, grubun ilk baloncuğunda) */
+  .im-sender{font-size:12.5px;font-weight:600;margin-bottom:3px}
+  /* ardışık aynı kişiden mesajlar: yaklaştır + köşeyi yumuşat (WhatsApp gibi kuyruk) */
+  .im-msg.grouped{margin-top:2px}
+  .im-msg.out.grouped{border-bottom-right-radius:14px;border-top-right-radius:6px}
+  .im-msg.in.grouped{border-bottom-left-radius:14px;border-top-left-radius:6px}
+  /* okundu tiki (iç mesaj) — tek tik gri, çift tik mavi */
+  .im-tik{display:inline-flex;vertical-align:middle;margin-left:3px;opacity:.85}
+  .im-tik svg{width:15px;height:15px}
+  .im-tik.okundu{color:#53bdeb;opacity:1}
+  .im-msg.out .im-time{display:flex;align-items:center;justify-content:flex-end;gap:1px}
   /* WhatsApp tarzi "en asagi in" butonu */
   .iup-item{display:flex;align-items:center;gap:12px;padding:9px 11px;border-radius:10px;cursor:pointer;transition:background .12s}
   .iup-item:hover{background:var(--brand-soft)}
@@ -749,7 +760,18 @@
   .reply-quote{border-left:3px solid var(--brand);background:var(--brand-soft);border-radius:8px;padding:6px 11px;margin-bottom:5px;font-size:12.5px}
   .reply-quote .rq-sender{font-weight:700;color:var(--brand);font-size:12px;margin-bottom:1px}
   .reply-quote .rq-text{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .msg-reaction{position:absolute;bottom:-14px;right:11px;background:var(--panel);border:1px solid var(--border);border-radius:15px;padding:1px 7px;font-size:13px;box-shadow:var(--shadow-xs)}
+  .msg-reaction{position:absolute;bottom:-14px;right:11px;background:var(--panel);border:1px solid var(--border);border-radius:15px;padding:1px 7px;font-size:13px;box-shadow:var(--shadow-xs);cursor:pointer;transition:transform .12s}
+  .msg-reaction:hover{transform:scale(1.18)}
+  /* Reaksiyon bilgi paneli (emojiye basinca: kim atti + kaldir) */
+  .reaksiyon-bilgi{position:fixed;z-index:9999;background:var(--panel);border:1px solid var(--border);border-radius:13px;box-shadow:0 8px 28px rgba(0,0,0,.22);padding:10px 13px;min-width:150px;max-width:230px;animation:rbGir .14s ease}
+  @keyframes rbGir{from{opacity:0;transform:translateY(5px) scale(.96)}to{opacity:1;transform:none}}
+  .reaksiyon-bilgi .rb-baslik{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .reaksiyon-bilgi .rb-emoji{font-size:22px;line-height:1}
+  .reaksiyon-bilgi .rb-kim{font-weight:600;font-size:14px;color:var(--text)}
+  .reaksiyon-bilgi .rb-alt{font-size:12px;color:var(--muted);width:100%;margin-left:30px;margin-top:-2px}
+  .reaksiyon-bilgi .rb-kaldir{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:10px;padding:7px;background:rgba(220,38,38,.1);color:#dc2626;border:none;border-radius:9px;cursor:pointer;font-size:12.5px;font-weight:600}
+  .reaksiyon-bilgi .rb-kaldir:hover{background:rgba(220,38,38,.18)}
+  .reaksiyon-bilgi .rb-kaldir svg{width:15px;height:15px}
   .msg mark{background:#ffe26b;color:#111;border-radius:3px;padding:0 2px}
   .msg.search-current{box-shadow:0 0 0 2.5px var(--brand)}
   #reactPicker.show{display:flex!important}
@@ -3439,13 +3461,44 @@ function renderInternalConversation(d){
 
 function drawInternalMessages(){
   const box=document.getElementById('internalMessages');
+  // Karşı tarafın adı (isim başlığı için)
+  const u=_internalUsers.find(x=>x.username===_internalOther);
+  const karsiAd=u?(u.displayName||u.username):(_internalOther||'');
+  // "Bugün/Dün/tarih" gün ayracı (normal sohbetteki dayLabel mantığı)
+  function imGun(ts){
+    if(!ts) return '';
+    const d=new Date(ts), now=new Date();
+    const g=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+    const b=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    const fark=Math.round((b-g)/86400000);
+    if(fark===0) return 'Bugün';
+    if(fark===1) return 'Dün';
+    const aylar=['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+    const gunler=['Pazar','Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi'];
+    if(fark>1 && fark<7) return gunler[d.getDay()];
+    return d.getDate()+' '+aylar[d.getMonth()]+' '+d.getFullYear();
+  }
   let html=''; let sonGun='';
-  for(const m of _internalMsgs){
+  const msgs=_internalMsgs;
+  for(let i=0;i<msgs.length;i++){
+    const m=msgs[i];
     const ben = m.from_user===_internalMe || m.from===_internalMe;
     const ts = Number(m.ts)||0;
-    const gun = ts?new Date(ts).toLocaleDateString('tr-TR'):'';
-    if(gun && gun!==sonGun){ html+='<div class="im-day">'+esc(gun)+'</div>'; sonGun=gun; }
+    // gün değişti mi? -> ayraç
+    const gl=imGun(ts);
+    const yeniGun = (gl && gl!==sonGun);
+    if(yeniGun){ html+='<div class="im-day">'+esc(gl)+'</div>'; sonGun=gl; }
     const saat = ts?new Date(ts).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'';
+    // --- GRUPLAMA: önceki mesaj aynı kişiden mi (ve aynı gün)? -> baloncukları yaklaştır, ismi tek yaz ---
+    const prev = i>0 ? msgs[i-1] : null;
+    const prevBen = prev ? (prev.from_user===_internalMe || prev.from===_internalMe) : null;
+    const ayniGonderen = prev && !yeniGun && (prevBen===ben);
+    const grpCls = ayniGonderen ? ' grouped' : '';
+    // İSİM BAŞLIĞI: gelen mesajda (karşı taraf), grubun ilk mesajında karşı tarafın adı
+    let isimHtml='';
+    if(!ben && !ayniGonderen){
+      isimHtml='<div class="im-sender" style="color:'+colorFor(karsiAd)+'">'+esc(karsiAd)+'</div>';
+    }
     // dosya var mı? (mediaUrl/media_url)
     const medya = m.mediaUrl || m.media_url || '';
     const kind = m.kind || 'text';
@@ -3468,7 +3521,16 @@ function drawInternalMessages(){
     } else {
       icerik=esc(m.text);
     }
-    html+='<div class="im-msg '+(ben?'out':'in')+'">'+icerik+'<div class="im-time">'+esc(saat)+'</div></div>';
+    // OKUNDU TİKİ: sadece BENİM gönderdiğim mesajlarda. read_at doluysa çift mavi (okundu),
+    // boşsa tek tik (iletildi). (Server loadInternalConversation read_at döndürüyor.)
+    let tik='';
+    if(ben){
+      const okundu = !!(m.read_at || m.readAt);
+      tik = okundu
+        ? '<span class="im-tik okundu"><svg viewBox="0 0 18 18" width="16" height="16"><path fill="currentColor" d="M17.4 5.6l-1.3-1.1c-.2-.1-.4-.1-.5.1l-6 7.2-.2.2 1 1.1c.2.2.5.2.7 0l6.7-7c.1-.2.1-.4-.1-.6zm-5 0L11 4.5c-.2-.1-.4-.1-.5.1l-6 7.2-2.4-2.4c-.2-.2-.4-.2-.6 0l-1 1c-.2.2-.2.4 0 .6l3.9 3.9c.2.2.5.2.7 0l7.4-8.7c.1-.2.1-.4-.1-.6z"/></svg></span>'
+        : '<span class="im-tik"><svg viewBox="0 0 18 18" width="16" height="16"><path fill="currentColor" d="M6.6 12.5L2.4 8.3c-.2-.2-.4-.2-.6 0l-1 1c-.2.2-.2.4 0 .6l5.5 5.5c.2.2.5.2.7 0l9.4-11c.1-.2.1-.4-.1-.6l-1.1-.9c-.2-.1-.4-.1-.5.1L6.6 12.5z"/></svg></span>';
+    }
+    html+='<div class="im-msg '+(ben?'out':'in')+grpCls+'">'+isimHtml+icerik+'<div class="im-time">'+esc(saat)+tik+'</div></div>';
   }
   box.innerHTML=html;
   box.scrollTop=box.scrollHeight;
@@ -5588,7 +5650,15 @@ function renderMessages(c, searchQ){
     const editedTag = m.edited ? '<span class="edited-tag">düzenlendi</span>' : '';
     // reaksiyon: karsi tarafin (m.reaction) veya bizim (m.myReaction)
     const reactEmoji = m.reaction || m.myReaction;
-    const reaction = reactEmoji ? '<div class="msg-reaction">'+reactEmoji+'</div>' : '';
+    // BIZIM tepkimiz mi? (panelden atilan -> reactionBy dolu olabilir). Tiklayinca
+    // "kim atti" + (kendi tepkimizse) "kaldir" paneli acilir (WhatsApp gibi).
+    const benimTepki = !!m.myReaction; // myReaction sadece bizim hattan atilanlarda dolu
+    let reaction = '';
+    if(reactEmoji){
+      const by = esc(m.reactionBy || '');
+      const benimAttr = benimTepki ? '1' : '';
+      reaction = '<div class="msg-reaction" onclick="reaksiyonBilgiAc(event,\''+esc(m.id||'')+'\',\''+by+'\','+(benimTepki?'true':'false')+')" data-by="'+by+'" data-mine="'+benimAttr+'" title="Tepki detayı">'+reactEmoji+'</div>';
+    }
     // Aksiyon butonlari - WhatsApp gibi: kucuk ▾ butonu, basinca menu acilir
     let actions='';
     if(m.id){
@@ -6058,6 +6128,26 @@ let pmTargetId=null;
 function replyPrivate(id){
   const c=chats[activeJid]; if(!c||!c.isGroup)return;
   const m=c.messages.find(x=>x.id===id); if(!m||!m.senderJid)return;
+  // Gönderen BİZİM PANEL KULLANICIMIZ mı? (ekip üyesi) -> öyleyse iç mesaja yönlendir.
+  // İsmi normalize edip _internalUsers (panel kullanıcıları) ile eşleştir.
+  const gonderenAd=_nrm(m.senderPush||m.sender||'');
+  let ekipUye=null;
+  if(gonderenAd && _internalUsers && _internalUsers.length){
+    ekipUye=_internalUsers.find(u=>{
+      if(u.username===_internalMe) return false; // kendim değil
+      const dn=_nrm(u.displayName||''), un=_nrm(u.username||'');
+      return (dn && dn===gonderenAd) || (un && un===gonderenAd);
+    });
+  }
+  if(ekipUye){
+    // EKİP ÜYESİ: WhatsApp DM yerine İÇ MESAJ aç (kullanıcının istediği davranış).
+    // İç mesaj sekmesine geç + o kişiyle konuşmayı aç.
+    switchMainTab('internal');
+    openInternalChat(ekipUye.username);
+    showToast('💬 '+(ekipUye.displayName||ekipUye.username)+' ile iç mesaj açıldı');
+    return;
+  }
+  // MÜŞTERİ/dışarıdan kişi: eski davranış — WhatsApp birebir (DM) modalı
   pmTargetId=id;
   document.getElementById('pmInfo').textContent=(m.senderPush||m.sender||'Bu kişi')+' kişisine birebir (DM) mesaj gönder.';
   document.getElementById('pmText').value='';
@@ -6093,13 +6183,64 @@ function openReactPicker(ev, id){
 }
 function sendReact(emoji){
   if(!reactTargetId||!activeJid)return;
-  ws.send(JSON.stringify({type:'react', jid:activeJid, id:reactTargetId, emoji}));
+  ws.send(JSON.stringify({type:'react', jid:activeJid, id:reactTargetId, emoji, agent:benimAdim()}));
   document.getElementById('reactPicker').classList.remove('show');
 }
 document.addEventListener('click',e=>{
   const p=document.getElementById('reactPicker');
   if(p.classList.contains('show') && !p.contains(e.target) && !e.target.closest('.msg-actions')) p.classList.remove('show');
 });
+
+// ---- Reaksiyon baloncuğuna tıklayınca: KİM ATTI + (kendi tepkimizse) KALDIR ----
+// WhatsApp gibi: bir mesajdaki emojiye basınca küçük bir panel açılır.
+//  - Panelden atıldıysa (reactionBy dolu) -> "X tepki verdi" gösterilir.
+//  - Telefondan/müşteriden geldiyse isim bilinmez -> "Tepki verildi" der (WhatsApp numara/isim vermiyor).
+//  - Kendi tepkimizse (benimTepki=true) -> "Kaldır" butonu da çıkar, basınca tepki kalkar.
+function reaksiyonBilgiAc(ev, msgId, kim, benimTepki){
+  ev.stopPropagation();
+  // önce varsa eski paneli kapat
+  const eski=document.getElementById('reaksiyonBilgi'); if(eski) eski.remove();
+  // emojiyi bul (gösterimde tekrar kullanmak için)
+  const c=chats[activeJid];
+  const m=c && (c.messages||[]).find(x=>x.id===msgId);
+  const emoji=(m && (m.reaction||m.myReaction))||'';
+  // panel oluştur
+  const p=document.createElement('div');
+  p.id='reaksiyonBilgi';
+  p.className='reaksiyon-bilgi';
+  let ic='<div class="rb-baslik"><span class="rb-emoji">'+esc(emoji)+'</span>';
+  if(kim && kim.trim()){
+    ic+='<span class="rb-kim">'+esc(kim)+'</span><span class="rb-alt">tepki verdi</span>';
+  } else {
+    ic+='<span class="rb-kim">Tepki verildi</span>';
+  }
+  ic+='</div>';
+  // kendi tepkimizse kaldırma butonu
+  if(benimTepki){
+    ic+='<button class="rb-kaldir" onclick="reaksiyonKaldir(\''+esc(msgId)+'\')">'+trashSvg()+'<span>Tepkini kaldır</span></button>';
+  }
+  p.innerHTML=ic;
+  document.body.appendChild(p);
+  // konumu emojinin yanına ayarla
+  const r=ev.currentTarget.getBoundingClientRect();
+  let sol=Math.min(r.left-20, window.innerWidth-230);
+  if(sol<8) sol=8;
+  let ust=r.top-(benimTepki?92:64);
+  if(ust<8) ust=r.bottom+8; // yukarı sığmıyorsa aşağı aç
+  p.style.left=sol+'px';
+  p.style.top=ust+'px';
+  // dışarı tıklayınca kapan
+  setTimeout(()=>{
+    const kapat=(e2)=>{ if(!p.contains(e2.target)){ p.remove(); document.removeEventListener('click',kapat); } };
+    document.addEventListener('click',kapat);
+  },0);
+}
+// Reaksiyon panelinden "Tepkini kaldır" -> boş emoji gönder (WhatsApp'tan da kalkar)
+function reaksiyonKaldir(msgId){
+  if(!activeJid) return;
+  ws.send(JSON.stringify({type:'react', jid:activeJid, id:msgId, emoji:'', agent:benimAdim()}));
+  const p=document.getElementById('reaksiyonBilgi'); if(p) p.remove();
+}
 
 // ---- Mesaj iletme ----
 let fwdMsgIds=[], fwdFromJid=null;
@@ -6792,6 +6933,30 @@ document.getElementById('internalInput').addEventListener('keydown',e=>{
   if(e.key==='Enter' && !e.shiftKey && !e.altKey){ e.preventDefault(); sendInternal(); }
 });
 document.getElementById('internalInput').addEventListener('input',e=>{ autoGrow(e.target); });
+// CTRL+V: İç mesajda panodan resim/dosya yapıştırınca ekip arkadaşına gönder (WhatsApp gibi)
+function internalPanodanYapistir(e){
+  if(!_internalOther){ return; } // konuşma açık değilse karışma
+  const items = (e.clipboardData && e.clipboardData.items) ? e.clipboardData.items : null;
+  if(!items) return;
+  const dosyalar=[];
+  for(const it of items){
+    if(it.kind==='file'){ const f=it.getAsFile(); if(f) dosyalar.push(f); }
+  }
+  if(dosyalar.length){
+    e.preventDefault(); // metin yapıştırmayı engelle (resim yapıştırıyoruz)
+    // panodan gelen resimlerin adı bazen boş olur -> anlamlı ad ver
+    const adliDosyalar=dosyalar.map((f,i)=>{
+      if(f.name && f.name!=='image.png' && f.name!=='blob') return f;
+      const uzanti=(f.type&&f.type.includes('/'))?f.type.split('/')[1].split('+')[0]:'png';
+      const yeniAd='gorsel_'+Date.now()+(dosyalar.length>1?('_'+(i+1)):'')+'.'+uzanti;
+      try{ return new File([f], yeniAd, {type:f.type||'image/png'}); }catch(_){ return f; }
+    });
+    internalDosyaGonder(adliDosyalar);
+  }
+}
+document.getElementById('internalInput').addEventListener('paste', internalPanodanYapistir);
+const _imArea=document.getElementById('internalMessages');
+if(_imArea) _imArea.addEventListener('paste', internalPanodanYapistir);
 document.getElementById('internalNewModal').addEventListener('click',e=>{ if(e.target.id==='internalNewModal') document.getElementById('internalNewModal').classList.remove('show'); });
 document.getElementById('msgInput').addEventListener('keydown',e=>{
   // CTRL+B: secili metni *...* ile sar; secim yoksa ** koy, imleci aralarina al.
