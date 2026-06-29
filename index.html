@@ -270,6 +270,13 @@
   .kh-alt{font-size:12.5px;color:var(--muted)}
   .kapsam-secici{display:flex;gap:4px;background:var(--panel-2);padding:3px;border-radius:10px}
   .kapsam-btn{padding:7px 14px;border:none;background:transparent;border-radius:8px;cursor:pointer;color:var(--muted);font-size:13px;font-weight:600;transition:all .14s}
+  /* Aç/kapat anahtarı (toggle switch) */
+  .switch{position:relative;display:inline-block;width:52px;height:30px;flex-shrink:0;cursor:pointer}
+  .switch input{opacity:0;width:0;height:0;position:absolute}
+  .switch-yuva{position:absolute;inset:0;background:#cbd5e1;border-radius:30px;transition:background .2s}
+  .switch-top{position:absolute;top:3px;left:3px;width:24px;height:24px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .switch input:checked + .switch-yuva{background:var(--online,#22c55e)}
+  .switch input:checked + .switch-yuva .switch-top{transform:translateX(22px)}
   .kapsam-btn.active{background:var(--brand);color:#fff}
   .kapsam-btn:hover:not(.active){color:var(--text)}
   /* filtre satırı */
@@ -1754,6 +1761,18 @@
   <div class="modal" style="width:560px;max-width:94vw">
     <h3>🔒 İzinli IP Adresleri</h3>
     <p style="color:var(--muted);font-size:13px;margin-bottom:14px">İki ayrı link, iki ayrı liste: <b>Ofis linki</b> ve <b>Dışarı linki</b>. Normal kullanıcılar sadece girdiği linkin listesindeki IP'lerden girebilir. <b>Sen (yönetici) her yerden, her linkten girersin</b> — kilitlenmezsin. Bir liste boşsa o link herkese açıktır.</p>
+
+    <!-- IP KISITLAMASI ANA ANAHTARI: tek tıkla tüm kısıtlamayı aç/kapat -->
+    <div id="ipKisitlamaKutu" style="display:flex;align-items:center;justify-content:space-between;gap:14px;background:var(--panel-2);border-radius:12px;padding:14px 16px;margin-bottom:14px;border:2px solid transparent">
+      <div>
+        <div style="font-weight:700;font-size:14px" id="ipKisitlamaDurumBaslik">IP Kısıtlaması</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:2px" id="ipKisitlamaAciklama">Yükleniyor…</div>
+      </div>
+      <label class="switch" title="IP kısıtlamasını aç/kapat">
+        <input type="checkbox" id="ipKisitlamaToggle" onchange="ipKisitlamaDegistir(this.checked)">
+        <span class="switch-yuva"><span class="switch-top"></span></span>
+      </label>
+    </div>
 
     <div style="background:var(--panel-2);border-radius:12px;padding:13px;margin-bottom:14px">
       <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Şu an senin IP adresin <span id="benimKapsamVal" style="font-weight:700"></span>:</div>
@@ -4283,8 +4302,55 @@ async function loadIpList(){
     // sekme sayıları
     document.getElementById('ofisIpSayi').textContent=(d.ofisIps||[]).length;
     document.getElementById('disariIpSayi').textContent=(d.disariIps||[]).length;
+    ipKisitlamaToggleGuncelle(d.kisitlamaKapali);
     ipListeCiz();
   }catch(e){ box.innerHTML='<div style="color:#ef4444;font-size:13px">Sunucu hatası</div>'; }
+}
+// IP kısıtlama anahtarının görünümünü güncelle (kapali=true ise kısıtlama KAPALI demek)
+function ipKisitlamaToggleGuncelle(kapali){
+  const tgl=document.getElementById('ipKisitlamaToggle');
+  const kutu=document.getElementById('ipKisitlamaKutu');
+  const baslik=document.getElementById('ipKisitlamaDurumBaslik');
+  const acik=document.getElementById('ipKisitlamaAciklama');
+  if(!tgl) return;
+  // anahtar AÇIK = kısıtlama AÇIK = kapali değil. Yani checked = !kapali
+  tgl.checked = !kapali;
+  if(kapali){
+    baslik.textContent='🔓 IP Kısıtlaması: KAPALI';
+    acik.textContent='Şu an herkes, her yerden girebilir. Açmak için anahtarı aç.';
+    kutu.style.borderColor='#fbbf24';
+    kutu.style.background='#fffbeb';
+  } else {
+    baslik.textContent='🔒 IP Kısıtlaması: AÇIK';
+    acik.textContent='Sadece izinli IP\'ler girebilir (yöneticiler hariç). Kapatmak için anahtarı kapat.';
+    kutu.style.borderColor='transparent';
+    kutu.style.background='var(--panel-2)';
+  }
+}
+// Anahtar değişince server'a bildir
+async function ipKisitlamaDegistir(acikMi){
+  // acikMi=true => kısıtlama AÇIK => kapali=false gönder
+  const kapali = !acikMi;
+  const tgl=document.getElementById('ipKisitlamaToggle');
+  if(tgl) tgl.disabled=true; // işlem bitene kadar kilitle
+  try{
+    const r=await fetch('/api/ips/kisitlama',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, kapali, agent:benimAdim()})});
+    const d=await r.json();
+    if(!d.ok){
+      showToast(d.error||'Değiştirilemedi');
+      ipKisitlamaToggleGuncelle(_ipVeri.kisitlamaKapali); // eski haline döndür
+    } else {
+      _ipVeri.kisitlamaKapali=d.kisitlamaKapali;
+      ipKisitlamaToggleGuncelle(d.kisitlamaKapali);
+      ipListeCiz(); // alttaki uyarıyı da tazele
+      showToast(d.kisitlamaKapali?'🔓 IP kısıtlaması kapatıldı':'🔒 IP kısıtlaması açıldı');
+    }
+  }catch(e){
+    showToast('Sunucu hatası');
+    ipKisitlamaToggleGuncelle(_ipVeri.kisitlamaKapali);
+  }finally{
+    if(tgl) tgl.disabled=false;
+  }
 }
 function ipListeCiz(){
   const box=document.getElementById('ipList');
@@ -4294,7 +4360,7 @@ function ipListeCiz(){
   const uyari=document.getElementById('ipKisitlamaUyari');
   if(d.kisitlamaKapali){
     uyari.style.display='block';
-    uyari.innerHTML='⚠️ <b>IP kısıtlaması şu an KAPALI</b> (acil durum modu). Herkes girebilir. Açmak için sunucudan <code>IP_KISITLAMA_KAPALI</code> değerini kaldırın.';
+    uyari.innerHTML='⚠️ <b>IP kısıtlaması şu an KAPALI.</b> Herkes (her IP\'den) girebilir. Açmak için yukarıdaki anahtarı kullan.';
   } else if(!liste.length){
     uyari.style.display='block';
     const ad=_ipAktifKapsam==='ofis'?'Ofis':'Dışarı';
