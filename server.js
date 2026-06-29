@@ -2859,7 +2859,12 @@ async function satisKaydet(m, parsed, lineId, chat, saticiAdi, saticiJid) {
 let metaQueue = [];
 let metaBusy = false;
 let rateLimitUntil = 0; // bu zamana kadar istek atma (rate limit yedikten sonra)
-const META_GAP = 1200;  // istekler arasi bekleme (ms) - nazik ol
+// HIZLANDIRMA: eskiden tek tek + 1200ms bekleme vardi -> kuyruk hic bosalmiyor,
+// grup aciklamasi GEC geliyor VE ayni sokete bindigi icin MESAJ GONDERIMINI de geciktiriyordu.
+// Artik: ayni anda META_PARALEL grup birden cekilir + aralarinda kisa bekleme.
+// Rate limit korumasi AYNEN duruyor (WhatsApp "yavasla" derse 60sn geri cekilir) — kontrolden cikmaz.
+const META_GAP = 400;     // her tur sonrasi bekleme (ms) — 1200'den dusuruldu, cok daha hizli
+const META_PARALEL = 3;   // ayni anda kac grup birden cekilsin (tek tek yerine 3'lu)
 
 function metaQueuePush(jid, resolve) {
   metaQueue.push({ jid, resolve });
@@ -2874,24 +2879,31 @@ async function metaQueueRun() {
     if (now < rateLimitUntil) {
       await new Promise(r => setTimeout(r, rateLimitUntil - now));
     }
-    const { jid, resolve } = metaQueue.shift();
-    let result = null;
-    try {
-      result = await waSock.groupMetadata(jid);
-      if (result?.subject && result.subject.trim()) groupMetaCache.set(jid, { meta: result, ts: Date.now() });
-    } catch (e) {
-      if ((e.message || '').includes('rate-overlimit') || (e.message || '').includes('429')) {
-        // WhatsApp "yavasla" dedi: 60 sn boyunca hic istek atma
-        rateLimitUntil = Date.now() + 60000;
-        console.log('   ⏸️  WhatsApp hiz siniri (rate-overlimit) — 60 sn istekleri durduruyorum');
-        // bu istegi tekrar kuyruga koy (sonra denensin)
-        metaQueue.unshift({ jid, resolve });
-        continue;
+    // Bu turda kuyruktan en fazla META_PARALEL is al, AYNI ANDA cek (paralel).
+    const tur = metaQueue.splice(0, META_PARALEL);
+    let rateLimitYendi = false;
+    await Promise.all(tur.map(async ({ jid, resolve }) => {
+      let result = null;
+      try {
+        result = await waSock.groupMetadata(jid);
+        if (result?.subject && result.subject.trim()) groupMetaCache.set(jid, { meta: result, ts: Date.now() });
+      } catch (e) {
+        if ((e.message || '').includes('rate-overlimit') || (e.message || '').includes('429')) {
+          // WhatsApp "yavasla" dedi: 60 sn boyunca hic istek atma + bu isi kuyruga geri koy
+          rateLimitYendi = true;
+          metaQueue.unshift({ jid, resolve });
+          return; // bu isin resolve'u sonraki denemede yapilacak
+        }
+        // baska hata: bos don
       }
-      // baska hata: bos don
+      resolve(result);
+    }));
+    if (rateLimitYendi) {
+      rateLimitUntil = Date.now() + 60000;
+      console.log('   ⏸️  WhatsApp hiz siniri (rate-overlimit) — 60 sn istekleri durduruyorum');
+      continue; // basa don, rate limit bitene kadar bekleyecek
     }
-    resolve(result);
-    await new Promise(r => setTimeout(r, META_GAP)); // nazik bekleme
+    await new Promise(r => setTimeout(r, META_GAP)); // turlar arasi kisa bekleme
   }
   metaBusy = false;
 }
@@ -2946,7 +2958,10 @@ function retryGroupName(jid) {
 }
 
 // Grup metadata'sini onbellekten al (yoksa KUYRUK uzerinden cek). Rate-overlimit'i onler.
-async function getGroupMeta(jid, maxYas = 5 * 60 * 1000) {
+// ONBELLEK SURESI: 5dk -> 30dk. Grup adi/aciklamasi cok seyrek degisir; 5 dakikada bir
+// yeniden cekmek sokete gereksiz yuk biniyordu (mesaj gonderimini de yavaslatan etkenlerden).
+// Aciklama gercekten degisirse zaten groups.update event'i gelir ve onbellegi tazeler.
+async function getGroupMeta(jid, maxYas = 30 * 60 * 1000) {
   const cached = groupMetaCache.get(jid);
   // sadece GERCEK adi olan onbellegi kullan (sayi/bos onbellek tekrar denensin)
   if (cached && cached.meta?.subject && cached.meta.subject.trim() && (Date.now() - cached.ts) < maxYas) {
