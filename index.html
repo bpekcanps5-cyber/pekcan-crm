@@ -471,6 +471,89 @@
   .im-msg.in{align-self:flex-start;background:var(--panel-2);color:var(--text);border-bottom-left-radius:4px}
   .im-msg .im-time{font-size:10px;opacity:.7;margin-top:3px;text-align:right}
   .im-day{align-self:center;background:var(--panel-2);color:var(--muted);font-size:11.5px;padding:3px 12px;border-radius:10px;margin:8px 0}
+  /* iç mesaj header butonları (sabitle, tema) */
+  .im-head-btn{width:36px;height:36px;border:none;background:var(--panel-2);border-radius:9px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .14s}
+  .im-head-btn:hover{background:var(--border);transform:translateY(-1px)}
+  /* mesaj sağ tık menüsü (sil/düzenle) */
+  .im-mesaj-menu{position:fixed;z-index:9999;background:var(--panel);border:1px solid var(--border);border-radius:11px;box-shadow:0 8px 28px rgba(0,0,0,.22);padding:5px;min-width:150px;animation:rbGir .14s ease}
+  .im-mesaj-menu button{display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:13.5px;color:var(--text)}
+  .im-mesaj-menu button:hover{background:var(--panel-2)}
+  .im-mesaj-menu button.tehlike{color:#dc2626}
+  .im-mesaj-menu button.tehlike:hover{background:rgba(220,38,38,.1)}
+  /* silinmiş mesaj */
+  .im-msg.im-silinmis{opacity:.7;font-style:italic}
+  .im-silindi-yazi{color:var(--muted);font-size:13px}
+  /* düzenlendi etiketi */
+  .im-duzenlendi{font-size:10.5px;color:var(--muted);font-style:italic;margin-right:5px}
+  /* düzenleme barı */
+  .im-duzenle-bar{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:var(--brand-soft);border-top:1px solid var(--border);font-size:13px;color:var(--brand)}
+  .im-duzenle-bar button{border:none;background:transparent;color:var(--brand);cursor:pointer;font-weight:600;font-size:12.5px}
+  /* dosya indir butonu (aç butonunun yanında) */
+  .im-dosya-indir{display:inline-block;margin-top:4px;font-size:11.5px;color:var(--brand);text-decoration:none;padding:2px 0}
+  .im-dosya-indir:hover{text-decoration:underline}
+  /* lightbox (foto/pdf panel içinde) */
+  .im-lightbox{position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:rbGir .15s ease}
+  .im-lb-bar{display:flex;align-items:center;justify-content:space-between;width:100%;max-width:900px;color:#fff;margin-bottom:12px;gap:10px}
+  .im-lb-bar>span{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .im-lb-bar>div{display:flex;gap:8px;flex-shrink:0}
+  .im-lb-btn{background:rgba(255,255,255,.15);color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;text-decoration:none;display:inline-flex;align-items:center}
+  .im-lb-btn:hover{background:rgba(255,255,255,.28)}
+  .im-lb-img{max-width:90vw;max-height:78vh;object-fit:contain;border-radius:8px}
+  .im-lb-pdf{width:90vw;max-width:900px;height:80vh;border:none;border-radius:8px;background:#fff}
+  /* yazı stili paneli */
+  .im-stil-panel{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;background:var(--panel);border-top:1px solid var(--border);max-height:170px;overflow-y:auto}
+  .im-stil-btn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 12px;border:1.5px solid var(--border);background:var(--panel-2);border-radius:10px;cursor:pointer;min-width:78px;transition:all .14s}
+  .im-stil-btn:hover{border-color:var(--brand);transform:translateY(-1px)}
+  .im-stil-btn.aktif{border-color:var(--brand);background:var(--brand-soft)}
+  .im-stil-ornek{font-size:17px;line-height:1}
+  .im-stil-ad{font-size:11px;color:var(--muted)}
+  /* emoji paneli (iç mesaj) */
+  .im-emoji-panel{display:flex;flex-wrap:wrap;gap:2px;padding:10px 14px;background:var(--panel);border-top:1px solid var(--border);max-height:200px;overflow-y:auto}
+  .im-emoji-btn{width:38px;height:38px;border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:21px;display:flex;align-items:center;justify-content:center;transition:background .12s}
+  .im-emoji-btn:hover{background:var(--panel-2)}
+  /* tema seçim kartları */
+  .im-tema-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .im-tema-kart{position:relative;height:64px;border:2.5px solid transparent;border-radius:12px;cursor:pointer;display:flex;align-items:flex-end;padding:8px;transition:all .14s;overflow:hidden}
+  .im-tema-kart:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
+  .im-tema-kart.aktif{border-color:var(--brand)}
+  .im-tema-ad{font-size:12.5px;font-weight:600;color:#1a1a1a;background:rgba(255,255,255,.75);padding:2px 8px;border-radius:7px;backdrop-filter:blur(2px)}
+  /* ---- 10 İÇ MESAJ TEMASI (arkaplan) ---- */
+  #internalMessages.imtema-varsayilan{background:var(--chat-bg)}
+  #internalMessages.imtema-kalp{background:#ffe0ec url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Ctext x='8' y='28' font-size='18' fill='%23ffb3d1'%3E%E2%9D%A4%EF%B8%8F%3C/text%3E%3C/svg%3E")}
+  #internalMessages.imtema-gece{background:#0b141a}
+  #internalMessages.imtema-gece .im-msg.in{background:#1f2c34;color:#e9edef}
+  #internalMessages.imtema-gece .im-day{background:#182229;color:#8696a0}
+  #internalMessages.imtema-okyanus{background:#cce7f0}
+  #internalMessages.imtema-orman{background:#d7e8d4}
+  #internalMessages.imtema-gunbatimi{background:linear-gradient(160deg,#ffd9b3,#ffc1a3)}
+  #internalMessages.imtema-lavanta{background:#e6ddf5}
+  #internalMessages.imtema-altin{background:linear-gradient(160deg,#f5e6b3,#f0d98a)}
+  #internalMessages.imtema-seker{background:#ffd6e8 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='0 0 44 44'%3E%3Ctext x='10' y='30' font-size='16'%3E%F0%9F%8D%AD%3C/text%3E%3C/svg%3E")}
+  #internalMessages.imtema-yildiz{background:#1a1a2e url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='50' height='50' viewBox='0 0 50 50'%3E%3Ctext x='12' y='32' font-size='14'%3E%E2%AD%90%3C/text%3E%3C/svg%3E")}
+  #internalMessages.imtema-yildiz .im-msg.in{background:#16213e;color:#e9edef}
+  #internalMessages.imtema-yildiz .im-day{background:#0f1626;color:#a0aec0}
+  /* grup kartı (2 AYLIK SİGORTA MERKEZİ) — listede en üstte vurgulu */
+  .im-grup-kart{background:linear-gradient(135deg,rgba(14,165,233,.08),rgba(99,102,241,.08));border-bottom:2px solid var(--border)!important}
+  .im-grup-kart .chat-name{font-weight:700}
+  .im-grup-avatar{background:linear-gradient(135deg,#0ea5e9,#6366f1)!important;font-size:20px;display:flex;align-items:center;justify-content:center}
+  .im-pin-ik{font-size:11px;margin-left:4px}
+  /* anket kutusu */
+  .anket-kutu{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;min-width:240px}
+  .im-msg.out .anket-kutu{background:rgba(255,255,255,.92)}
+  .anket-tip-et{font-size:11px;color:var(--brand);font-weight:600;margin-bottom:5px}
+  .anket-soru{font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:11px;line-height:1.3}
+  .anket-secenek-bar{position:relative;border:1.5px solid var(--border);border-radius:9px;margin-bottom:6px;cursor:pointer;overflow:hidden;transition:all .14s;min-height:38px;display:flex;align-items:center}
+  .anket-secenek-bar:hover{border-color:var(--brand)}
+  .anket-secenek-bar.secili{border-color:var(--brand);border-width:2px}
+  .anket-bar-dolgu{position:absolute;left:0;top:0;bottom:0;background:var(--brand-soft);transition:width .4s ease;z-index:0}
+  .anket-secenek-bar.secili .anket-bar-dolgu{background:rgba(14,165,233,.25)}
+  .anket-bar-ic{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:center;width:100%;padding:8px 12px;gap:8px}
+  .anket-bar-yazi{font-size:13px;color:#1a1a1a;font-weight:500}
+  .anket-bar-yuzde{font-size:12px;color:var(--muted);font-weight:600;flex-shrink:0}
+  .anket-alt{font-size:11.5px;color:var(--muted);margin-top:7px;text-align:right}
+  /* anket oluştur modal: tip butonları */
+  .anket-tip-btn{flex:1;padding:9px;border:1.5px solid var(--border);background:var(--panel-2);border-radius:9px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted);transition:all .14s}
+  .anket-tip-btn.aktif{border-color:var(--brand);background:var(--brand-soft);color:var(--brand)}
   /* iç mesaj: gönderen ismi (gelen mesajda, grubun ilk baloncuğunda) */
   .im-sender{font-size:12.5px;font-weight:600;margin-bottom:3px}
   /* ardışık aynı kişiden mesajlar: yaklaştır + köşeyi yumuşat (WhatsApp gibi kuyruk) */
@@ -1487,9 +1570,19 @@
       <div class="conv-header">
         <div class="conv-avatar" id="iconvAvatar"></div>
         <div class="conv-meta"><div class="name" id="iconvName"></div><div class="sub" id="iconvSub">Ekip içi mesaj</div></div>
+        <div style="margin-left:auto;display:flex;gap:6px">
+          <button class="im-head-btn" id="imPinBtn" title="Sohbeti sabitle" onclick="imSabitleToggle()">📌</button>
+          <button class="im-head-btn" id="imThemeBtn" title="Tema değiştir" onclick="imTemaPaneliAc()">🎨</button>
+        </div>
       </div>
       <div class="messages" id="internalMessages"></div>
+      <!-- yazı stili paneli -->
+      <div class="im-stil-panel" id="imStilPanel" style="display:none"></div>
+      <!-- emoji paneli (iç mesaj) -->
+      <div class="im-emoji-panel" id="imEmojiPanel" style="display:none"></div>
       <div class="composer">
+        <button class="attach-btn" id="internalStilBtn" title="Yazı stili" onclick="imStilPaneliToggle()" style="font-weight:700;font-size:17px">𝓪</button>
+        <button class="attach-btn" id="internalEmojiBtn" title="Emoji" onclick="imEmojiPaneliToggle()" style="font-size:19px">😊</button>
         <button class="attach-btn" id="internalAttachBtn" title="Dosya ekle"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg></button>
         <input type="file" id="internalFileInput" style="display:none" multiple>
         <textarea id="internalInput" placeholder="Ekip arkadaşına mesaj yaz" rows="1"></textarea>
@@ -2659,6 +2752,13 @@ function connect(){
     else if(d.type==='internalConversation'){ renderInternalConversation(d); }
     else if(d.type==='internalMessage'){ handleInternalMessage(d.msg); }
     else if(d.type==='internalUnread'){ setInternalBadge(d.count); }
+    else if(d.type==='internalMsgDeleted'){ handleInternalDeleted(d); }
+    else if(d.type==='internalMsgEdited'){ handleInternalEdited(d); }
+    else if(d.type==='groupConversation'){ renderGroupConversation(d); }
+    else if(d.type==='groupMessage'){ handleGroupMessage(d.msg); }
+    else if(d.type==='groupMsgDeleted'){ handleGroupDeleted(d); }
+    else if(d.type==='groupMsgEdited'){ handleGroupEdited(d); }
+    else if(d.type==='pollUpdate'){ handlePollUpdate(d); }
   };
   ws.onopen=()=>{
     // WS acilinca kimligimizi bildir (ic mesajlarin dogru kisiye gitmesi icin)
@@ -2754,6 +2854,11 @@ let _internalOther=null;        // su an acik konusulan kullanici (username)
 let _internalUsers=[];          // tum ekip (yeni mesaj icin)
 let _internalMe=null;           // benim username
 let _internalMsgs=[];           // acik konusmanin mesajlari
+// GRUP SOHBETI ("2 AYLIK SİGORTA MERKEZİ")
+let _grupMsgs=[];               // grup mesajlari
+let _grupUnread=0;              // grup okunmamis (basit sayac)
+let _grupSonMesaj='';           // listede gosterilecek son mesaj
+let _grupPollSonuc={};          // anket sonuclari {pollId: [{voter,secenek}]}
 
 function switchMainTab(tab){
   _mainTab=tab;
@@ -3433,27 +3538,46 @@ function satisExcelIndir(){
 
 // Sol liste: konusmalar (kiminle, son mesaj, okunmamis)
 function renderInternalList(d){
-  _internalUsers = d.users||[];
-  _internalMe = d.me||null;
+  _internalUsers = d.users||_internalUsers;
+  _internalMe = d.me||_internalMe;
+  _sonInternalItems = d.items||_sonInternalItems||[];
   const list=document.getElementById('internalList');
-  const items=d.items||[];
+  let items=(_sonInternalItems||[]).slice();
+  // SABİTLENEN sohbetleri üste taşı (6. istek)
+  items.sort((a,b)=>{
+    const aSabit=_imSabitliler.includes(a.other_user)?1:0;
+    const bSabit=_imSabitliler.includes(b.other_user)?1:0;
+    return bSabit-aSabit; // sabitliler önce
+  });
+  // EN ÜSTTE: "2 AYLIK SİGORTA MERKEZİ" grup kartı (her zaman görünür)
+  const grupAktif = (_internalOther==='__GRUP__')?' active':'';
+  const grupRozet = _grupUnread>0?'<span class="badge">'+_grupUnread+'</span>':'';
+  let grupKart='<div class="chat im-grup-kart'+grupAktif+'" onclick="openGroupChat()">'
+    + '<div class="avatar im-grup-avatar">🏢</div>'
+    + '<div class="chat-main"><div class="chat-top"><span class="chat-name">2 AYLIK SİGORTA MERKEZİ</span></div>'
+    + '<div class="chat-bottom"><span class="chat-last">'+esc((_grupSonMesaj||'Herkesin ortak grubu').slice(0,40))+'</span>'+grupRozet+'</div></div>'
+    + '</div>';
+
+  let kalanlar='';
   if(items.length===0){
-    list.innerHTML='<div style="padding:30px 18px;text-align:center;color:var(--faint);font-size:13px">Henüz iç mesaj yok.<br>Yukarıdan "Yeni mesaj" ile başla.</div>';
-    return;
+    kalanlar='<div style="padding:20px 18px;text-align:center;color:var(--faint);font-size:13px">Birebir mesaj için yukarıdan "Yeni mesaj".</div>';
+  } else {
+    kalanlar=items.map(it=>{
+      const u=_internalUsers.find(x=>x.username===it.other_user);
+      const ad=u?(u.displayName||u.username):it.other_user;
+      const sonKim = it.last_from===_internalMe?'Sen: ':'';
+      const unread = Number(it.unread)||0;
+      const rozet = unread>0?'<span class="badge">'+unread+'</span>':'';
+      const aktif = it.other_user===_internalOther?' active':'';
+      const sabitIk = _imSabitliler.includes(it.other_user)?'<span class="im-pin-ik">📌</span>':'';
+      return '<div class="chat'+aktif+'" onclick="openInternalChat(\''+esc(it.other_user)+'\')">'
+        + '<div class="avatar" style="background:'+gradientFor(ad)+'">'+esc(initials(ad))+'</div>'
+        + '<div class="chat-main"><div class="chat-top"><span class="chat-name">'+esc(ad)+'</span>'+sabitIk+'</div>'
+        + '<div class="chat-bottom"><span class="chat-last">'+esc(sonKim)+esc(((it.last_text||'').trim()||'📎 Dosya').slice(0,40))+'</span>'+rozet+'</div></div>'
+        + '</div>';
+    }).join('');
   }
-  list.innerHTML=items.map(it=>{
-    const u=_internalUsers.find(x=>x.username===it.other_user);
-    const ad=u?(u.displayName||u.username):it.other_user;
-    const sonKim = it.last_from===_internalMe?'Sen: ':'';
-    const unread = Number(it.unread)||0;
-    const rozet = unread>0?'<span class="badge">'+unread+'</span>':'';
-    const aktif = it.other_user===_internalOther?' active':'';
-    return '<div class="chat'+aktif+'" onclick="openInternalChat(\''+esc(it.other_user)+'\')">'
-      + '<div class="avatar" style="background:'+gradientFor(ad)+'">'+esc(initials(ad))+'</div>'
-      + '<div class="chat-main"><div class="chat-top"><span class="chat-name">'+esc(ad)+'</span></div>'
-      + '<div class="chat-bottom"><span class="chat-last">'+esc(sonKim)+esc(((it.last_text||'').trim()||'📎 Dosya').slice(0,40))+'</span>'+rozet+'</div></div>'
-      + '</div>';
-  }).join('');
+  list.innerHTML=grupKart+kalanlar;
 }
 
 // Bir ekip uyesiyle konusmayi ac
@@ -3469,6 +3593,13 @@ function openInternalChat(other){
   if(connected) ws.send(JSON.stringify({type:'internalLoad', other}));
   // listede secili goster
   if(_mainTab==='internal') document.querySelectorAll('#internalList .chat').forEach(c=>c.classList.remove('active'));
+  // sohbet açılınca: kayıtlı temayı uygula, pin butonunu güncelle, yazı stilini sıfırla
+  document.getElementById('iconvSub').textContent='Ekip içi mesaj';
+  document.getElementById('imPinBtn').style.display=''; // birebirde pin görünür
+  imGrupAnketBtnGoster(false); // birebirde anket butonu gizli
+  imTemaUygula(_imAktifTema);
+  imPinButonGuncelle();
+  imStilSec('normal');
 }
 
 // Konusma gecmisi geldi
@@ -3522,24 +3653,34 @@ function drawInternalMessages(){
     const medya = m.mediaUrl || m.media_url || '';
     const kind = m.kind || 'text';
     const dosyaAd = m.fileName || m.file_name || 'belge';
+    const mid = m.id || '';
+    // SİLİNMİŞ mesaj? -> "bu mesaj silindi" göster (WhatsApp gibi)
+    if(m.deleted || m.silindi){
+      html+='<div class="im-msg '+(ben?'out':'in')+grpCls+' im-silinmis">'+isimHtml+'<span class="im-silindi-yazi">🚫 Bu mesaj silindi</span><div class="im-time">'+esc(saat)+'</div></div>';
+      continue;
+    }
     let icerik='';
     if(medya){
       if(kind==='image'){
-        icerik='<a href="'+esc(medya)+'" target="_blank"><img src="'+esc(medya)+'" class="im-img" alt="görsel"></a>';
+        // FOTO: panel içinde lightbox'ta açılır (yeni sekme değil)
+        icerik='<img src="'+esc(medya)+'" class="im-img" alt="görsel" onclick="imLightboxAc(\''+esc(medya)+'\',\'image\',\''+esc(dosyaAd)+'\')" style="cursor:zoom-in">';
         if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
       } else if(kind==='video'){
         icerik='<video src="'+esc(medya)+'" controls class="im-img"></video>';
         if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
       } else {
-        // belge / ses / diğer -> indirilebilir dosya kartı
-        // download="dosyaAd": GERÇEK adıyla insin. İsim sunucuya da ?name= ile gider.
+        // belge / pdf / ses -> panel içinde aç (PDF/önizlenebilir) + indir butonu ayrı
         const inSrc = esc(medya) + (medya.includes('?')?'&':'?') + 'name=' + encodeURIComponent(dosyaAd);
-        icerik='<a href="'+inSrc+'" download="'+esc(dosyaAd)+'" class="im-dosya"><span class="im-dosya-ik">📄</span><span class="im-dosya-ad">'+esc(dosyaAd)+'</span><span class="im-dosya-in">⬇ indir</span></a>';
+        const pdfMi = /\.pdf(\?|$)/i.test(dosyaAd) || /\.pdf(\?|$)/i.test(medya);
+        icerik='<div class="im-dosya" onclick="imDosyaAc(\''+esc(medya)+'\',\''+esc(dosyaAd)+'\','+(pdfMi?'true':'false')+')" style="cursor:pointer"><span class="im-dosya-ik">'+(pdfMi?'📕':'📄')+'</span><span class="im-dosya-ad">'+esc(dosyaAd)+'</span><span class="im-dosya-in">👁 aç</span></div>';
+        icerik+='<a href="'+inSrc+'" download="'+esc(dosyaAd)+'" class="im-dosya-indir">⬇ indir</a>';
         if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
       }
     } else {
       icerik=esc(m.text);
     }
+    // DÜZENLENDİ etiketi
+    const duzenlendiEt = (m.edited || m.duzenlendi) ? '<span class="im-duzenlendi">düzenlendi</span>' : '';
     // OKUNDU TİKİ: sadece BENİM gönderdiğim mesajlarda. read_at doluysa çift mavi (okundu),
     // boşsa tek tik (iletildi). (Server loadInternalConversation read_at döndürüyor.)
     let tik='';
@@ -3549,10 +3690,102 @@ function drawInternalMessages(){
         ? '<span class="im-tik okundu"><svg viewBox="0 0 18 18" width="16" height="16"><path fill="currentColor" d="M17.4 5.6l-1.3-1.1c-.2-.1-.4-.1-.5.1l-6 7.2-.2.2 1 1.1c.2.2.5.2.7 0l6.7-7c.1-.2.1-.4-.1-.6zm-5 0L11 4.5c-.2-.1-.4-.1-.5.1l-6 7.2-2.4-2.4c-.2-.2-.4-.2-.6 0l-1 1c-.2.2-.2.4 0 .6l3.9 3.9c.2.2.5.2.7 0l7.4-8.7c.1-.2.1-.4-.1-.6z"/></svg></span>'
         : '<span class="im-tik"><svg viewBox="0 0 18 18" width="16" height="16"><path fill="currentColor" d="M6.6 12.5L2.4 8.3c-.2-.2-.4-.2-.6 0l-1 1c-.2.2-.2.4 0 .6l5.5 5.5c.2.2.5.2.7 0l9.4-11c.1-.2.1-.4-.1-.6l-1.1-.9c-.2-.1-.4-.1-.5.1L6.6 12.5z"/></svg></span>';
     }
-    html+='<div class="im-msg '+(ben?'out':'in')+grpCls+'">'+isimHtml+icerik+'<div class="im-time">'+esc(saat)+tik+'</div></div>';
+    // SAĞ TIK: sadece KENDİ mesajıma sil/düzenle menüsü. data-mid ile mesajı tanı.
+    const sagTik = ben ? ' oncontextmenu="imMesajMenu(event,\''+esc(mid)+'\','+(kind==='text'&&!medya?'true':'false')+');return false"' : '';
+    html+='<div class="im-msg '+(ben?'out':'in')+grpCls+'" data-mid="'+esc(mid)+'"'+sagTik+'>'+isimHtml+icerik+'<div class="im-time">'+duzenlendiEt+esc(saat)+tik+'</div></div>';
   }
   box.innerHTML=html;
   box.scrollTop=box.scrollHeight;
+}
+
+// ========================================================================
+// İÇ MESAJ — SİL / DÜZENLE (sağ tık menüsü)
+// ========================================================================
+let _imMenuMid=null;
+function imMesajMenu(ev, mid, metinMi){
+  ev.preventDefault();
+  _imMenuMid=mid;
+  // eski menüyü kapat
+  const eski=document.getElementById('imMesajMenu'); if(eski) eski.remove();
+  const m=document.createElement('div');
+  m.id='imMesajMenu'; m.className='im-mesaj-menu';
+  let ic='';
+  if(metinMi){ ic+='<button onclick="imMesajDuzenleBasla()">✏️ Düzenle</button>'; }
+  ic+='<button class="tehlike" onclick="imMesajSil()">🗑️ Sil</button>';
+  m.innerHTML=ic;
+  document.body.appendChild(m);
+  // konumlandır
+  let sol=Math.min(ev.clientX, window.innerWidth-160);
+  let ust=Math.min(ev.clientY, window.innerHeight-100);
+  m.style.left=sol+'px'; m.style.top=ust+'px';
+  setTimeout(()=>{
+    const kapat=(e2)=>{ if(!m.contains(e2.target)){ m.remove(); document.removeEventListener('click',kapat); } };
+    document.addEventListener('click',kapat);
+  },0);
+}
+function imMesajSil(){
+  const mid=_imMenuMid;
+  const mm=document.getElementById('imMesajMenu'); if(mm) mm.remove();
+  if(!mid || !_internalOther) return;
+  if(!confirm('Bu mesajı silmek istediğine emin misin?')) return;
+  ws.send(JSON.stringify({type:'internalDelete', id:mid, other:_internalOther}));
+}
+let _imDuzenleMid=null;
+function imMesajDuzenleBasla(){
+  const mid=_imMenuMid;
+  const mm=document.getElementById('imMesajMenu'); if(mm) mm.remove();
+  if(!mid) return;
+  const m=_internalMsgs.find(x=>x.id===mid);
+  if(!m) return;
+  _imDuzenleMid=mid;
+  const inp=document.getElementById('internalInput');
+  inp.value=m.text||'';
+  inp.focus();
+  autoGrow(inp);
+  // düzenleme modu göstergesi
+  let bar=document.getElementById('imDuzenleBar');
+  if(!bar){
+    bar=document.createElement('div');
+    bar.id='imDuzenleBar'; bar.className='im-duzenle-bar';
+    const comp=document.querySelector('#internalContent .composer');
+    comp.parentNode.insertBefore(bar, comp);
+  }
+  bar.innerHTML='<span>✏️ Mesajı düzenliyorsun</span><button onclick="imDuzenleIptal()">✕ İptal</button>';
+  bar.style.display='flex';
+}
+function imDuzenleIptal(){
+  _imDuzenleMid=null;
+  const inp=document.getElementById('internalInput'); inp.value=''; inp.style.height='auto';
+  const bar=document.getElementById('imDuzenleBar'); if(bar) bar.style.display='none';
+}
+
+// ========================================================================
+// İÇ MESAJ — LIGHTBOX (foto panel içinde aç) + DOSYA AÇ (PDF/belge)
+// ========================================================================
+function imLightboxAc(src, tip, ad){
+  let mevcut=document.getElementById('imLightbox'); if(mevcut) mevcut.remove();
+  const lb=document.createElement('div');
+  lb.id='imLightbox'; lb.className='im-lightbox';
+  lb.onclick=(e)=>{ if(e.target===lb) lb.remove(); };
+  const inSrc=src+(src.includes('?')?'&':'?')+'name='+encodeURIComponent(ad||'gorsel');
+  lb.innerHTML='<div class="im-lb-bar"><span>'+esc(ad||'')+'</span><div><a href="'+inSrc+'" download="'+esc(ad||'gorsel')+'" class="im-lb-btn">⬇ İndir</a><button class="im-lb-btn" onclick="document.getElementById(\'imLightbox\').remove()">✕ Kapat</button></div></div>'+
+    '<img src="'+esc(src)+'" class="im-lb-img">';
+  document.body.appendChild(lb);
+}
+function imDosyaAc(src, ad, pdfMi){
+  // PDF ise panel içinde göster (iframe), değilse yeni sekmede aç
+  const inSrc=src+(src.includes('?')?'&':'?')+'name='+encodeURIComponent(ad||'belge');
+  if(pdfMi){
+    let mevcut=document.getElementById('imLightbox'); if(mevcut) mevcut.remove();
+    const lb=document.createElement('div');
+    lb.id='imLightbox'; lb.className='im-lightbox';
+    lb.onclick=(e)=>{ if(e.target===lb) lb.remove(); };
+    lb.innerHTML='<div class="im-lb-bar"><span>'+esc(ad||'')+'</span><div><a href="'+inSrc+'" download="'+esc(ad||'belge')+'" class="im-lb-btn">⬇ İndir</a><button class="im-lb-btn" onclick="document.getElementById(\'imLightbox\').remove()">✕ Kapat</button></div></div>'+
+      '<iframe src="'+esc(src)+'" class="im-lb-pdf"></iframe>';
+    document.body.appendChild(lb);
+  } else {
+    window.open(inSrc, '_blank');
+  }
 }
 
 // Canli ic mesaj geldi (gonderen veya alici olarak)
@@ -3573,14 +3806,486 @@ function handleInternalMessage(m){
   if(_mainTab==='internal' && connected) ws.send(JSON.stringify({type:'internalList'}));
 }
 
+// İç mesaj silindi bildirimi geldi -> açık konuşmadaysa güncelle
+function handleInternalDeleted(d){
+  if(_internalOther!==d.other) { if(connected) ws.send(JSON.stringify({type:'internalList'})); return; }
+  const m=_internalMsgs.find(x=>x.id===d.id);
+  if(m){
+    if(d.hardDelete){ _internalMsgs=_internalMsgs.filter(x=>x.id!==d.id); } // satır komple silindi
+    else { m.deleted=true; m.text=''; m.media_url=null; m.mediaUrl=null; } // "silindi" göster
+    drawInternalMessages();
+  }
+  if(connected) ws.send(JSON.stringify({type:'internalList'}));
+}
+// İç mesaj düzenlendi bildirimi geldi
+function handleInternalEdited(d){
+  if(_internalOther!==d.other) { if(connected) ws.send(JSON.stringify({type:'internalList'})); return; }
+  const m=_internalMsgs.find(x=>x.id===d.id);
+  if(m){ m.text=d.text; m.edited=true; drawInternalMessages(); }
+  if(connected) ws.send(JSON.stringify({type:'internalList'}));
+}
+
+// ========================================================================
+// GRUP SOHBETİ: "2 AYLIK SİGORTA MERKEZİ"
+// ========================================================================
+function openGroupChat(){
+  _internalOther='__GRUP__';
+  _grupUnread=0;
+  document.getElementById('iconvName').textContent='2 AYLIK SİGORTA MERKEZİ';
+  document.getElementById('iconvAvatar').textContent='🏢';
+  document.getElementById('iconvAvatar').style.background='linear-gradient(135deg,#0ea5e9,#6366f1)';
+  document.getElementById('iconvSub').textContent='Herkesin ortak grubu • '+(_internalUsers.length||0)+' üye';
+  document.getElementById('internalEmpty').style.display='none';
+  document.getElementById('internalContent').style.display='flex';
+  if(connected) ws.send(JSON.stringify({type:'groupLoad'}));
+  imTemaUygula(_imAktifTema);
+  // pin butonunu gizle (grup sabitlenmez), anket butonunu göster
+  document.getElementById('imPinBtn').style.display='none';
+  imGrupAnketBtnGoster(true);
+  imStilSec('normal');
+  if(_mainTab==='internal') renderInternalList({users:_internalUsers, me:_internalMe, items:_sonInternalItems});
+}
+let _sonInternalItems=[]; // liste tazelemesi için son items
+
+// Anket oluştur butonunu göster/gizle (sadece grupta)
+function imGrupAnketBtnGoster(goster){
+  let btn=document.getElementById('imAnketBtn');
+  if(goster){
+    if(!btn){
+      btn=document.createElement('button');
+      btn.id='imAnketBtn'; btn.className='attach-btn'; btn.title='Anket oluştur';
+      btn.style.fontSize='18px'; btn.textContent='📊';
+      btn.onclick=imAnketModalAc;
+      const comp=document.querySelector('#internalContent .composer');
+      const ilk=comp.querySelector('.attach-btn');
+      comp.insertBefore(btn, ilk);
+    }
+    btn.style.display='';
+  } else if(btn){ btn.style.display='none'; }
+}
+
+// Grup geçmişi geldi
+function renderGroupConversation(d){
+  _grupMsgs=d.messages||[];
+  _grupPollSonuc=d.pollResults||{};
+  drawGroupMessages();
+}
+function drawGroupMessages(){
+  const box=document.getElementById('internalMessages');
+  function imGun(ts){
+    if(!ts) return '';
+    const dt=new Date(ts), now=new Date();
+    const g=new Date(dt.getFullYear(),dt.getMonth(),dt.getDate());
+    const b=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    const fark=Math.round((b-g)/86400000);
+    if(fark===0) return 'Bugün'; if(fark===1) return 'Dün';
+    const aylar=['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+    return dt.getDate()+' '+aylar[dt.getMonth()]+' '+dt.getFullYear();
+  }
+  let html=''; let sonGun='';
+  const msgs=_grupMsgs;
+  for(let i=0;i<msgs.length;i++){
+    const m=msgs[i];
+    const gonderen=m.from_user||m.from||'';
+    const ben=gonderen===_internalMe;
+    const ts=Number(m.ts)||0;
+    const gl=imGun(ts); const yeniGun=(gl&&gl!==sonGun);
+    if(yeniGun){ html+='<div class="im-day">'+esc(gl)+'</div>'; sonGun=gl; }
+    const saat=ts?new Date(ts).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'';
+    const prev=i>0?msgs[i-1]:null;
+    const prevGonderen=prev?(prev.from_user||prev.from):null;
+    const ayni=prev&&!yeniGun&&(prevGonderen===gonderen);
+    const grpCls=ayni?' grouped':'';
+    // gönderen adı (grupta herkesin adı görünür)
+    const u=_internalUsers.find(x=>x.username===gonderen);
+    const ad=u?(u.displayName||u.username):gonderen;
+    let isimHtml='';
+    if(!ben && !ayni){ isimHtml='<div class="im-sender" style="color:'+colorFor(ad)+'">'+esc(ad)+'</div>'; }
+    const mid=m.id||'';
+    // SİLİNMİŞ
+    if(m.deleted){
+      html+='<div class="im-msg '+(ben?'out':'in')+grpCls+' im-silinmis">'+isimHtml+'<span class="im-silindi-yazi">🚫 Bu mesaj silindi</span><div class="im-time">'+esc(saat)+'</div></div>';
+      continue;
+    }
+    // ANKET mi?
+    if(m.kind==='poll'){
+      let poll; try{ poll=JSON.parse(m.text); }catch(e){ poll=null; }
+      if(poll){ html+=imAnketHtml(poll, ben, isimHtml, saat, gonderen); continue; }
+    }
+    // dosya
+    const medya=m.mediaUrl||m.media_url||'';
+    const kind=m.kind||'text';
+    const dosyaAd=m.fileName||m.file_name||'belge';
+    let icerik='';
+    if(medya){
+      if(kind==='image'){
+        icerik='<img src="'+esc(medya)+'" class="im-img" onclick="imLightboxAc(\''+esc(medya)+'\',\'image\',\''+esc(dosyaAd)+'\')" style="cursor:zoom-in">';
+        if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
+      } else {
+        const pdfMi=/\.pdf(\?|$)/i.test(dosyaAd);
+        const inSrc=esc(medya)+(medya.includes('?')?'&':'?')+'name='+encodeURIComponent(dosyaAd);
+        icerik='<div class="im-dosya" onclick="imDosyaAc(\''+esc(medya)+'\',\''+esc(dosyaAd)+'\','+(pdfMi?'true':'false')+')" style="cursor:pointer"><span class="im-dosya-ik">'+(pdfMi?'📕':'📄')+'</span><span class="im-dosya-ad">'+esc(dosyaAd)+'</span><span class="im-dosya-in">👁 aç</span></div><a href="'+inSrc+'" download="'+esc(dosyaAd)+'" class="im-dosya-indir">⬇ indir</a>';
+        if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
+      }
+    } else { icerik=esc(m.text); }
+    const duzenlendiEt=m.edited?'<span class="im-duzenlendi">düzenlendi</span>':'';
+    const sagTik = ben ? ' oncontextmenu="imGrupMesajMenu(event,\''+esc(mid)+'\','+(kind==='text'&&!medya?'true':'false')+');return false"' : '';
+    html+='<div class="im-msg '+(ben?'out':'in')+grpCls+'" data-mid="'+esc(mid)+'"'+sagTik+'>'+isimHtml+icerik+'<div class="im-time">'+duzenlendiEt+esc(saat)+'</div></div>';
+  }
+  box.innerHTML=html;
+  box.scrollTop=box.scrollHeight;
+}
+
+// Grup mesajı/anket geldi (canlı)
+function handleGroupMessage(m){
+  _grupSonMesaj = (m.kind==='poll')?'📊 Anket':(m.text||'📎 Dosya');
+  if(_internalOther==='__GRUP__'){
+    _grupMsgs.push(m);
+    drawGroupMessages();
+  } else {
+    _grupUnread++;
+    if(m.from!==_internalMe) playPing();
+    if(_mainTab==='internal') renderInternalList({users:_internalUsers, me:_internalMe, items:_sonInternalItems});
+  }
+}
+function handleGroupDeleted(d){
+  const m=_grupMsgs.find(x=>x.id===d.id);
+  if(m){
+    if(d.hardDelete){ _grupMsgs=_grupMsgs.filter(x=>x.id!==d.id); }
+    else { m.deleted=true; m.text=''; }
+    if(_internalOther==='__GRUP__') drawGroupMessages();
+  }
+}
+function handleGroupEdited(d){
+  const m=_grupMsgs.find(x=>x.id===d.id);
+  if(m){ m.text=d.text; m.edited=true; if(_internalOther==='__GRUP__') drawGroupMessages(); }
+}
+
+// Grup mesaj sağ tık menüsü
+let _imGrupMenuMid=null;
+function imGrupMesajMenu(ev, mid, metinMi){
+  ev.preventDefault();
+  _imGrupMenuMid=mid;
+  const eski=document.getElementById('imMesajMenu'); if(eski) eski.remove();
+  const m=document.createElement('div');
+  m.id='imMesajMenu'; m.className='im-mesaj-menu';
+  let ic='';
+  if(metinMi) ic+='<button onclick="imGrupDuzenleBasla()">✏️ Düzenle</button>';
+  ic+='<button class="tehlike" onclick="imGrupSil()">🗑️ Sil</button>';
+  m.innerHTML=ic;
+  document.body.appendChild(m);
+  m.style.left=Math.min(ev.clientX, window.innerWidth-160)+'px';
+  m.style.top=Math.min(ev.clientY, window.innerHeight-100)+'px';
+  setTimeout(()=>{ const k=(e2)=>{ if(!m.contains(e2.target)){ m.remove(); document.removeEventListener('click',k); } }; document.addEventListener('click',k); },0);
+}
+function imGrupSil(){
+  const mid=_imGrupMenuMid;
+  const mm=document.getElementById('imMesajMenu'); if(mm) mm.remove();
+  if(!mid) return;
+  if(!confirm('Bu mesajı silmek istediğine emin misin?')) return;
+  ws.send(JSON.stringify({type:'groupDelete', id:mid}));
+}
+let _imGrupDuzenleMid=null;
+function imGrupDuzenleBasla(){
+  const mid=_imGrupMenuMid;
+  const mm=document.getElementById('imMesajMenu'); if(mm) mm.remove();
+  if(!mid) return;
+  const m=_grupMsgs.find(x=>x.id===mid); if(!m) return;
+  _imGrupDuzenleMid=mid;
+  const inp=document.getElementById('internalInput');
+  inp.value=m.text||''; inp.focus(); autoGrow(inp);
+  let bar=document.getElementById('imDuzenleBar');
+  if(!bar){ bar=document.createElement('div'); bar.id='imDuzenleBar'; bar.className='im-duzenle-bar'; const comp=document.querySelector('#internalContent .composer'); comp.parentNode.insertBefore(bar, comp); }
+  bar.innerHTML='<span>✏️ Mesajı düzenliyorsun</span><button onclick="imGrupDuzenleIptal()">✕ İptal</button>';
+  bar.style.display='flex';
+}
+function imGrupDuzenleIptal(){
+  _imGrupDuzenleMid=null;
+  const inp=document.getElementById('internalInput'); inp.value=''; inp.style.height='auto';
+  const bar=document.getElementById('imDuzenleBar'); if(bar) bar.style.display='none';
+}
+
+// ========================================================================
+// ANKET / OYLAMA
+// ========================================================================
+function imAnketModalAc(){
+  let mevcut=document.getElementById('imAnketModal'); if(mevcut) mevcut.remove();
+  const m=document.createElement('div');
+  m.id='imAnketModal'; m.className='modal-bg show';
+  m.onclick=(e)=>{ if(e.target===m) m.remove(); };
+  m.innerHTML='<div class="modal" style="max-width:420px"><h3 style="margin-bottom:14px">📊 Anket Oluştur</h3>'
+    +'<input type="text" id="anketSoru" class="um-input" placeholder="Soru (örn: Yarın toplantı saat kaçta?)" style="width:100%;margin-bottom:10px">'
+    +'<div style="display:flex;gap:8px;margin-bottom:10px"><button class="anket-tip-btn aktif" data-tip="anket" onclick="imAnketTipSec(this,\'anket\')">📋 Çok seçenekli</button><button class="anket-tip-btn" data-tip="evethayir" onclick="imAnketTipSec(this,\'evethayir\')">✅ Evet / Hayır</button></div>'
+    +'<div id="anketSecenekler">'
+    +'<input type="text" class="um-input anket-secenek" placeholder="1. seçenek" style="width:100%;margin-bottom:6px">'
+    +'<input type="text" class="um-input anket-secenek" placeholder="2. seçenek" style="width:100%;margin-bottom:6px">'
+    +'</div>'
+    +'<button id="anketSecenekEkle" onclick="imAnketSecenekEkle()" style="background:var(--panel-2);border:none;padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12.5px;margin-bottom:14px">+ Seçenek ekle</button>'
+    +'<div style="display:flex;gap:8px"><button onclick="document.getElementById(\'imAnketModal\').remove()" style="flex:1;padding:10px;border:1px solid var(--border);background:var(--panel);border-radius:9px;cursor:pointer">İptal</button><button onclick="imAnketGonder()" style="flex:1;padding:10px;border:none;background:var(--brand);color:#fff;border-radius:9px;cursor:pointer;font-weight:600">Oluştur</button></div>'
+    +'</div>';
+  document.body.appendChild(m);
+  setTimeout(()=>document.getElementById('anketSoru').focus(),60);
+}
+let _anketTip='anket';
+function imAnketTipSec(btn,tip){
+  _anketTip=tip;
+  document.querySelectorAll('.anket-tip-btn').forEach(b=>b.classList.remove('aktif'));
+  btn.classList.add('aktif');
+  const box=document.getElementById('anketSecenekler');
+  const ekleBtn=document.getElementById('anketSecenekEkle');
+  if(tip==='evethayir'){
+    box.innerHTML='<div style="background:var(--panel-2);padding:10px;border-radius:8px;font-size:13px;color:var(--muted);text-align:center">Seçenekler otomatik: ✅ Evet / ❌ Hayır</div>';
+    ekleBtn.style.display='none';
+  } else {
+    box.innerHTML='<input type="text" class="um-input anket-secenek" placeholder="1. seçenek" style="width:100%;margin-bottom:6px"><input type="text" class="um-input anket-secenek" placeholder="2. seçenek" style="width:100%;margin-bottom:6px">';
+    ekleBtn.style.display='';
+  }
+}
+function imAnketSecenekEkle(){
+  const box=document.getElementById('anketSecenekler');
+  const say=box.querySelectorAll('.anket-secenek').length;
+  if(say>=6){ showToast('En fazla 6 seçenek'); return; }
+  const inp=document.createElement('input');
+  inp.type='text'; inp.className='um-input anket-secenek';
+  inp.placeholder=(say+1)+'. seçenek'; inp.style.cssText='width:100%;margin-bottom:6px';
+  box.appendChild(inp);
+}
+function imAnketGonder(){
+  const soru=document.getElementById('anketSoru').value.trim();
+  if(!soru){ showToast('Soru yaz'); return; }
+  let secenekler;
+  if(_anketTip==='evethayir'){ secenekler=['✅ Evet','❌ Hayır']; }
+  else {
+    secenekler=[...document.querySelectorAll('.anket-secenek')].map(i=>i.value.trim()).filter(Boolean);
+    if(secenekler.length<2){ showToast('En az 2 seçenek gir'); return; }
+  }
+  ws.send(JSON.stringify({type:'pollCreate', soru, secenekler, tip:_anketTip}));
+  const m=document.getElementById('imAnketModal'); if(m) m.remove();
+}
+// Anket mesajı HTML'i (oy çubukları)
+function imAnketHtml(poll, ben, isimHtml, saat, gonderen){
+  const sonuclar=_grupPollSonuc[poll.id]||[];
+  const toplam=sonuclar.length;
+  // benim oyum
+  const benimOy=sonuclar.find(v=>v.voter===_internalMe);
+  const benimSecenek=benimOy?benimOy.secenek:-1;
+  let secHtml='';
+  poll.secenekler.forEach((sec,idx)=>{
+    const oySayisi=sonuclar.filter(v=>v.secenek===idx).length;
+    const yuzde=toplam>0?Math.round(oySayisi/toplam*100):0;
+    const secili=benimSecenek===idx;
+    secHtml+='<div class="anket-secenek-bar'+(secili?' secili':'')+'" onclick="imAnketOyVer(\''+poll.id+'\','+idx+')">'
+      +'<div class="anket-bar-dolgu" style="width:'+yuzde+'%"></div>'
+      +'<div class="anket-bar-ic"><span class="anket-bar-yazi">'+(secili?'✓ ':'')+esc(sec)+'</span><span class="anket-bar-yuzde">'+yuzde+'% ('+oySayisi+')</span></div>'
+      +'</div>';
+  });
+  const tipEt=poll.tip==='evethayir'?'⚡ Hızlı oylama':'📊 Anket';
+  return '<div class="im-msg '+(ben?'out':'in')+'" style="max-width:320px">'+isimHtml
+    +'<div class="anket-kutu"><div class="anket-tip-et">'+tipEt+'</div><div class="anket-soru">'+esc(poll.soru)+'</div>'+secHtml
+    +'<div class="anket-alt">'+toplam+' oy</div></div>'
+    +'<div class="im-time">'+esc(saat)+'</div></div>';
+}
+function imAnketOyVer(pollId, secenek){
+  if(connected) ws.send(JSON.stringify({type:'pollVote', pollId, secenek}));
+}
+function handlePollUpdate(d){
+  _grupPollSonuc[d.pollId]=d.votes||[];
+  if(_internalOther==='__GRUP__') drawGroupMessages();
+}
+
 // Ic mesaj gonder
 function sendInternal(){
   const inp=document.getElementById('internalInput');
-  const text=inp.value.trim();
+  let text=inp.value.trim();
   if(!text || !_internalOther || !connected) return;
-  ws.send(JSON.stringify({type:'internalSend', to:_internalOther, text}));
+  // Seçili yazı stili varsa metni dönüştür
+  const stilliMetin = (_imAktifStil && _imAktifStil!=='normal') ? imStilUygula(text, _imAktifStil) : text;
+  // ---- GRUP MODU ----
+  if(_internalOther==='__GRUP__'){
+    if(_imGrupDuzenleMid){
+      ws.send(JSON.stringify({type:'groupEdit', id:_imGrupDuzenleMid, text}));
+      imGrupDuzenleIptal();
+    } else {
+      ws.send(JSON.stringify({type:'groupSend', text:stilliMetin}));
+      inp.value=''; inp.style.height='auto';
+    }
+    return;
+  }
+  // ---- BİREBİR MODU ----
+  // DÜZENLEME MODU: yeni mesaj değil, mevcut mesajı güncelle
+  if(_imDuzenleMid){
+    ws.send(JSON.stringify({type:'internalEdit', id:_imDuzenleMid, other:_internalOther, text}));
+    imDuzenleIptal();
+    return;
+  }
+  ws.send(JSON.stringify({type:'internalSend', to:_internalOther, text:stilliMetin}));
   inp.value=''; inp.style.height='auto';
 }
+
+// ========================================================================
+// İÇ MESAJ — YAZI STİLLERİ (şekilli/ateşli/farklı fontlar)
+// Unicode karakter dönüşümleriyle çalışır (gerçek font değil, her cihazda görünür).
+// ========================================================================
+let _imAktifStil='normal'; // seçili stil (gönderilen mesaja uygulanır)
+// Harf haritaları: normal a-z A-Z 0-9 -> özel unicode
+function _imHarita(metin, kucukBas, buyukBas, rakamBas){
+  let out='';
+  for(const ch of metin){
+    const c=ch.charCodeAt(0);
+    if(ch>='a'&&ch<='z' && kucukBas) out+=String.fromCodePoint(kucukBas + (c-97));
+    else if(ch>='A'&&ch<='Z' && buyukBas) out+=String.fromCodePoint(buyukBas + (c-65));
+    else if(ch>='0'&&ch<='9' && rakamBas) out+=String.fromCodePoint(rakamBas + (c-48));
+    else out+=ch;
+  }
+  return out;
+}
+// Stil tanımları (10 tane)
+const _imStiller=[
+  {id:'normal', ad:'Normal', ornek:'Abc', fn:(t)=>t},
+  {id:'ates',   ad:'🔥 Ateşli', ornek:'A̷b̷c̷', fn:(t)=>[...t].map(c=>c+'\u0337').join('')},
+  {id:'kalin',  ad:'𝗞𝗮𝗹𝗶𝗻', ornek:'𝗔𝗯𝗰', fn:(t)=>_imHarita(t, 0x1D5EE, 0x1D5D4, 0x1D7EC)},
+  {id:'italik', ad:'𝘐𝘵𝘢𝘭𝘪𝘬', ornek:'𝘈𝘣𝘤', fn:(t)=>_imHarita(t, 0x1D622, 0x1D608, null)},
+  {id:'daktilo',ad:'𝙼𝚘𝚗𝚘', ornek:'𝙰𝚋𝚌', fn:(t)=>_imHarita(t, 0x1D68A, 0x1D670, 0x1D7F6)},
+  {id:'yuvarlak',ad:'Ⓑⓐⓛⓞⓝ', ornek:'Ⓐⓑⓒ', fn:(t)=>_imHarita(t, 0x24D0, 0x24B6, null)},
+  {id:'kare',   ad:'🅺🅰🆁🅴', ornek:'🅰🅱🅲', fn:(t)=>_imHarita(t.toUpperCase(), null, 0x1F170, null)},
+  {id:'cift',   ad:'𝔻𝕦𝕓𝕝𝕖', ornek:'𝔸𝔹ℂ', fn:(t)=>_imHarita(t, 0x1D552, 0x1D538, 0x1D7D8)},
+  {id:'suslu',  ad:'𝓢𝓾𝓼𝓵𝓾', ornek:'𝓐𝓫𝓬', fn:(t)=>_imHarita(t, 0x1D4EA, 0x1D4D0, null)},
+  {id:'altcizgi',ad:'A̲l̲t̲ ̲Ç̲i̲z̲', ornek:'A̲b̲c̲', fn:(t)=>[...t].map(c=>c+'\u0332').join('')},
+  {id:'yildizli',ad:'✨ Yıldızlı', ornek:'✦A✦', fn:(t)=>'✦ '+t+' ✦'},
+];
+function imStilUygula(metin, stilId){
+  const s=_imStiller.find(x=>x.id===stilId);
+  return s? s.fn(metin) : metin;
+}
+function imStilPaneliToggle(){
+  const p=document.getElementById('imStilPanel');
+  const acik=p.style.display!=='none';
+  // diğer panelleri kapat
+  document.getElementById('imEmojiPanel').style.display='none';
+  if(acik){ p.style.display='none'; return; }
+  // paneli doldur
+  p.innerHTML=_imStiller.map(s=>
+    '<button class="im-stil-btn '+(s.id===_imAktifStil?'aktif':'')+'" onclick="imStilSec(\''+s.id+'\')">'+
+    '<span class="im-stil-ornek">'+s.ornek+'</span><span class="im-stil-ad">'+s.ad+'</span></button>'
+  ).join('');
+  p.style.display='flex';
+}
+function imStilSec(id){
+  _imAktifStil=id;
+  // butonları güncelle
+  document.querySelectorAll('#imStilPanel .im-stil-btn').forEach(b=>b.classList.remove('aktif'));
+  const aktifBtn=[...document.querySelectorAll('#imStilPanel .im-stil-btn')].find(b=>b.getAttribute('onclick').includes("'"+id+"'"));
+  if(aktifBtn) aktifBtn.classList.add('aktif');
+  // input'a ipucu göster
+  const inp=document.getElementById('internalInput');
+  const s=_imStiller.find(x=>x.id===id);
+  if(id==='normal'){ inp.placeholder='Ekip arkadaşına mesaj yaz'; }
+  else { inp.placeholder='✍️ '+s.ad+' stiliyle yazıyorsun…'; }
+  document.getElementById('imStilPanel').style.display='none';
+  // stil butonunu vurgula
+  document.getElementById('internalStilBtn').style.color = (id==='normal') ? '' : 'var(--brand)';
+  inp.focus();
+}
+
+// ========================================================================
+// İÇ MESAJ — EMOJİ PANELİ
+// ========================================================================
+const _imEmojiler=['😀','😁','😂','🤣','😊','😍','😘','😎','🤩','🥳','😇','🙂','😉','😋','😜','🤗','🤔','🤨','😐','😴','😷','🤒','🥶','😡','😱','😭','😢','🥺','😤','👍','👎','👌','✌️','🤞','🤙','👏','🙏','💪','🔥','✨','⭐','🌟','💯','✅','❌','❗','❓','💰','💵','💳','📈','📉','📊','📌','📎','📁','📄','🚀','🎉','🎊','❤️','🧡','💛','💚','💙','💜','🖤','💔','💕','💞','🌹','🌺','☀️','🌈','⚡','💥','🎯','🏆','🥇','👀','🫡','🤝','🙌','💬','🔔','⏰','📅'];
+function imEmojiPaneliToggle(){
+  const p=document.getElementById('imEmojiPanel');
+  const acik=p.style.display!=='none';
+  document.getElementById('imStilPanel').style.display='none';
+  if(acik){ p.style.display='none'; return; }
+  if(!p.dataset.dolu){
+    p.innerHTML=_imEmojiler.map(e=>'<button class="im-emoji-btn" onclick="imEmojiEkle(\''+e+'\')">'+e+'</button>').join('');
+    p.dataset.dolu='1';
+  }
+  p.style.display='flex';
+}
+function imEmojiEkle(emoji){
+  const inp=document.getElementById('internalInput');
+  const pos=inp.selectionStart||inp.value.length;
+  inp.value=inp.value.slice(0,pos)+emoji+inp.value.slice(pos);
+  inp.focus();
+  inp.selectionStart=inp.selectionEnd=pos+emoji.length;
+  autoGrow(inp);
+}
+
+// ========================================================================
+// İÇ MESAJ — TEMALAR (sohbet arkaplanı, kalpli/renkli)
+// Her tema bir CSS sınıfı; seçilen tema localStorage'da saklanır (kişiye özel).
+// ========================================================================
+const _imTemalar=[
+  {id:'varsayilan', ad:'Varsayılan', renk:'#e5ddd5'},
+  {id:'kalp',       ad:'💕 Kalpler', renk:'#ffe0ec'},
+  {id:'gece',       ad:'🌙 Gece', renk:'#0b141a'},
+  {id:'okyanus',    ad:'🌊 Okyanus', renk:'#cce7f0'},
+  {id:'orman',      ad:'🌿 Orman', renk:'#d7e8d4'},
+  {id:'gunbatimi',  ad:'🌅 Gün Batımı', renk:'#ffd9b3'},
+  {id:'lavanta',    ad:'💜 Lavanta', renk:'#e6ddf5'},
+  {id:'altin',      ad:'✨ Altın', renk:'#f5e6b3'},
+  {id:'seker',      ad:'🍭 Şeker', renk:'#ffd6e8'},
+  {id:'yildiz',     ad:'⭐ Yıldız', renk:'#1a1a2e'},
+];
+let _imAktifTema=localStorage.getItem('imTema')||'varsayilan';
+function imTemaUygula(temaId){
+  const box=document.getElementById('internalMessages');
+  if(!box) return;
+  // eski tema sınıflarını temizle
+  _imTemalar.forEach(t=>box.classList.remove('imtema-'+t.id));
+  box.classList.add('imtema-'+temaId);
+  _imAktifTema=temaId;
+  localStorage.setItem('imTema', temaId);
+}
+function imTemaPaneliAc(){
+  // basit modal: tema seçenekleri
+  let mevcut=document.getElementById('imTemaModal');
+  if(mevcut) mevcut.remove();
+  const m=document.createElement('div');
+  m.id='imTemaModal'; m.className='modal-bg show';
+  m.onclick=(e)=>{ if(e.target===m) m.remove(); };
+  m.innerHTML='<div class="modal" style="max-width:380px"><h3 style="margin-bottom:14px">🎨 Sohbet Teması</h3>'+
+    '<div class="im-tema-grid">'+
+    _imTemalar.map(t=>'<button class="im-tema-kart '+(t.id===_imAktifTema?'aktif':'')+'" onclick="imTemaSecModal(\''+t.id+'\')" style="background:'+t.renk+'"><span class="im-tema-ad">'+t.ad+'</span></button>').join('')+
+    '</div></div>';
+  document.body.appendChild(m);
+}
+function imTemaSecModal(id){
+  imTemaUygula(id);
+  const m=document.getElementById('imTemaModal'); if(m) m.remove();
+  showToast('🎨 Tema değiştirildi');
+}
+
+// ========================================================================
+// İÇ MESAJ — SABİTLEME (kişiye özel, localStorage)
+// ========================================================================
+let _imSabitliler=JSON.parse(localStorage.getItem('imSabitliler')||'[]');
+function imSabitleToggle(){
+  if(!_internalOther) return;
+  const i=_imSabitliler.indexOf(_internalOther);
+  if(i>=0){ _imSabitliler.splice(i,1); showToast('📌 Sabit kaldırıldı'); }
+  else { _imSabitliler.push(_internalOther); showToast('📌 Sohbet sabitlendi'); }
+  localStorage.setItem('imSabitliler', JSON.stringify(_imSabitliler));
+  imPinButonGuncelle();
+  if(typeof renderInternalList==='function') renderInternalList(); // listeyi tazele (sabitler üste)
+}
+function imPinButonGuncelle(){
+  const btn=document.getElementById('imPinBtn');
+  if(!btn) return;
+  const sabit=_internalOther && _imSabitliler.includes(_internalOther);
+  btn.style.color = sabit ? 'var(--brand)' : '';
+  btn.title = sabit ? 'Sabiti kaldır' : 'Sohbeti sabitle';
+}
+
+// İç mesaj alanına tıklayınca panelleri kapat
+document.addEventListener('click',(e)=>{
+  if(!e.target.closest('#imStilPanel') && !e.target.closest('#internalStilBtn')){
+    const p=document.getElementById('imStilPanel'); if(p) p.style.display='none';
+  }
+  if(!e.target.closest('#imEmojiPanel') && !e.target.closest('#internalEmojiBtn')){
+    const p=document.getElementById('imEmojiPanel'); if(p) p.style.display='none';
+  }
+});
 
 // İÇ MESAJ DOSYA GÖNDER (ekip arkadaşına) — /internal-upload'a gider, WhatsApp'a DOKUNMAZ.
 async function internalDosyaGonder(files){

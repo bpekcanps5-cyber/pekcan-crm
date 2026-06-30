@@ -1307,6 +1307,15 @@ function broadcast(obj) {
   wss.clients.forEach((c) => { if (c.readyState === 1) c.send(data); });
 }
 
+// GRUP SOHBETI yayini: "2 AYLIK SIGORTA MERKEZI" mesajlari TUM panel kullanicilarina gider
+// (ofis/pazarlama hatti fark etmez — grup ortak; ama sadece GIRIS YAPMIS kullanicilara).
+function yayinlaGrup(obj) {
+  const data = JSON.stringify(obj);
+  wss.clients.forEach((c) => {
+    if (c.readyState === 1 && c._username) c.send(data); // sadece kimlikli (giris yapmis) kullanicilar
+  });
+}
+
 // SADECE belirli bir hatta bagli panellere gonder (IZOLASYON).
 // ofis hatti -> ofis kullanicilarinin panellerine. pazarlama -> sadece o pazarlamaciya.
 // Bir ws'in hatti ws._lineId'de tutulur (baglanirken token'dan belirlenir).
@@ -1495,6 +1504,108 @@ wss.on('connection', (ws) => {
         await db.markInternalRead(ws._username, msg.other);
         const n = await db.internalUnreadCount(ws._username);
         ws.send(JSON.stringify({ type: 'internalUnread', count: n }));
+        return;
+      }
+
+      // Ic mesaj SIL (sadece kendi mesajini)
+      if (msg.type === 'internalDelete') {
+        if (!ws._username || !db.isReady()) return;
+        const r = await db.deleteInternalMessage(msg.id, ws._username);
+        if (!r.ok) { ws.send(JSON.stringify({ type: 'opError', error: 'Mesaj silinemedi (sadece kendi mesajını silebilirsin).' })); return; }
+        // hem bana hem karsi tarafa "silindi" bildir -> iki ekranda da guncellensin
+        const bildir = { type: 'internalMsgDeleted', id: msg.id, other: msg.other, hardDelete: !!r.hardDelete };
+        ws.send(JSON.stringify(bildir));
+        wss.clients.forEach((c) => {
+          if (c.readyState === 1 && c._username === msg.other) {
+            // karsi tarafa: onun penceresinde 'other' BENIM (gonderen)
+            c.send(JSON.stringify({ type: 'internalMsgDeleted', id: msg.id, other: ws._username, hardDelete: !!r.hardDelete }));
+          }
+        });
+        return;
+      }
+
+      // Ic mesaj DUZENLE (sadece kendi mesajini, sadece metin)
+      if (msg.type === 'internalEdit') {
+        if (!ws._username || !db.isReady()) return;
+        const yeni = (msg.text || '').trim();
+        if (!yeni) return;
+        const r = await db.editInternalMessage(msg.id, ws._username, yeni);
+        if (!r.ok) { ws.send(JSON.stringify({ type: 'opError', error: 'Mesaj düzenlenemedi (sadece kendi mesajını düzenleyebilirsin).' })); return; }
+        const bildir = { type: 'internalMsgEdited', id: msg.id, text: yeni };
+        ws.send(JSON.stringify({ ...bildir, other: msg.other }));
+        wss.clients.forEach((c) => {
+          if (c.readyState === 1 && c._username === msg.other) {
+            c.send(JSON.stringify({ ...bildir, other: ws._username }));
+          }
+        });
+        return;
+      }
+
+      // ===== GRUP SOHBETI: "2 AYLIK SIGORTA MERKEZI" =====
+      // Grup gecmisini yukle (+ anket sonuclari)
+      if (msg.type === 'groupLoad') {
+        if (!db.isReady()) { ws.send(JSON.stringify({ type: 'groupConversation', messages: [] })); return; }
+        const rows = await db.loadGroupMessages(300);
+        // mesajlar icindeki anket id'lerini topla, sonuclarini cek
+        const pollIds = rows.filter(r => r.kind === 'poll' && r.text).map(r => { try { return JSON.parse(r.text).id; } catch { return null; } }).filter(Boolean);
+        const pollResults = await db.getPollsResults(pollIds);
+        ws.send(JSON.stringify({ type: 'groupConversation', messages: rows, pollResults }));
+        return;
+      }
+      // Gruba mesaj gonder -> TUM online kullanicilara yayinla
+      if (msg.type === 'groupSend') {
+        if (!ws._username || !db.isReady()) { ws.send(JSON.stringify({ type: 'opError', error: 'Grup mesajı gönderilemedi.' })); return; }
+        const text = (msg.text || '').trim();
+        if (!text) return;
+        const mid = 'gim_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+        const r = await db.saveGroupMessage({ id: mid, from: ws._username, text, ts: Date.now() });
+        if (!r.ok) { ws.send(JSON.stringify({ type: 'opError', error: 'Grup mesajı kaydedilemedi.' })); return; }
+        const payload = { id: mid, from: ws._username, fromName: ws._displayName || ws._username, text, ts: r.row?.ts || Date.now(), kind: 'text' };
+        yayinlaGrup({ type: 'groupMessage', msg: payload });
+        return;
+      }
+      // Grup mesaji sil
+      if (msg.type === 'groupDelete') {
+        if (!ws._username || !db.isReady()) return;
+        const r = await db.deleteGroupMessage(msg.id, ws._username);
+        if (!r.ok) { ws.send(JSON.stringify({ type: 'opError', error: 'Mesaj silinemedi (sadece kendi mesajını silebilirsin).' })); return; }
+        yayinlaGrup({ type: 'groupMsgDeleted', id: msg.id, hardDelete: !!r.hardDelete });
+        return;
+      }
+      // Grup mesaji duzenle
+      if (msg.type === 'groupEdit') {
+        if (!ws._username || !db.isReady()) return;
+        const yeni = (msg.text || '').trim();
+        if (!yeni) return;
+        const r = await db.editGroupMessage(msg.id, ws._username, yeni);
+        if (!r.ok) { ws.send(JSON.stringify({ type: 'opError', error: 'Mesaj düzenlenemedi.' })); return; }
+        yayinlaGrup({ type: 'groupMsgEdited', id: msg.id, text: yeni });
+        return;
+      }
+      // ANKET olustur -> gruba "poll" tipinde mesaj olarak dusur
+      if (msg.type === 'pollCreate') {
+        if (!ws._username || !db.isReady()) return;
+        const soru = (msg.soru || '').trim();
+        const secenekler = Array.isArray(msg.secenekler) ? msg.secenekler.map(s => (s || '').trim()).filter(Boolean) : [];
+        if (!soru || secenekler.length < 2) { ws.send(JSON.stringify({ type: 'opError', error: 'Anket için soru ve en az 2 seçenek gerekli.' })); return; }
+        const pollId = 'poll_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        const pr = await db.createPoll({ id: pollId, creator: ws._username, soru, secenekler, tip: msg.tip || 'anket', ts: Date.now() });
+        if (!pr.ok) { ws.send(JSON.stringify({ type: 'opError', error: 'Anket oluşturulamadı.' })); return; }
+        // grup mesaji olarak dusur (kind=poll, text=anket json)
+        const mid = 'gim_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+        const anketJson = JSON.stringify({ id: pollId, soru, secenekler, tip: msg.tip || 'anket' });
+        await db.saveGroupMessage({ id: mid, from: ws._username, text: anketJson, kind: 'poll', ts: Date.now() });
+        const payload = { id: mid, from: ws._username, fromName: ws._displayName || ws._username, text: anketJson, ts: Date.now(), kind: 'poll' };
+        yayinlaGrup({ type: 'groupMessage', msg: payload });
+        return;
+      }
+      // Ankete OY ver -> sonuclari herkese yayinla
+      if (msg.type === 'pollVote') {
+        if (!ws._username || !db.isReady()) return;
+        const r = await db.votePoll(msg.pollId, ws._username, msg.secenek);
+        if (!r.ok) { ws.send(JSON.stringify({ type: 'opError', error: 'Oy verilemedi.' })); return; }
+        const sonuc = await db.getPollResults(msg.pollId);
+        if (sonuc) yayinlaGrup({ type: 'pollUpdate', pollId: msg.pollId, votes: sonuc.votes });
         return;
       }
 

@@ -689,6 +689,202 @@ async function internalUnreadCount(username) {
   } catch (e) { return 0; }
 }
 
+// Ic mesaj SIL — sadece KENDI mesajini silebilir (from_user kontrolu cagiran tarafta).
+// "deleted" kolonu varsa onu true yapar (mesaj "silindi" gorunur); yoksa satiri komple siler.
+async function deleteInternalMessage(id, requester) {
+  if (!aktif) return { ok: false };
+  try {
+    // once "deleted" kolonuyla soft-delete dene (mesaj "bu mesaj silindi" olarak kalsin)
+    const r = await pool.query(
+      `UPDATE internal_messages SET deleted = true, text = '', media_url = NULL
+        WHERE id = $1 AND from_user = $2 RETURNING id`,
+      [id, requester]
+    );
+    return { ok: r.rowCount > 0 };
+  } catch (e) {
+    // deleted kolonu yoksa: satiri tamamen sil (yine de kendi mesaji olmali)
+    try {
+      const r2 = await pool.query(
+        `DELETE FROM internal_messages WHERE id = $1 AND from_user = $2 RETURNING id`,
+        [id, requester]
+      );
+      return { ok: r2.rowCount > 0, hardDelete: true };
+    } catch (e2) { return { ok: false, error: e2.message }; }
+  }
+}
+
+// Ic mesaj DUZENLE — sadece kendi mesajini, sadece METIN. "edited" kolonu varsa isaretler.
+async function editInternalMessage(id, requester, yeniMetin) {
+  if (!aktif) return { ok: false };
+  try {
+    const r = await pool.query(
+      `UPDATE internal_messages SET text = $3, edited = true
+        WHERE id = $1 AND from_user = $2 AND (deleted IS NULL OR deleted = false) RETURNING id`,
+      [id, requester, yeniMetin]
+    );
+    return { ok: r.rowCount > 0 };
+  } catch (e) {
+    // edited kolonu yoksa: sadece text guncelle
+    try {
+      const r2 = await pool.query(
+        `UPDATE internal_messages SET text = $3 WHERE id = $1 AND from_user = $2 RETURNING id`,
+        [id, requester, yeniMetin]
+      );
+      return { ok: r2.rowCount > 0 };
+    } catch (e2) { return { ok: false, error: e2.message }; }
+  }
+}
+
+// ============================================================
+// GRUP SOHBETI: "2 AYLIK SIGORTA MERKEZI" (herkesin ortak grubu)
+// internal_messages tablosunu kullanir ama conv_key SABIT: GRUP_CONV_KEY.
+// to_user = '*' (herkes). Boylece tum ekip ayni akisi gorur.
+// ============================================================
+const GRUP_CONV_KEY = '__grup__2aylik_sigorta';
+
+// Gruba mesaj kaydet (text veya dosya)
+async function saveGroupMessage(m) {
+  if (!aktif) return { ok: false, error: 'DB bagli degil' };
+  try {
+    const r = await pool.query(
+      `INSERT INTO internal_messages (id, conv_key, from_user, to_user, text, media_url, file_name, kind, ts, read_at, created_at)
+       VALUES ($1,$2,$3,'*',$4,$5,$6,$7,$8,NULL, now())
+       RETURNING id, conv_key, from_user, to_user, text, media_url, file_name, kind, ts`,
+      [m.id, GRUP_CONV_KEY, m.from, m.text || '', m.mediaUrl || null, m.fileName || null, m.kind || 'text', m.ts || Date.now()]
+    );
+    return { ok: true, row: r.rows[0] };
+  } catch (e) {
+    // dosya kolonlari yoksa: sadece text
+    try {
+      const r2 = await pool.query(
+        `INSERT INTO internal_messages (id, conv_key, from_user, to_user, text, ts, read_at, created_at)
+         VALUES ($1,$2,$3,'*',$4,$5,NULL, now())
+         RETURNING id, conv_key, from_user, to_user, text, ts`,
+        [m.id, GRUP_CONV_KEY, m.from, m.text || '', m.ts || Date.now()]
+      );
+      return { ok: true, row: r2.rows[0] };
+    } catch (e2) { return { ok: false, error: e2.message }; }
+  }
+}
+
+// Grup mesajlarini getir (son N, eskiden yeniye)
+async function loadGroupMessages(limit = 300) {
+  if (!aktif) return [];
+  try {
+    const r = await pool.query(
+      `SELECT id, from_user, text, media_url, file_name, kind, ts, deleted, edited
+         FROM internal_messages WHERE conv_key = $1 ORDER BY ts ASC LIMIT $2`,
+      [GRUP_CONV_KEY, limit]
+    );
+    return r.rows;
+  } catch (e) {
+    try {
+      const r2 = await pool.query(
+        `SELECT id, from_user, text, ts FROM internal_messages WHERE conv_key = $1 ORDER BY ts ASC LIMIT $2`,
+        [GRUP_CONV_KEY, limit]
+      );
+      return r2.rows;
+    } catch (e2) { return []; }
+  }
+}
+
+// Grup mesaji sil (sadece kendi mesajini)
+async function deleteGroupMessage(id, requester) {
+  if (!aktif) return { ok: false };
+  try {
+    const r = await pool.query(
+      `UPDATE internal_messages SET deleted = true, text = '', media_url = NULL
+        WHERE id = $1 AND from_user = $2 AND conv_key = $3 RETURNING id`,
+      [id, requester, GRUP_CONV_KEY]
+    );
+    return { ok: r.rowCount > 0 };
+  } catch (e) {
+    try {
+      const r2 = await pool.query(
+        `DELETE FROM internal_messages WHERE id = $1 AND from_user = $2 AND conv_key = $3 RETURNING id`,
+        [id, requester, GRUP_CONV_KEY]
+      );
+      return { ok: r2.rowCount > 0, hardDelete: true };
+    } catch (e2) { return { ok: false, error: e2.message }; }
+  }
+}
+
+// Grup mesaji duzenle (sadece kendi mesajini)
+async function editGroupMessage(id, requester, yeniMetin) {
+  if (!aktif) return { ok: false };
+  try {
+    const r = await pool.query(
+      `UPDATE internal_messages SET text = $3, edited = true
+        WHERE id = $1 AND from_user = $2 AND conv_key = $4 AND (deleted IS NULL OR deleted = false) RETURNING id`,
+      [id, requester, yeniMetin, GRUP_CONV_KEY]
+    );
+    return { ok: r.rowCount > 0 };
+  } catch (e) {
+    try {
+      const r2 = await pool.query(
+        `UPDATE internal_messages SET text = $3 WHERE id = $1 AND from_user = $2 AND conv_key = $4 RETURNING id`,
+        [id, requester, yeniMetin, GRUP_CONV_KEY]
+      );
+      return { ok: r2.rowCount > 0 };
+    } catch (e2) { return { ok: false, error: e2.message }; }
+  }
+}
+
+// ============================================================
+// ANKET / OYLAMA (polls tablosu + poll_votes)
+// ============================================================
+// Yeni anket olustur
+async function createPoll(p) {
+  if (!aktif) return { ok: false, error: 'DB bagli degil' };
+  try {
+    const r = await pool.query(
+      `INSERT INTO polls (id, creator, soru, secenekler, tip, ts, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6, now()) RETURNING *`,
+      [p.id, p.creator, p.soru, JSON.stringify(p.secenekler), p.tip || 'anket', p.ts || Date.now()]
+    );
+    return { ok: true, row: r.rows[0] };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+// Ankete oy ver (kullanici basina 1 oy; tekrar oy degistirebilir)
+async function votePoll(pollId, voter, secenekIndex) {
+  if (!aktif) return { ok: false };
+  try {
+    await pool.query(
+      `INSERT INTO poll_votes (poll_id, voter, secenek, ts)
+       VALUES ($1,$2,$3, now())
+       ON CONFLICT (poll_id, voter) DO UPDATE SET secenek = EXCLUDED.secenek, ts = now()`,
+      [pollId, voter, secenekIndex]
+    );
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+// Anket sonuclarini getir (her secenek icin oy sayisi + kim oy verdi)
+async function getPollResults(pollId) {
+  if (!aktif) return null;
+  try {
+    const p = await pool.query('SELECT * FROM polls WHERE id = $1', [pollId]);
+    if (!p.rows.length) return null;
+    const v = await pool.query('SELECT voter, secenek FROM poll_votes WHERE poll_id = $1', [pollId]);
+    return { poll: p.rows[0], votes: v.rows };
+  } catch (e) { return null; }
+}
+
+// Birden cok anketin sonuclarini toplu getir (grup yuklenince)
+async function getPollsResults(pollIds) {
+  if (!aktif || !pollIds || !pollIds.length) return {};
+  try {
+    const v = await pool.query('SELECT poll_id, voter, secenek FROM poll_votes WHERE poll_id = ANY($1)', [pollIds]);
+    const out = {};
+    for (const row of v.rows) {
+      if (!out[row.poll_id]) out[row.poll_id] = [];
+      out[row.poll_id].push({ voter: row.voter, secenek: row.secenek });
+    }
+    return out;
+  } catch (e) { return {}; }
+}
+
 // Kullanici sil
 async function deleteUser(id) {
   if (!aktif) return { ok: false };
@@ -1184,6 +1380,10 @@ module.exports = {
   ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, updateUser,
   saveInternalMessage, loadInternalConversation, listInternalConversations,
   markInternalRead, internalUnreadCount,
+  deleteInternalMessage, editInternalMessage,
+  saveGroupMessage, loadGroupMessages, deleteGroupMessage, editGroupMessage,
+  createPoll, votePoll, getPollResults, getPollsResults,
+  GRUP_CONV_KEY,
   saveSession, loadSessions, deleteSession, updateSessionRole, updateUserRole, setMesajIsaret,
   addAssignment, removeAssignment, loadAssignments,
   addLabel, deleteLabel, loadLabels, etiketSiraKaydet, addChatLabel, removeChatLabel, loadChatLabels,
