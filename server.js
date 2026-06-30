@@ -1904,7 +1904,15 @@ wss.on('connection', (ws) => {
           }
           // DB'ye de yaz ki sunucu restart olsa bile isaret geri gelmesin
           if (db.isReady()) db.saveChat(chat, _LID).catch(() => {});
-          broadcastHat(_LID, { type: 'message', jid: msg.jid, chat: stripRaw(chat) });
+          // HAFIF: sadece okundu/bahsedilme durumunu gonder (60 mesaj degil)
+          broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { unread: 0, hasMention: false } });
+        }
+      }
+      // EKSIK TESPIT EDILINCE: panel tam sohbeti ister (msgAppend'de mesaj kactiysa)
+      else if (msg.type === 'syncChat') {
+        const chat = C.get(msg.jid);
+        if (chat) {
+          ws.send(JSON.stringify({ type: 'chatSync', jid: msg.jid, chat: stripRaw(chat, 300) }));
         }
       }
 
@@ -3352,7 +3360,8 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
       }
       // Eksik bilgi sonradan geldiyse (orn. medya arka planda indi): panele + DB'ye yansit
       if (degisti) {
-        broadcastHat(lineId, { type: 'message', jid, chat: stripRaw(C.get(jid)) });
+        // HAFIF: tum sohbeti degil, sadece GUNCELLENEN mesaji gonder (medya/cozulme guncellemesi)
+        broadcastHat(lineId, { type: 'msgUpdate', jid, mesaj: stripBirMesaj(varolan) });
         if (db.isReady()) db.saveMessage(jid, varolan, lineId).catch(() => {});
       }
       return; // cift eklemeyi onle
@@ -3394,7 +3403,8 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
   if (!message.fromMe) chat.unread++;
   // beni etiketleyen okunmamis mesaj geldiyse isaretle
   if (meta.mentionsMe) chat.hasMention = true;
-  broadcastHat(lineId, { type: 'message', jid, chat: stripRaw(chat) });
+  // HAFIF YAYIN: 60 mesaj yerine sadece bu yeni mesaji gonder (trafik ~40x az -> aninda gider).
+  broadcastYeniMesaj(lineId, jid, chat, message);
   // Supabase'e kaydet (arka planda, mesaji bekletmez)
   // AMA gonderilemeyen mesaji (durum:-1) DB'ye YAZMA — gitmedi, kalici olmamali.
   // (Kullanici silince veya yenileyince kaybolsun; DB'de "hayalet hata mesaji" kalmasin.)
@@ -3402,6 +3412,42 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
     db.saveChat(chat, lineId).catch((e) => { if (!global._saveChatHataLog) { global._saveChatHataLog = true; console.log('⚠️  saveChat HATASI (ilk): ' + e.message); } });
     db.saveMessage(jid, message, lineId).catch((e) => { if (!global._saveMsgHataLog) { global._saveMsgHataLog = true; console.log('⚠️  saveMessage HATASI (ilk): ' + e.message); } });
   }
+}
+
+// Tek bir mesaji panele gondermeye hazirla (raw+key cikar).
+function stripBirMesaj(m) {
+  const { raw, key, ...rest } = m;
+  return rest;
+}
+// HAFIF YAYIN: tum sohbeti (60 mesaj) degil, SADECE tek yeni mesaji + sohbet ozetini gonderir.
+// Boylece yogun saatte trafik ~40 kat azalir -> mesajlar ANINDA gider, yigilma olmaz.
+// prevId: bu mesajdan onceki mesajin id'si. Panel, kendi son mesaji != prevId ise BIR MESAJ
+// KACIRDIGINI anlar ve o sohbet icin tam senkron (syncChat) ister -> hicbir mesaj EKSIK kalmaz.
+function broadcastYeniMesaj(lineId, jid, chat, mesaj) {
+  // mesajdan onceki mesajin id'si (eksik tespiti icin)
+  const idx = chat.messages.findIndex(x => x.id === mesaj.id);
+  const prevId = idx > 0 ? (chat.messages[idx - 1].id || null) : null;
+  broadcastHat(lineId, {
+    type: 'msgAppend',
+    jid,
+    prevId,
+    mesaj: stripBirMesaj(mesaj),
+    // sohbet ozeti (liste guncellemesi icin — agir mesaj listesi GITMEZ)
+    ozet: {
+      name: chat.name,
+      isGroup: chat.isGroup,
+      description: chat.isGroup ? (chat.description || '') : '',
+      avatar: chat.avatar || null,
+      memberCount: chat.memberCount || 0,
+      lastTime: chat.lastTime,
+      lastTs: chat.lastTs,
+      unread: chat.unread || 0,
+      hasMention: chat.hasMention || false,
+      customName: chat.customName,
+      atananlar: chatAssignments.get(jid) || [],
+      etiketler: chatLabels.get(jid) || [],
+    },
+  });
 }
 
 // raw + key (buyuk/hassas alanlar) panele gonderilmez — sadece sunucuda tutulur
@@ -4610,7 +4656,7 @@ async function startWA(lineId = 'ofis') {
               delete target.reactionBy;
               delete target.myReaction;
             }
-            broadcastHat(lineId, { type: 'message', jid, chat: stripRaw(chat) });
+            broadcastHat(lineId, { type: 'msgUpdate', jid, mesaj: stripBirMesaj(target) });
             if (db.isReady()) db.saveMessage(jid, target, lineId).catch(() => {}); // kalici (yenileyince kaybolmasin)
           }
         }
@@ -4659,7 +4705,7 @@ async function startWA(lineId = 'ofis') {
             });
             degisti = true;
           }
-          if (degisti) { broadcastHat(lineId, { type: 'message', jid, chat: stripRaw(c) }); if (db.isReady()) db.saveChat(c, lineId).catch(() => {}); }
+          if (degisti) { broadcastHat(lineId, { type: 'msgUpdate', jid, ozet: { name: c.name, description: c.isGroup?(c.description||''):'', memberCount: c.memberCount||0, avatar: c.avatar||null } }); if (db.isReady()) db.saveChat(c, lineId).catch(() => {}); }
         }).catch(() => {});
         // Hala sayi adindaysa: arka planda artan araliklarla TEKRAR TEKRAR dene
         if (/^\d+$/.test(chatName)) {

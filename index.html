@@ -2668,6 +2668,15 @@ function connect(){
       }
       renderList(); updateTitle();
     }
+    // ===== HAFIF: tek yeni mesaj geldi (60 mesaj degil) — ANINDA + EKSIKSIZ =====
+    else if(d.type==='msgAppend'){ handleMsgAppend(d); }
+    // ===== HAFIF: var olan bir mesaj guncellendi (medya indi, cozuldu, tik vs.) =====
+    else if(d.type==='msgUpdate'){ handleMsgUpdate(d); }
+    // ===== Eksik tespit edilince sunucu tam sohbeti gonderir =====
+    else if(d.type==='chatSync'){
+      // tam sohbet geldi (eksik vardi) -> oldugu gibi yerlestir
+      if(d.chat){ chats[d.jid]=d.chat; if(activeJid===d.jid) renderMessagesDebounced(chats[d.jid]); renderList(); updateTitle(); }
+    }
     else if(d.type==='newChatResult'){ handleNewChatResult(d); }
     else if(d.type==='chatMerged'){
       // iki sohbet birlesti: eski jid'i kaldir, aciksa yeniye gec
@@ -6914,6 +6923,101 @@ function seekVoice(e,aid){
   const r=track.getBoundingClientRect();
   const pct=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
   if(audio.duration) audio.currentTime=pct*audio.duration;
+}
+
+// ===== HAFIF MESAJ İŞLEME: tek mesaj ekle/güncelle + EKSİK GARANTİSİ =====
+// Sunucu artık her mesajda 60 mesaj göndermiyor, sadece YENİ mesajı gönderiyor (trafik ~40x az).
+// Eksik olmaması için: her mesajda "önceki mesaj id'si" (prevId) gelir. Bizim son mesajımız
+// prevId ile uyuşmuyorsa BİR MESAJ KAÇIRDIK demektir -> o sohbet için tam senkron isteriz.
+function handleMsgAppend(d){
+  const jid=d.jid;
+  let c=chats[jid];
+  // Sohbet panelde hiç yoksa: tam senkron iste (ilk defa görülüyor)
+  if(!c){
+    if(connected) ws.send(JSON.stringify({type:'syncChat', jid}));
+    c=chats[jid]={jid, messages:[], ...(d.ozet||{})}; // geçici iskelet, senkron gelince dolar
+  }
+  // sohbet özetini güncelle (isim, açıklama, son zaman, okunmamış, atama, etiket)
+  if(d.ozet){
+    const o=d.ozet;
+    if(o.name!==undefined) c.name=o.name;
+    if(o.isGroup!==undefined) c.isGroup=o.isGroup;
+    if(o.description!==undefined) c.description=o.description;
+    if(o.avatar) c.avatar=o.avatar;
+    if(o.memberCount!==undefined) c.memberCount=o.memberCount;
+    if(o.lastTime!==undefined) c.lastTime=o.lastTime;
+    if(o.lastTs!==undefined) c.lastTs=o.lastTs;
+    if(o.unread!==undefined) c.unread=o.unread;
+    if(o.customName!==undefined){ c.customName=o.customName; if(o.customName) c.name=o.customName; }
+    if(o.atananlar!==undefined) c.atananlar=o.atananlar;
+    if(o.etiketler!==undefined){ c.etiketler=o.etiketler; _chatLabels[jid]=o.etiketler; }
+  }
+  if(!c.messages) c.messages=[];
+  const m=d.mesaj;
+  if(!m){ renderList(); return; }
+  // ZATEN VAR MI? (aynı mesaj iki kez gelmesin)
+  if(m.id && c.messages.some(x=>x.id===m.id)){
+    const v=c.messages.find(x=>x.id===m.id);
+    Object.assign(v, m); // sadece güncelle
+  } else {
+    // ─── EKSİK TESPİTİ ───
+    const sonId = c.messages.length ? c.messages[c.messages.length-1].id : null;
+    if(d.prevId && sonId && d.prevId!==sonId && !c.messages.some(x=>x.id===d.prevId)){
+      if(connected) ws.send(JSON.stringify({type:'syncChat', jid})); // mesaj kaçtı -> tam senkron
+    }
+    c.messages.push(m);
+    if(c.messages.length>400) c.messages=c.messages.slice(-400);
+  }
+  // bahsedilme (mention) — bana mı?
+  if(m.mentionsMe){
+    const u=currentUser&&currentUser.username;
+    const benAdmin=currentUser&&currentUser.role==='admin';
+    const kime=m.bahsedilmeKime;
+    if(!kime) c.hasMention=true;
+    else if(kime==='__admins__'){ if(benAdmin) c.hasMention=true; }
+    else if(Array.isArray(kime)){ if(u&&kime.includes(u)) c.hasMention=true; }
+  }
+  if(archived.has(jid) && jid!==activeJid) archived.delete(jid);
+  if(m && !m.fromMe && jid!==activeJid) playPing();
+  if(jid===activeJid){
+    c.unread=0; c.hasMention=false;
+    updateConvHeader(c, jid);
+    renderMessagesDebounced(c);
+    if(m && !m.fromMe && connected) ws.send(JSON.stringify({type:'markRead', jid}));
+    if(document.getElementById('infoPanel').classList.contains('show')) openInfo();
+  }
+  renderList(); updateTitle();
+}
+// Var olan bir mesaj güncellendi (medya indi, çözüldü, tik değişti) VEYA sohbet özeti (okundu)
+function handleMsgUpdate(d){
+  const c=chats[d.jid];
+  if(!c) return;
+  // özet güncellemesi (okundu/bahsedilme VEYA grup bilgisi: isim/açıklama/üye/avatar)
+  if(d.ozet){
+    const o=d.ozet;
+    if(o.unread!==undefined) c.unread=o.unread;
+    if(o.hasMention!==undefined) c.hasMention=o.hasMention;
+    if(o.name!==undefined) c.name=o.name;
+    if(o.description!==undefined) c.description=o.description;
+    if(o.memberCount!==undefined) c.memberCount=o.memberCount;
+    if(o.avatar) c.avatar=o.avatar;
+    if(o.members!==undefined) c.members=o.members;
+    // açık sohbetse başlığı + bilgi panelini tazele (açıklama anında görünsün)
+    if(d.jid===activeJid){ updateConvHeader(c, d.jid); if(document.getElementById('infoPanel').classList.contains('show')) openInfo(); }
+    renderList(); updateTitle();
+  }
+  // mesaj güncellemesi
+  if(d.mesaj){
+    if(!c.messages) return;
+    const m=c.messages.find(x=>x.id===d.mesaj.id);
+    if(m){
+      Object.assign(m, d.mesaj);
+      if(d.jid===activeJid) renderMessagesDebounced(c);
+      renderList();
+    } else {
+      if(connected) ws.send(JSON.stringify({type:'syncChat', jid:d.jid})); // eksik -> senkron
+    }
+  }
 }
 
 // yanitlanan mesaja zipla
