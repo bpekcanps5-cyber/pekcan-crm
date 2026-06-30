@@ -876,6 +876,12 @@
   .foto-isaret svg{width:17px;height:17px;color:#fff}
   .album-karo .foto-isaret{top:5px;right:5px;width:22px;height:22px}
   .album-karo .foto-isaret svg{width:14px;height:14px}
+  /* ALBÜM YAZILARI: fotoların altına yazılan notlar (ruhsat plaka vb.) */
+  .album-captionlar{margin-top:5px;display:flex;flex-direction:column;gap:4px;max-width:302px}
+  .album-caption-satir{display:flex;gap:7px;align-items:flex-start;background:rgba(0,0,0,.04);padding:5px 8px;border-radius:8px;font-size:13.5px;line-height:1.35}
+  .msg.out .album-caption-satir{background:rgba(0,0,0,.06)}
+  .album-caption-no{flex-shrink:0;font-weight:700;color:var(--brand);font-size:12px;white-space:nowrap;padding-top:1px}
+  .album-caption-yazi{white-space:pre-wrap;word-break:break-word}
   /* tam cozunurluk inene kadar onizleme hafif bulanik (yukleniyor hissi) */
   .msg img.photo.loading-thumb{filter:blur(1.5px) brightness(.92);transition:filter .3s}
   .msg video.clip{max-width:300px;width:100%;border-radius:13px;display:block;margin-bottom:3px}
@@ -5302,7 +5308,15 @@ function confirmLogout(){
     ()=>{ ws.send(JSON.stringify({type:'logout'})); showToast('Çıkış yapılıyor…'); });
 }
 
-function chatArray(){ return Object.values(chats).sort((a,b)=>(b.lastTs||0)-(a.lastTs||0)); }
+function chatArray(){
+  // Sıralama: ÖNCE sabitlenenler (pinned), sonra herkes son mesaja göre.
+  // Böylece sabit sohbet her zaman üstte kalır + liste limitine takılıp düşmez.
+  return Object.values(chats).sort((a,b)=>{
+    const pa=pinned.has(a.jid)?1:0, pb=pinned.has(b.jid)?1:0;
+    if(pa!==pb) return pb-pa;            // sabitliler önce
+    return (b.lastTs||0)-(a.lastTs||0);  // sonra yeni mesaj üste
+  });
+}
 // ACİL/UYARI emojileri: mesajda BİR TANE bile varsa "acil" sayılır -> kırmızı vurgu.
 const ACIL_EMOJILER=['🚨','📢','📣','❗','❕','‼️','⁉️','🔴','🆘','⚠️','🔔'];
 function acilMesajMi(text){
@@ -5435,7 +5449,12 @@ function visible(){
   }
   if(!LIST_LIMIT || filtered.length<=LIST_LIMIT){ _listTruncated=false; return filtered; }
   _listTruncated = true;
-  return filtered.slice(0, LIST_LIMIT);
+  // İLK LIST_LIMIT sohbeti al AMA sabitlenmiş sohbetler limitin dışında kalsa bile
+  // HER ZAMAN dahil edilsin (yoksa sabit grup son 20'de değilse listeden düşüp kayboluyordu).
+  const ilkler = filtered.slice(0, LIST_LIMIT);
+  const ilkSet = new Set(ilkler.map(c=>c.jid));
+  const eksikSabitler = filtered.slice(LIST_LIMIT).filter(c=>pinned.has(c.jid) && !ilkSet.has(c.jid));
+  return eksikSabitler.length ? ilkler.concat(eksikSabitler) : ilkler;
 }
 // gosterim sayisini degistir
 function setListLimit(n, el){
@@ -6299,7 +6318,11 @@ function renderMessages(c, searchQ){
   // Arka arkaya gelen (aynı gönderen, yakın zaman, başka mesaj araya girmeden) fotoğrafları
   // tek albüm karosunda göster (WhatsApp gibi). _albumBas: bir albümün ilk foto index'i ->
   // o albümdeki tüm foto index'leri. _albumAtla: albümün ilk fotosu DIŞINDAKİ index'ler (render'da atlanır).
+  // NOT: Yazılı (caption'lı) fotolar ARTIK albüme girer (ruhsat vb. 5 foto tek albüm olur).
+  // O fotoların yazıları albümün ALTINDA toplu gösterilir (kaybolmaz).
   const _albumBas={}; const _albumAtla=new Set();
+  // bir mesajın caption'ını bul (gelen fotoda text'te, gönderilende caption'da olabilir)
+  const _fotoYazi=(x)=> ((x && (x.caption || x.text)) || '').trim();
   {
     const msgs=c.messages||[];
     let i=0;
@@ -6314,7 +6337,6 @@ function renderMessages(c, searchQ){
               && msgs[j].fromMe===m.fromMe
               && (msgs[j].sender||'')===(m.sender||'')
               && Math.abs((msgs[j].ts||0)-(msgs[j-1].ts||0)) < 90000 // 90 sn içinde
-              && !msgs[j].caption && !msgs[j-1].caption // açıklamalı foto albüme girmesin (tek göster)
         ){ grup.push(j); j++; }
         if(grup.length>=2){ // en az 2 foto -> albüm
           _albumBas[i]=grup;
@@ -6448,6 +6470,28 @@ function renderMessages(c, searchQ){
           '<img class="photo'+yukCls+'" src="'+esc(src)+'" loading="lazy" decoding="async">'+fazlaEt+tikEt+'</div>';
       }).join('');
       body='<div class="album-grid '+gridCls+'">'+karolar+'</div>';
+      // ─── ALBÜM YAZILARI: albümdeki fotoların altına yazılan notları göster (KAYBOLMASIN) ───
+      // Ruhsat vb. fotolarda altına "şu plaka, şu araç" yazılıyor; bunları topluyoruz.
+      const yazilar=[];
+      fotolar.forEach((fm,gi)=>{
+        const y=((fm.caption||fm.text)||'').trim();
+        if(y){
+          // birden fazla fotoda yazı varsa hangi fotoya ait olduğunu numarayla belirt
+          yazilar.push({no:gi+1, yazi:y});
+        }
+      });
+      if(yazilar.length===1 && toplam<=1){
+        // tek yazı (nadiren) -> düz göster
+        body+='<div class="caption">'+hlight(yazilar[0].yazi,searchQ)+'</div>';
+      } else if(yazilar.length>0){
+        // birden fazla foto/yazı -> her birini "Foto N: yazı" şeklinde göster
+        let yHtml='<div class="album-captionlar">';
+        yazilar.forEach(y=>{
+          yHtml+='<div class="album-caption-satir"><span class="album-caption-no">📷 '+y.no+'</span><span class="album-caption-yazi">'+hlight(y.yazi,searchQ)+'</span></div>';
+        });
+        yHtml+='</div>';
+        body+=yHtml;
+      }
     } else if(m.kind==='image'&&(m.mediaUrl||m.thumb)){
       // Tam cozunurluk indiyse onu, inmediyse ONIZLEMEYI (thumb) goster -> foto ANINDA gorunur.
       const fotoSrc = m.mediaUrl || m.thumb;

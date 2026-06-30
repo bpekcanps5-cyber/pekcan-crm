@@ -3458,8 +3458,10 @@ function describeMessage(m) {
 
   if (msg.conversation) return { kind: 'text', text: msg.conversation };
   if (msg.extendedTextMessage?.text) return { kind: 'text', text: msg.extendedTextMessage.text };
-  if (msg.imageMessage) return { kind: 'image', text: msg.imageMessage.caption || '' };
-  if (msg.videoMessage) return { kind: 'video', text: msg.videoMessage.caption || '' };
+  // FOTO/VIDEO: WhatsApp'ta gorsele yazilan not (caption). Hem text hem caption alanina
+  // koyariz; boylece panel (albüm caption'i icin caption'a bakar, eski kod text'e bakar) ikisini de bulur.
+  if (msg.imageMessage) { const c = msg.imageMessage.caption || ''; return { kind: 'image', text: c, caption: c }; }
+  if (msg.videoMessage) { const c = msg.videoMessage.caption || ''; return { kind: 'video', text: c, caption: c }; }
   if (msg.audioMessage) return { kind: 'audio', text: '' };
   // BELGE: dosya adi + (varsa) ACIKLAMA metni (caption). WhatsApp'ta belgeye yazilan not
   // documentMessage.caption'da VEYA documentWithCaptionMessage sarmalayicisinda gelir.
