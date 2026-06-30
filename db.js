@@ -646,6 +646,14 @@ async function loadInternalConversation(userA, userB, limit = 200) {
 async function listInternalConversations(username) {
   if (!aktif) return [];
   try {
+    // KISIYE OZEL GIZLEME: kullanici bir sohbeti "benden gizle" yaptiysa, o sohbet
+    // gizleme zamanindan sonra YENI mesaj gelene kadar listede gorunmez (WhatsApp gibi).
+    // Gizleme bilgisi settings'te: key='im_gizli_<username>' -> { other_user: gizlemeTs }
+    let gizliler = {};
+    try {
+      const g = await getSetting('im_gizli_' + username, null);
+      if (g && typeof g === 'object') gizliler = g;
+    } catch (_) {}
     // Bu kullanicinin dahil oldugu tum mesajlar; karsi tarafa gore grupla
     const r = await pool.query(
       `SELECT
@@ -660,8 +668,28 @@ async function listInternalConversations(username) {
        ORDER BY last_ts DESC`,
       [username]
     );
-    return r.rows;
+    // gizlenenleri ele: gizleme zamanindan SONRA mesaj yoksa listeden cikar
+    const liste = r.rows.filter(row => {
+      const gizlemeTs = gizliler[row.other_user];
+      if (!gizlemeTs) return true; // gizli degil -> goster
+      // gizlemeden sonra yeni mesaj geldiyse tekrar goster, yoksa gizle
+      return Number(row.last_ts) > Number(gizlemeTs);
+    });
+    return liste;
   } catch (e) { return []; }
+}
+
+// Bir ic mesaj sohbetini KISIYE OZEL gizle (karsi taraf etkilenmez).
+// gizleme zamanini kaydeder; o ana kadarki mesajlar bu kullanicidan gizlenir.
+async function hideInternalConversation(username, other) {
+  if (!aktif) return { ok: false };
+  try {
+    let gizliler = {};
+    try { const g = await getSetting('im_gizli_' + username, null); if (g && typeof g === 'object') gizliler = g; } catch (_) {}
+    gizliler[other] = Date.now(); // su anki zaman -> bu ana kadarki her sey gizli
+    await saveSetting('im_gizli_' + username, gizliler);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
 }
 
 // Bir konusmayi okundu isaretle (karsi taraftan gelen okunmamislar)
@@ -1381,6 +1409,7 @@ module.exports = {
   saveInternalMessage, loadInternalConversation, listInternalConversations,
   markInternalRead, internalUnreadCount,
   deleteInternalMessage, editInternalMessage,
+  hideInternalConversation,
   saveGroupMessage, loadGroupMessages, deleteGroupMessage, editGroupMessage,
   createPoll, votePoll, getPollResults, getPollsResults,
   GRUP_CONV_KEY,

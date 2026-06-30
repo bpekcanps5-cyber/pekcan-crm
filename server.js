@@ -1524,6 +1524,16 @@ wss.on('connection', (ws) => {
         return;
       }
 
+      // Ic mesaj SOHBETINI gizle (KISIYE OZEL — sadece benden gizlenir, karsi taraf gormeye devam eder)
+      if (msg.type === 'internalHide') {
+        if (!ws._username || !db.isReady()) return;
+        const r = await db.hideInternalConversation(ws._username, msg.other);
+        if (!r.ok) { ws.send(JSON.stringify({ type: 'opError', error: 'Sohbet gizlenemedi.' })); return; }
+        // bu kullaniciya onayla -> panel listeden cikarsin
+        ws.send(JSON.stringify({ type: 'internalConvHidden', other: msg.other }));
+        return;
+      }
+
       // Ic mesaj DUZENLE (sadece kendi mesajini, sadece metin)
       if (msg.type === 'internalEdit') {
         if (!ws._username || !db.isReady()) return;
