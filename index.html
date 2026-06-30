@@ -5483,9 +5483,20 @@ function renderList(){
 _renderListRaw=function(){
   const list=document.getElementById('chatList');
   const vis=visible();
-  // sabitlenenleri ust gruba al (arsiv gorunumunde sabitleme yok)
-  const pins = currentFilter==='archived'?[]:vis.filter(c=>pinned.has(c.jid));
-  const normal = vis.filter(c=>!pinned.has(c.jid) || currentFilter==='archived');
+  // ── SABİTLENENLER: filtreden/etiketten BAĞIMSIZ her zaman üstte göster ──
+  // (Eskiden sabitler 'vis'ten alınıyordu; etikete uymayan sabit gizleniyordu.
+  //  Artık doğrudan chats'ten çekilir -> hangi etikette/filtrede olursan ol sabit üstte kalır.)
+  // Arşiv görünümünde sabitleme yok. Arama yapılırken de normal sıra (alaka) korunur.
+  let pins=[];
+  if(currentFilter!=='archived' && !searchTerm){
+    pins = chatArray().filter(c=>pinned.has(c.jid) && !archived.has(c.jid));
+  } else if(currentFilter!=='archived' && searchTerm){
+    // aramada: sadece aramaya uyan sabitler (vis içinden), alaka sırası bozulmasın
+    pins = vis.filter(c=>pinned.has(c.jid));
+  }
+  const pinSet=new Set(pins.map(c=>c.jid));
+  // normal liste: sabit OLMAYANLAR (sabitler zaten üstte gösterilecek)
+  const normal = vis.filter(c=>!pinSet.has(c.jid) || currentFilter==='archived');
   let html='';
   if(pins.length){ html+='<div class="list-section">Sabitlenenler</div>'; html+=pins.map(chatRow).join(''); html+='<div class="list-section">Diger sohbetler</div>'; }
   html+=normal.map(chatRow).join('');
@@ -5503,10 +5514,10 @@ _renderListRaw=function(){
     }
   }
   list.innerHTML=html;
-  // "Sonuç bulunamadı" SADECE hem sohbet hem mesaj sonucu yoksa gösterilsin.
+  // "Sonuç bulunamadı" SADECE hem sohbet hem mesaj hem SABİT sonucu yoksa gösterilsin.
   // (Eskiden vis.length=0 olunca mesaj sonuçlarını da eziyordu -> mesaj araması görünmüyordu.)
   const mesajSonucVar = searchTerm && _mesajAramaListesi && _mesajAramaListesi.length>0;
-  if(!vis.length && !mesajSonucVar){
+  if(!vis.length && !mesajSonucVar && !pins.length){
     list.innerHTML='<div style="padding:40px 20px;text-align:center;color:var(--faint);font-size:13px">'+(currentFilter==='archived'?'Arsivde sohbet yok.':(searchTerm?'Sonuç bulunamadı.':'Henuz mesaj yok.<br>Birinden mesaj gelince burada gorunecek.'))+'</div>';
   }
   // SAYAÇLAR: tek geciste hesapla (eskiden chatArray()+filter 7-8 kez cagriliyordu -> yavaslik).
