@@ -1649,6 +1649,7 @@
         <div style="margin-left:auto;display:flex;gap:6px">
           <button class="im-head-btn" id="imPinBtn" title="Sohbeti sabitle" onclick="imSabitleToggle()">📌</button>
           <button class="im-head-btn" id="imThemeBtn" title="Tema değiştir" onclick="imTemaPaneliAc()">🎨</button>
+          <button class="im-head-btn" id="imDeleteBtn" title="Sohbeti sil (benden gizle)" onclick="imSohbetSil()">🗑️</button>
         </div>
       </div>
       <div class="messages" id="internalMessages"></div>
@@ -2839,6 +2840,7 @@ function connect(){
     else if(d.type==='internalUnread'){ setInternalBadge(d.count); }
     else if(d.type==='internalMsgDeleted'){ handleInternalDeleted(d); }
     else if(d.type==='internalMsgEdited'){ handleInternalEdited(d); }
+    else if(d.type==='internalConvHidden'){ handleInternalConvHidden(d); }
     else if(d.type==='groupConversation'){ renderGroupConversation(d); }
     else if(d.type==='groupMessage'){ handleGroupMessage(d.msg); }
     else if(d.type==='groupMsgDeleted'){ handleGroupDeleted(d); }
@@ -3681,6 +3683,7 @@ function openInternalChat(other){
   // sohbet açılınca: kayıtlı temayı uygula, pin butonunu güncelle, yazı stilini sıfırla
   document.getElementById('iconvSub').textContent='Ekip içi mesaj';
   document.getElementById('imPinBtn').style.display=''; // birebirde pin görünür
+  document.getElementById('imDeleteBtn').style.display=''; // birebirde sil görünür
   imGrupAnketBtnGoster(false); // birebirde anket butonu gizli
   imTemaUygula(_imAktifTema);
   imPinButonGuncelle();
@@ -3934,6 +3937,7 @@ function openGroupChat(){
   imTemaUygula(_imAktifTema);
   // pin butonunu gizle (grup sabitlenmez), anket butonunu göster
   document.getElementById('imPinBtn').style.display='none';
+  document.getElementById('imDeleteBtn').style.display='none'; // grup silinmez
   imGrupAnketBtnGoster(true);
   imStilSec('normal');
   if(_mainTab==='internal') renderInternalList({users:_internalUsers, me:_internalMe, items:_sonInternalItems});
@@ -4382,6 +4386,27 @@ function imPinButonGuncelle(){
   const sabit=_internalOther && _imSabitliler.includes(_internalOther);
   btn.style.color = sabit ? 'var(--brand)' : '';
   btn.title = sabit ? 'Sabiti kaldır' : 'Sohbeti sabitle';
+}
+
+// İç mesaj SOHBETİNİ SİL (benden gizle — karşı taraf görmeye devam eder)
+function imSohbetSil(){
+  if(!_internalOther || _internalOther==='__GRUP__') return; // grup silinmez
+  const u=_internalUsers.find(x=>x.username===_internalOther);
+  const ad=u?(u.displayName||u.username):_internalOther;
+  if(!confirm('"'+ad+'" ile olan sohbeti silmek istediğine emin misin?\n\nBu sohbet SADECE senden gizlenir, karşı taraf görmeye devam eder. Yeni mesaj gelirse tekrar görünür.')) return;
+  if(connected) ws.send(JSON.stringify({type:'internalHide', other:_internalOther}));
+}
+// Sohbet gizlendi onayı geldi -> listeden çıkar + ekranı temizle
+function handleInternalConvHidden(d){
+  // gizlenen sohbet açıksa kapat
+  if(_internalOther===d.other){
+    _internalOther=null;
+    document.getElementById('internalContent').style.display='none';
+    document.getElementById('internalEmpty').style.display='flex';
+  }
+  // listeyi tazele (gizlenen artık gelmeyecek)
+  if(connected) ws.send(JSON.stringify({type:'internalList'}));
+  showToast('🗑️ Sohbet silindi (senden gizlendi)');
 }
 
 // İç mesaj alanına tıklayınca panelleri kapat
