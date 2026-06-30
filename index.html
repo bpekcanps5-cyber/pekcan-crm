@@ -2,7 +2,10 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Pekcan CRM — Canli Panel</title>
 <style>
   /* ============================================
@@ -1392,7 +1395,91 @@
   .ip-tab:hover:not(.active){color:var(--text)}
   .um-check{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--text);cursor:pointer;padding:6px 0;user-select:none}
   .um-check input{width:18px;height:18px;cursor:pointer;accent-color:var(--brand)}
+  /* mobil geri butonu: masaüstünde GİZLİ (sadece telefonda görünür - media query'de açılır) */
+  .mobil-geri{ display:none; }
+
+  /* ============================================================
+     📱 TELEFON / MOBİL GÖRÜNÜM (sadece dar ekran ≤768px)
+     Bu blok BİLGİSAYARDA HİÇ ÇALIŞMAZ -> masaüstü görüntü birebir korunur.
+     Mantık: WhatsApp mobil gibi -> önce LİSTE tam ekran, sohbete tıklayınca
+     SOHBET tam ekran kaplar (body'ye 'sohbet-acik' sınıfı eklenir).
+     ============================================================ */
+  @media (max-width: 768px){
+    /* genel: iPhone Safari için güvenli alan (çentik) + taşma engelle */
+    .app{ height:100vh; height:100dvh; width:100vw; overflow:hidden; position:relative; }
+
+    /* sol ikon şeridi (rail): üstte yatay bar yerine, dar dikey kalsın ama incelt */
+    .rail{ width:54px; flex-shrink:0; padding-top:env(safe-area-inset-top); }
+    .rail .logo{ width:36px; height:36px; font-size:17px; }
+    .rail-btn{ width:42px; height:42px; }
+    .rail-btn svg{ width:21px; height:21px; }
+
+    /* sidebar (liste): rail'den kalan TÜM genişliği kapla */
+    .sidebar{ width:auto; flex:1; min-width:0; }
+
+    /* sohbet alanı: normalde gizli (liste görünür); sohbet açılınca tam ekran */
+    .conv{ position:fixed; inset:0; z-index:200; background:var(--chat-bg);
+           transform:translateX(100%); transition:transform .22s ease; padding-top:env(safe-area-inset-top); }
+    body.sohbet-acik .conv{ transform:translateX(0); }
+    /* sohbet açıkken alttaki liste görünmesin (performans + kayma olmasın) */
+    body.sohbet-acik .rail, body.sohbet-acik .sidebar, body.sohbet-acik .resizer{ visibility:hidden; }
+    .resizer{ display:none; } /* telefonda sütun genişliği ayarlanmaz */
+
+    /* GERİ butonu (sohbet başlığında, sadece telefonda görünür) */
+    .mobil-geri{ display:flex !important; align-items:center; justify-content:center;
+                 width:38px; height:38px; border:none; background:transparent; cursor:pointer;
+                 color:var(--text); flex-shrink:0; margin-right:4px; border-radius:50%; }
+    .mobil-geri:active{ background:var(--panel-2); }
+    .mobil-geri svg{ width:24px; height:24px; }
+
+    /* sohbet başlığı: dokunma alanı büyüsün */
+    .conv-header{ padding:10px 12px; gap:10px; }
+    .conv-avatar{ width:40px; height:40px; }
+
+    /* mesaj balonları: telefonda biraz daha geniş kullanılsın */
+    .msg{ max-width:82%; }
+    .messages{ padding:12px 10px; }
+
+    /* yazı alanı (composer): dokunmatik için rahat */
+    .composer{ padding:8px 8px calc(8px + env(safe-area-inset-bottom)) 8px; }
+    .composer textarea{ font-size:16px; } /* 16px: iPhone'da otomatik zoom'u önler */
+
+    /* bilgi paneli (grup bilgisi): telefonda tam ekran kapsın */
+    .info-panel{ position:fixed !important; inset:0; width:100% !important; z-index:300;
+                 padding-top:env(safe-area-inset-top); }
+
+    /* sağ tık menüleri / açılır paneller telefonda taşmasın */
+    .ctx-menu, .im-mesaj-menu, .reaksiyon-bilgi{ max-width:90vw; }
+
+    /* modallar: telefonda neredeyse tam ekran, kaydırılabilir */
+    .modal, .um-modal, .modal-box{ width:96vw !important; max-width:96vw !important;
+                                    max-height:90vh; overflow-y:auto; }
+    .modal-bg{ padding:8px; }
+
+    /* kontrol paneli sekmeleri telefonda yan yana sığsın (yatay kaydırma) */
+    .kontrol-tabs, .alt-sekmeler, .ip-tabs{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
+    /* lightbox (foto/pdf): telefonda tam ekran */
+    .lb-img, .im-lb-img{ max-width:96vw; max-height:80vh; }
+    .im-lb-pdf{ width:96vw; height:82vh; }
+
+    /* iç mesaj panelleri telefonda taşmasın */
+    .im-stil-panel, .im-emoji-panel{ max-height:38vh; }
+    .im-tema-grid{ grid-template-columns:1fr 1fr; }
+
+    /* dokunmatik: yatay scroll çubuklarını gizle ama kaydırma çalışsın */
+    .kontrol-tabs::-webkit-scrollbar, .alt-sekmeler::-webkit-scrollbar{ height:0; }
+  }
+
+  /* çok dar telefonlar (≤380px) için ekstra incelt */
+  @media (max-width: 380px){
+    .rail{ width:48px; }
+    .rail-btn{ width:38px; height:38px; }
+    .msg{ max-width:86%; }
+    .main-tab span{ font-size:12px; }
+  }
 </style>
+<style id="mobil-yardimci"></style>
 </head>
 <body>
 <div class="login-screen" id="loginScreen">
@@ -1537,6 +1624,7 @@
     <div id="convContent" style="display:none;flex-direction:column;min-height:0;flex:1;position:relative">
       <div class="offline-banner" id="offlineBanner" style="display:none">WhatsApp bağlı değil — mesaj gönderilemez</div>
       <div class="conv-header">
+        <button class="mobil-geri" onclick="mobilGeri()" title="Geri" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>
         <div class="conv-avatar" id="convAvatar" onclick="openInfo()"></div>
         <div class="conv-meta">
           <div class="name-row">
@@ -1644,6 +1732,7 @@
     <!-- IC MESAJ SOHBET ALANI (ekip uyesiyle yazisma) -->
     <div id="internalContent" style="display:none;flex-direction:column;min-height:0;flex:1">
       <div class="conv-header">
+        <button class="mobil-geri" onclick="mobilGeri()" title="Geri" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>
         <div class="conv-avatar" id="iconvAvatar"></div>
         <div class="conv-meta"><div class="name" id="iconvName"></div><div class="sub" id="iconvSub">Ekip içi mesaj</div></div>
         <div style="margin-left:auto;display:flex;gap:6px">
@@ -3670,6 +3759,7 @@ function renderInternalList(d){
 // Bir ekip uyesiyle konusmayi ac
 function openInternalChat(other){
   _internalOther=other;
+  document.body.classList.add('sohbet-acik'); // 📱 telefonda iç mesaj sohbetini tam ekran aç
   const u=_internalUsers.find(x=>x.username===other);
   const ad=u?(u.displayName||u.username):other;
   document.getElementById('iconvName').textContent=ad;
@@ -3926,6 +4016,7 @@ function handleInternalEdited(d){
 // ========================================================================
 function openGroupChat(){
   _internalOther='__GRUP__';
+  document.body.classList.add('sohbet-acik'); // 📱 telefonda grup sohbetini tam ekran aç
   _grupUnread=0;
   document.getElementById('iconvName').textContent='2 AYLIK SİGORTA MERKEZİ';
   document.getElementById('iconvAvatar').textContent='🏢';
@@ -5752,8 +5843,18 @@ function baslatTazeleme(jid){
   }, 4000);
 }
 
+// 📱 TELEFON: sohbetten listeye geri dön (sohbet tam ekranını kapat)
+function mobilGeri(){
+  document.body.classList.remove('sohbet-acik');
+  activeJid=null;
+  _internalOther=null;
+  // bilgi paneli açıksa da kapat
+  const ip=document.getElementById('infoPanel'); if(ip) ip.classList.remove('show');
+}
+
 function openChat(jid){
   activeJid=jid; clearReply();
+  document.body.classList.add('sohbet-acik'); // 📱 telefonda sohbeti tam ekran aç (masaüstünde etkisiz)
   _typingActive=false; clearTimeout(_typingTimer); // onceki sohbetin yaziyor durumunu temizle
   // sonsuz scroll durumunu sıfırla (yeni sohbette baştan başlasın)
   _eskiYukleniyor=false;
