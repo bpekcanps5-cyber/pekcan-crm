@@ -1554,7 +1554,9 @@ wss.on('connection', (ws) => {
         // GONDERIMI try-catch ile SAR: basarisiz olursa panele "gonderilemedi" bildir.
         try {
           let sent;
-          const timeoutP = () => new Promise((_, rej) => setTimeout(() => rej(new Error('gonderim zaman asimi')), 30000));
+          // TIMEOUT 30->12sn: baglanti "yari-acik" (olu) ise kullanici 30sn beklemesin;
+          // 12sn'de pes edip kirmizi unlem goster + arka planda baglantiyi tazele.
+          const timeoutP = () => new Promise((_, rej) => setTimeout(() => rej(new Error('gonderim zaman asimi')), 12000));
           // ALINTILI (yanit) gondermeyi dene; alinti BOZUKSA (eski/eksik raw) hata verir.
           // O durumda mesaji ALINTISIZ gonder ki YANIT METNI yine de gitsin (kaybolmasin).
           if (quotedOpt) {
@@ -1581,6 +1583,12 @@ wss.on('connection', (ws) => {
           }, _LID);
         } catch (e) {
           console.error('⚠️  MESAJ GONDERILEMEDI:', e.message, '| grup:', (msg.jid || '').split('@')[0]);
+          // Gonderim zaman asimina ugradiysa baglanti muhtemelen "yari-acik" (olu).
+          // _sonWaAktivite'yi eskit ki canlilik kontrolu (25sn'de bir) HEMEN devreye girip
+          // baglantiyi yenilesin — sonraki mesajlar gitsin.
+          if (_LID === 'ofis' && (e.message || '').includes('zaman asimi')) {
+            _sonWaAktivite = Date.now() - (80 * 1000); // 80sn once gibi goster -> kontrol tetiklenir
+          }
           // MESAJI yine de ekrana ekle ama HATA durumuyla (durum:-1) -> WhatsApp gibi
           // kirmizi unlem cikar, kullanici gormedigini sanmaz, silip yeniden gonderir.
           const hataId = 'fail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
@@ -3110,7 +3118,10 @@ async function fetchAllGroups() {
         const chat = chats.get(jid);
         if (gercekAd) chat.name = gercekAd;
         if (uyeSayisi) chat.memberCount = uyeSayisi;
-        if (meta.desc) chat.description = meta.desc;
+        // ACIKLAMA: meta.desc doluysa onu yaz, BOSSA eski aciklamayi SIL.
+        // (Eski hata: "if(meta.desc)" -> aciklama silinmis/bos grupta eski aciklama ekranda
+        //  kaliyordu. Artik her zaman guncelliyoruz -> yanlis/eski aciklama kalmaz.)
+        chat.description = (meta.desc && meta.desc.trim()) ? meta.desc.trim() : '';
         guncellenen++;
       }
     }
@@ -3785,6 +3796,22 @@ function videoSesliCevir(tamYol, fileName, m) {
 // ---- WhatsApp baglantisi ----
 let _waStarting = false;
 let _reconnectGecikme = 1500; // ilk gecici kopmada hizli baglan (1.5sn); ust uste koparsa backoff ile artar
+// GECE KOPMASI DUZELTMESI: ust uste basarisiz denemeleri say. Cok denenince bekleme
+// 20sn'de tavanlanir (60 yerine) VE belli arada sayac sifirlanip yeniden agresif denenir.
+// Boylece gece internet dalgalaninca sistem "60sn'de bir isteksizce" takilip kalmaz.
+let _reconnectSayac = 0;
+// CAKISMA DUZELTMESI: ayni hat icin AYNI ANDA birden fazla "yeniden baglan" tetiklenmesin
+// (canlilik kontrolu + connection.close ikisi birden tetikleyince iki soket aciliyordu).
+const _yenidenBaglaniyor = new Set(); // su an yeniden baglanma planlanmis hatlar
+function yenidenBaglanPlanla(lineId, bekle, line) {
+  if (_yenidenBaglaniyor.has(lineId)) return; // zaten planlandi, cift planlama yok
+  _yenidenBaglaniyor.add(lineId);
+  setTimeout(() => {
+    _yenidenBaglaniyor.delete(lineId);
+    if (line && line.manualLogout) return; // arada elle cikis yapildiysa baglanma
+    startWA(lineId).catch(() => {});
+  }, bekle);
+}
 // startWA(lineId): bir HATTI baslatir. Varsayilan 'ofis' (geriye uyumlu).
 // Her hat kendi auth klasorunu (auth/<lineId>) ve kendi line objesini kullanir.
 async function startWA(lineId = 'ofis') {
@@ -3877,6 +3904,8 @@ async function startWA(lineId = 'ofis') {
         myNumber = buNumara; myLID = buLID;
       }
       _reconnectGecikme = 1500;
+      _reconnectSayac = 0;          // basarili baglandi -> sayac sifir (bir dahaki kopmada yine hizli dene)
+      _yenidenBaglaniyor.delete(lineId); // varsa bekleyen plani temizle (artik bagliyiz)
       console.log(`\n✅ WhatsApp baglandi (hat: ${lineId})! Panel: http://localhost:${PORT}\n`);
       console.log(`   👤 numaram: ${buNumara}${buLID ? ' | LID: ' + buLID : ''}`);
       broadcastHat(lineId, { type: 'status', connected: true, myJid, myName });
@@ -3965,7 +3994,8 @@ async function startWA(lineId = 'ofis') {
               broadcastHat(lineId, { type: 'status', connected: false, oluBaglanti: true });
               try { waSock.end(new Error('canlilik kontrolu basarisiz')); } catch (_) {}
               try { waSock.ws?.close?.(); } catch (_) {}
-              if (!line.manualLogout) setTimeout(() => startWA(lineId), 3000); // bu HATTI yeniden baslat
+              // CAKISMA KILITLI: connection.close da tetiklenirse iki soket acilmaz.
+              yenidenBaglanPlanla(lineId, 3000, line);
             }
           }
         }, 25 * 1000); // her 25 saniyede kontrol
@@ -3995,12 +4025,21 @@ async function startWA(lineId = 'ofis') {
         broadcastHat(lineId, { type: 'status', connected: false, loggedOut: true });
         if (!line.manualLogout) setTimeout(() => startWA(lineId), 2000); // bu HATTI yeniden baslat
       } else {
-        // Gecici kopma: ust uste kopmalarda WhatsApp'i kizdirmamak icin artan bekleme
-        // (3sn -> 6 -> 12 -> 24 ... en fazla 60sn). Basarili baglantida 3sn'ye doner.
-        const bekle = _reconnectGecikme;
-        _reconnectGecikme = Math.min(_reconnectGecikme * 2, 60000);
-        console.log(`Baglanti koptu, ${Math.round(bekle / 1000)} sn sonra yeniden baglaniyorum...`);
-        setTimeout(() => startWA(lineId), bekle); // bu HATTI yeniden baslat
+        // Gecici kopma. GECE KOPMASI DUZELTMESI:
+        //  - Bekleme tavani 60sn DEGIL 20sn (gece saatlerce "olu" beklemede kalmasin).
+        //  - Her 5 basarisiz denemede bir bekleme SIFIRLANIR -> tekrar hizli/agresif dener.
+        //    Boylece internet gece duzelince sistem 20sn beklemeden, hemen yakalar.
+        _reconnectSayac++;
+        let bekle = _reconnectGecikme;
+        _reconnectGecikme = Math.min(_reconnectGecikme * 2, 20000); // tavan 20sn
+        if (_reconnectSayac % 5 === 0) {
+          // 5 denemede bir: agresif moda don (gece takilip kalmayi kirar)
+          _reconnectGecikme = 1500;
+          bekle = 1500;
+          console.log('   🔄 Ust uste kopma — agresif yeniden baglanmaya donuluyor (sayac sifirlandi).');
+        }
+        console.log(`Baglanti koptu (deneme ${_reconnectSayac}), ${Math.round(bekle / 1000)} sn sonra yeniden baglaniyorum...`);
+        yenidenBaglanPlanla(lineId, bekle, line); // CAKISMA KILITLI: ayni anda 2 plan olmaz
       }
     }
   });
