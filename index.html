@@ -505,8 +505,78 @@
   .im-stil-btn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 12px;border:1.5px solid var(--border);background:var(--panel-2);border-radius:10px;cursor:pointer;min-width:78px;transition:all .14s}
   .im-stil-btn:hover{border-color:var(--brand);transform:translateY(-1px)}
   .im-stil-btn.aktif{border-color:var(--brand);background:var(--brand-soft)}
-  .im-stil-ornek{font-size:17px;line-height:1}
+  .im-stil-ornek{font-size:17px;line-height:1;font-weight:700}
   .im-stil-ad{font-size:11px;color:var(--muted)}
+
+  /* ============================================================
+     14 ANİMASYONLU YAZI EFEKTİ (.efk-<id>)
+     Hem önizlemede (.im-stil-ornek) hem mesajda (.im-efekt-yazi) kullanılır.
+     ============================================================ */
+  .im-efekt-yazi{font-weight:700;font-size:15px;display:inline-block}
+  .im-msg.im-efektli{background:#1a1a1a!important;color:#fff} /* efektli mesaj koyu zeminde parlar */
+  .im-msg.im-efektli.out{background:#15202b!important}
+  .im-msg.im-efektli .im-time{color:rgba(255,255,255,.55)}
+  .im-msg.im-efektli .im-sender{filter:brightness(1.4)}
+
+  /* 🔥 ATEŞ — alev renkleri akar + titrer */
+  @keyframes efkAtes{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+  @keyframes efkAtesTitre{0%,100%{transform:translateY(0) scale(1)}25%{transform:translateY(-1px) scale(1.02)}75%{transform:translateY(1px)}}
+  .efk-ates{background:linear-gradient(90deg,#ff0000,#ff7b00,#ffea00,#ff7b00,#ff0000);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:efkAtes 2s linear infinite,efkAtesTitre .4s ease-in-out infinite;text-shadow:0 0 12px rgba(255,90,0,.6);filter:drop-shadow(0 0 4px rgba(255,120,0,.8))}
+
+  /* 🌌 UZAY — yıldız parıltılı mor-mavi */
+  @keyframes efkUzay{0%,100%{background-position:0% 50%;text-shadow:0 0 8px #6d28d9,0 0 16px #2563eb}50%{background-position:100% 50%;text-shadow:0 0 14px #a855f7,0 0 24px #3b82f6}}
+  .efk-uzay{background:linear-gradient(90deg,#6d28d9,#2563eb,#06b6d4,#a855f7,#6d28d9);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:efkUzay 3s linear infinite}
+
+  /* 💥 PATLAMA — sarı/turuncu parlayıp büyür */
+  @keyframes efkPatlama{0%{transform:scale(1);text-shadow:0 0 0 #ff6b00}40%{transform:scale(1.12);text-shadow:0 0 18px #ffd000,0 0 30px #ff6b00}100%{transform:scale(1);text-shadow:0 0 6px #ff6b00}}
+  .efk-patlama{color:#ffcc00;animation:efkPatlama 1s ease-in-out infinite;text-shadow:0 0 10px #ff6b00}
+
+  /* ❄️ BUZ — buz mavisi parlama + hafif sallanma */
+  @keyframes efkBuz{0%,100%{text-shadow:0 0 8px #7dd3fc,0 0 14px #38bdf8;filter:brightness(1)}50%{text-shadow:0 0 16px #e0f2fe,0 0 26px #7dd3fc;filter:brightness(1.3)}}
+  .efk-buz{background:linear-gradient(180deg,#e0f2fe,#7dd3fc,#0ea5e9);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:efkBuz 2.5s ease-in-out infinite}
+
+  /* 💡 NEON — yeşil/pembe neon yanıp söner */
+  @keyframes efkNeon{0%,100%{text-shadow:0 0 5px #0ff,0 0 10px #0ff,0 0 20px #0ff,0 0 40px #0ff;opacity:1}50%{text-shadow:0 0 8px #f0f,0 0 16px #f0f,0 0 28px #f0f;opacity:.92}}
+  .efk-neon{color:#fff;animation:efkNeon 1.5s ease-in-out infinite}
+
+  /* ✨ ALTIN — altın parıltısı akar */
+  @keyframes efkAltin{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+  .efk-altin{background:linear-gradient(90deg,#9a6a00,#ffd700,#fff3b0,#ffd700,#9a6a00);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:efkAltin 2.5s linear infinite;filter:drop-shadow(0 0 3px rgba(255,215,0,.7))}
+
+  /* 🌈 GÖKKUŞAĞI — tüm renkler akar */
+  @keyframes efkGok{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+  .efk-gokkusagi{background:linear-gradient(90deg,#ff0000,#ff7b00,#ffea00,#00e000,#0080ff,#8b00ff,#ff0000);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:efkGok 3s linear infinite}
+
+  /* 🟢 MATRIX — yeşil dijital parlama */
+  @keyframes efkMatrix{0%,100%{text-shadow:0 0 6px #00ff41;opacity:1}50%{text-shadow:0 0 12px #00ff41,0 0 20px #008f11;opacity:.85}}
+  .efk-matrix{color:#00ff41;font-family:'Courier New',monospace;animation:efkMatrix 1.2s steps(2) infinite;text-shadow:0 0 6px #00ff41}
+
+  /* 🔆 LAZER — kırmızı lazer tarama */
+  @keyframes efkLazer{0%,100%{text-shadow:0 0 6px #ff0000,0 0 12px #ff0000;letter-spacing:0}50%{text-shadow:0 0 14px #ff3333,0 0 28px #ff0000;letter-spacing:.5px}}
+  .efk-lazer{color:#ff2222;animation:efkLazer 1s ease-in-out infinite;text-shadow:0 0 8px #ff0000}
+
+  /* 🩸 KAN — koyu kırmızı damlama parıltısı */
+  @keyframes efkKan{0%,100%{text-shadow:0 0 6px #8b0000,0 2px 4px #5c0000;filter:brightness(1)}50%{text-shadow:0 0 12px #c40000,0 3px 8px #8b0000;filter:brightness(1.2)}}
+  .efk-kan{background:linear-gradient(180deg,#ff3030,#8b0000);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:efkKan 2s ease-in-out infinite}
+
+  /* 🌊 DALGA — okyanus mavisi dalgalanır */
+  @keyframes efkDalga{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+  .efk-okyanus{background:linear-gradient(90deg,#0369a1,#0ea5e9,#22d3ee,#0ea5e9,#0369a1);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:efkDalga 2.5s linear infinite}
+
+  /* ⚡ ELEKTRİK — sarı şimşek titremesi */
+  @keyframes efkElektrik{0%,100%{text-shadow:0 0 6px #fde047,0 0 12px #facc15;transform:translateX(0)}25%{transform:translateX(-1px)}50%{text-shadow:0 0 14px #fff,0 0 24px #fde047;transform:translateX(1px)}75%{transform:translateX(-1px)}}
+  .efk-elektrik{color:#fde047;animation:efkElektrik .25s linear infinite;text-shadow:0 0 8px #facc15}
+
+  /* 🏆 3D ALTIN — kabartmalı altın */
+  .efk-gold3d{color:#ffd700;text-shadow:0 1px 0 #b8860b,0 2px 0 #9a6a00,0 3px 0 #7a5400,0 4px 6px rgba(0,0,0,.5);animation:efkAltin 3s linear infinite;background:linear-gradient(90deg,#9a6a00,#ffd700,#fff3b0,#ffd700);background-size:300% 100%;-webkit-background-clip:text;background-clip:text}
+
+  /* 🌠 AURORA — kuzey ışıkları yeşil/mor */
+  @keyframes efkAurora{0%,100%{background-position:0% 50%;filter:hue-rotate(0deg)}50%{background-position:100% 50%;filter:hue-rotate(40deg)}}
+  .efk-aurora{background:linear-gradient(90deg,#00ffa3,#00d4ff,#a855f7,#00ffa3);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:efkAurora 4s ease-in-out infinite;filter:drop-shadow(0 0 4px rgba(0,255,163,.5))}
+
+  /* önizlemede koyu zemin (efektler parlasın) */
+  .im-stil-btn .im-stil-ornek[class*="efk-"]{background-color:#1a1a1a;padding:6px 10px;border-radius:6px}
+
   /* emoji paneli (iç mesaj) */
   .im-emoji-panel{display:flex;flex-wrap:wrap;gap:2px;padding:10px 14px;background:var(--panel);border-top:1px solid var(--border);max-height:200px;overflow-y:auto}
   .im-emoji-btn{width:38px;height:38px;border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:21px;display:flex;align-items:center;justify-content:center;transition:background .12s}
@@ -3573,7 +3643,7 @@ function renderInternalList(d){
       return '<div class="chat'+aktif+'" onclick="openInternalChat(\''+esc(it.other_user)+'\')">'
         + '<div class="avatar" style="background:'+gradientFor(ad)+'">'+esc(initials(ad))+'</div>'
         + '<div class="chat-main"><div class="chat-top"><span class="chat-name">'+esc(ad)+'</span>'+sabitIk+'</div>'
-        + '<div class="chat-bottom"><span class="chat-last">'+esc(sonKim)+esc(((it.last_text||'').trim()||'📎 Dosya').slice(0,40))+'</span>'+rozet+'</div></div>'
+        + '<div class="chat-bottom"><span class="chat-last">'+esc(sonKim)+esc((imEfektCoz((it.last_text||'').trim()).metin||'📎 Dosya').slice(0,40))+'</span>'+rozet+'</div></div>'
         + '</div>';
     }).join('');
   }
@@ -3660,6 +3730,7 @@ function drawInternalMessages(){
       continue;
     }
     let icerik='';
+    let efektCls=''; // balona eklenecek efekt sınıfı (varsa)
     if(medya){
       if(kind==='image'){
         // FOTO: panel içinde lightbox'ta açılır (yeni sekme değil)
@@ -3677,7 +3748,14 @@ function drawInternalMessages(){
         if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
       }
     } else {
-      icerik=esc(m.text);
+      // EFEKT: metinde gizli efekt işareti var mı? Varsa metni efektli span'a sar.
+      const ef = imEfektCoz(m.text);
+      if(ef.efekt){
+        efektCls=' im-efektli';
+        icerik='<span class="im-efekt-yazi efk-'+ef.efekt+'">'+esc(ef.metin)+'</span>';
+      } else {
+        icerik=esc(ef.metin);
+      }
     }
     // DÜZENLENDİ etiketi
     const duzenlendiEt = (m.edited || m.duzenlendi) ? '<span class="im-duzenlendi">düzenlendi</span>' : '';
@@ -3692,7 +3770,7 @@ function drawInternalMessages(){
     }
     // SAĞ TIK: sadece KENDİ mesajıma sil/düzenle menüsü. data-mid ile mesajı tanı.
     const sagTik = ben ? ' oncontextmenu="imMesajMenu(event,\''+esc(mid)+'\','+(kind==='text'&&!medya?'true':'false')+');return false"' : '';
-    html+='<div class="im-msg '+(ben?'out':'in')+grpCls+'" data-mid="'+esc(mid)+'"'+sagTik+'>'+isimHtml+icerik+'<div class="im-time">'+duzenlendiEt+esc(saat)+tik+'</div></div>';
+    html+='<div class="im-msg '+(ben?'out':'in')+grpCls+efektCls+'" data-mid="'+esc(mid)+'"'+sagTik+'>'+isimHtml+icerik+'<div class="im-time">'+duzenlendiEt+esc(saat)+tik+'</div></div>';
   }
   box.innerHTML=html;
   box.scrollTop=box.scrollHeight;
@@ -3739,7 +3817,7 @@ function imMesajDuzenleBasla(){
   if(!m) return;
   _imDuzenleMid=mid;
   const inp=document.getElementById('internalInput');
-  inp.value=m.text||'';
+  inp.value=imEfektCoz(m.text||'').metin;
   inp.focus();
   autoGrow(inp);
   // düzenleme modu göstergesi
@@ -3917,6 +3995,7 @@ function drawGroupMessages(){
     const kind=m.kind||'text';
     const dosyaAd=m.fileName||m.file_name||'belge';
     let icerik='';
+    let efektCls='';
     if(medya){
       if(kind==='image'){
         icerik='<img src="'+esc(medya)+'" class="im-img" onclick="imLightboxAc(\''+esc(medya)+'\',\'image\',\''+esc(dosyaAd)+'\')" style="cursor:zoom-in">';
@@ -3927,10 +4006,15 @@ function drawGroupMessages(){
         icerik='<div class="im-dosya" onclick="imDosyaAc(\''+esc(medya)+'\',\''+esc(dosyaAd)+'\','+(pdfMi?'true':'false')+')" style="cursor:pointer"><span class="im-dosya-ik">'+(pdfMi?'📕':'📄')+'</span><span class="im-dosya-ad">'+esc(dosyaAd)+'</span><span class="im-dosya-in">👁 aç</span></div><a href="'+inSrc+'" download="'+esc(dosyaAd)+'" class="im-dosya-indir">⬇ indir</a>';
         if(m.text) icerik+='<div class="im-caption">'+esc(m.text)+'</div>';
       }
-    } else { icerik=esc(m.text); }
+    } else {
+      // EFEKT çöz (grupta da efektli mesajlar görünsün)
+      const ef=imEfektCoz(m.text);
+      if(ef.efekt){ efektCls=' im-efektli'; icerik='<span class="im-efekt-yazi efk-'+ef.efekt+'">'+esc(ef.metin)+'</span>'; }
+      else { icerik=esc(ef.metin); }
+    }
     const duzenlendiEt=m.edited?'<span class="im-duzenlendi">düzenlendi</span>':'';
     const sagTik = ben ? ' oncontextmenu="imGrupMesajMenu(event,\''+esc(mid)+'\','+(kind==='text'&&!medya?'true':'false')+');return false"' : '';
-    html+='<div class="im-msg '+(ben?'out':'in')+grpCls+'" data-mid="'+esc(mid)+'"'+sagTik+'>'+isimHtml+icerik+'<div class="im-time">'+duzenlendiEt+esc(saat)+'</div></div>';
+    html+='<div class="im-msg '+(ben?'out':'in')+grpCls+efektCls+'" data-mid="'+esc(mid)+'"'+sagTik+'>'+isimHtml+icerik+'<div class="im-time">'+duzenlendiEt+esc(saat)+'</div></div>';
   }
   box.innerHTML=html;
   box.scrollTop=box.scrollHeight;
@@ -3938,7 +4022,7 @@ function drawGroupMessages(){
 
 // Grup mesajı/anket geldi (canlı)
 function handleGroupMessage(m){
-  _grupSonMesaj = (m.kind==='poll')?'📊 Anket':(m.text||'📎 Dosya');
+  _grupSonMesaj = (m.kind==='poll')?'📊 Anket':(imEfektCoz(m.text||'').metin||'📎 Dosya');
   if(_internalOther==='__GRUP__'){
     _grupMsgs.push(m);
     drawGroupMessages();
@@ -3993,7 +4077,7 @@ function imGrupDuzenleBasla(){
   const m=_grupMsgs.find(x=>x.id===mid); if(!m) return;
   _imGrupDuzenleMid=mid;
   const inp=document.getElementById('internalInput');
-  inp.value=m.text||''; inp.focus(); autoGrow(inp);
+  inp.value=imEfektCoz(m.text||'').metin; inp.focus(); autoGrow(inp);
   let bar=document.getElementById('imDuzenleBar');
   if(!bar){ bar=document.createElement('div'); bar.id='imDuzenleBar'; bar.className='im-duzenle-bar'; const comp=document.querySelector('#internalContent .composer'); comp.parentNode.insertBefore(bar, comp); }
   bar.innerHTML='<span>✏️ Mesajı düzenliyorsun</span><button onclick="imGrupDuzenleIptal()">✕ İptal</button>';
@@ -4124,65 +4208,73 @@ function sendInternal(){
 
 // ========================================================================
 // İÇ MESAJ — YAZI STİLLERİ (şekilli/ateşli/farklı fontlar)
-// Unicode karakter dönüşümleriyle çalışır (gerçek font değil, her cihazda görünür).
+// CSS EFEKTLERIYLE çalışır: metin DEĞİŞMEZ, balona animasyonlu efekt uygulanır.
+// Efekt bilgisi mesaja GİZLİ işaretle gömülür (\u2060EFEKT:id\u2060) -> karşı tarafta da görünür.
+// İç mesaj WhatsApp'a gitmediği için CSS serbest -> gerçek alev/parlama/animasyon olur.
 // ========================================================================
-let _imAktifStil='normal'; // seçili stil (gönderilen mesaja uygulanır)
-// Harf haritaları: normal a-z A-Z 0-9 -> özel unicode
-function _imHarita(metin, kucukBas, buyukBas, rakamBas){
-  let out='';
-  for(const ch of metin){
-    const c=ch.charCodeAt(0);
-    if(ch>='a'&&ch<='z' && kucukBas) out+=String.fromCodePoint(kucukBas + (c-97));
-    else if(ch>='A'&&ch<='Z' && buyukBas) out+=String.fromCodePoint(buyukBas + (c-65));
-    else if(ch>='0'&&ch<='9' && rakamBas) out+=String.fromCodePoint(rakamBas + (c-48));
-    else out+=ch;
-  }
-  return out;
-}
-// Stil tanımları (10 tane)
+let _imAktifStil='normal'; // seçili efekt
+const EFEKT_BAS='\u2060\u2060EFK:'; // görünmez işaret başı (word-joiner)
+const EFEKT_SON='\u2060\u2060';     // görünmez işaret sonu
+// 14 EFEKT — her biri animasyonlu CSS (CSS aşağıda .efk-<id> olarak tanımlı)
 const _imStiller=[
-  {id:'normal', ad:'Normal', ornek:'Abc', fn:(t)=>t},
-  {id:'ates',   ad:'🔥 Ateşli', ornek:'A̷b̷c̷', fn:(t)=>[...t].map(c=>c+'\u0337').join('')},
-  {id:'kalin',  ad:'𝗞𝗮𝗹𝗶𝗻', ornek:'𝗔𝗯𝗰', fn:(t)=>_imHarita(t, 0x1D5EE, 0x1D5D4, 0x1D7EC)},
-  {id:'italik', ad:'𝘐𝘵𝘢𝘭𝘪𝘬', ornek:'𝘈𝘣𝘤', fn:(t)=>_imHarita(t, 0x1D622, 0x1D608, null)},
-  {id:'daktilo',ad:'𝙼𝚘𝚗𝚘', ornek:'𝙰𝚋𝚌', fn:(t)=>_imHarita(t, 0x1D68A, 0x1D670, 0x1D7F6)},
-  {id:'yuvarlak',ad:'Ⓑⓐⓛⓞⓝ', ornek:'Ⓐⓑⓒ', fn:(t)=>_imHarita(t, 0x24D0, 0x24B6, null)},
-  {id:'kare',   ad:'🅺🅰🆁🅴', ornek:'🅰🅱🅲', fn:(t)=>_imHarita(t.toUpperCase(), null, 0x1F170, null)},
-  {id:'cift',   ad:'𝔻𝕦𝕓𝕝𝕖', ornek:'𝔸𝔹ℂ', fn:(t)=>_imHarita(t, 0x1D552, 0x1D538, 0x1D7D8)},
-  {id:'suslu',  ad:'𝓢𝓾𝓼𝓵𝓾', ornek:'𝓐𝓫𝓬', fn:(t)=>_imHarita(t, 0x1D4EA, 0x1D4D0, null)},
-  {id:'altcizgi',ad:'A̲l̲t̲ ̲Ç̲i̲z̲', ornek:'A̲b̲c̲', fn:(t)=>[...t].map(c=>c+'\u0332').join('')},
-  {id:'yildizli',ad:'✨ Yıldızlı', ornek:'✦A✦', fn:(t)=>'✦ '+t+' ✦'},
+  {id:'normal',  ad:'Normal',      ornek:'Abc'},
+  {id:'ates',    ad:'🔥 Ateş',     ornek:'Abc'},
+  {id:'uzay',    ad:'🌌 Uzay',     ornek:'Abc'},
+  {id:'patlama', ad:'💥 Patlama',  ornek:'Abc'},
+  {id:'buz',     ad:'❄️ Buz',      ornek:'Abc'},
+  {id:'neon',    ad:'💡 Neon',     ornek:'Abc'},
+  {id:'altin',   ad:'✨ Altın',    ornek:'Abc'},
+  {id:'gokkusagi',ad:'🌈 Gökkuşağı',ornek:'Abc'},
+  {id:'matrix',  ad:'🟢 Matrix',   ornek:'Abc'},
+  {id:'lazer',   ad:'🔆 Lazer',    ornek:'Abc'},
+  {id:'kan',     ad:'🩸 Kan',      ornek:'Abc'},
+  {id:'okyanus', ad:'🌊 Dalga',    ornek:'Abc'},
+  {id:'elektrik',ad:'⚡ Elektrik', ornek:'Abc'},
+  {id:'gold3d',  ad:'🏆 3D Altın', ornek:'Abc'},
+  {id:'aurora',  ad:'🌠 Aurora',   ornek:'Abc'},
 ];
+// Gönderilecek metne efekt işareti göm (normal ise dokunma)
 function imStilUygula(metin, stilId){
-  const s=_imStiller.find(x=>x.id===stilId);
-  return s? s.fn(metin) : metin;
+  if(!stilId || stilId==='normal') return metin;
+  return EFEKT_BAS+stilId+EFEKT_SON+metin;
+}
+// Bir metinden efekt id'sini çıkar + temiz metni döndür: {efekt, metin}
+function imEfektCoz(metin){
+  if(typeof metin!=='string') return {efekt:null, metin:metin||''};
+  if(metin.startsWith(EFEKT_BAS)){
+    const son=metin.indexOf(EFEKT_SON, EFEKT_BAS.length);
+    if(son>0){
+      const efekt=metin.slice(EFEKT_BAS.length, son);
+      const temiz=metin.slice(son+EFEKT_SON.length);
+      // geçerli efekt mi kontrol et
+      if(_imStiller.some(s=>s.id===efekt)) return {efekt, metin:temiz};
+    }
+  }
+  return {efekt:null, metin};
 }
 function imStilPaneliToggle(){
   const p=document.getElementById('imStilPanel');
   const acik=p.style.display!=='none';
-  // diğer panelleri kapat
   document.getElementById('imEmojiPanel').style.display='none';
   if(acik){ p.style.display='none'; return; }
-  // paneli doldur
+  // paneli doldur — her örnek CANLI efektle gösterilir (önizleme)
   p.innerHTML=_imStiller.map(s=>
-    '<button class="im-stil-btn '+(s.id===_imAktifStil?'aktif':'')+'" onclick="imStilSec(\''+s.id+'\')">'+
-    '<span class="im-stil-ornek">'+s.ornek+'</span><span class="im-stil-ad">'+s.ad+'</span></button>'
+    '<button class="im-stil-btn '+(s.id===_imAktifStil?'aktif':'')+'" onclick="imStilSec(\''+s.id+'\')" title="'+s.ad+'">'+
+    '<span class="im-stil-ornek'+(s.id!=='normal'?' efk-'+s.id:'')+'">'+s.ornek+'</span>'+
+    '<span class="im-stil-ad">'+s.ad+'</span></button>'
   ).join('');
   p.style.display='flex';
 }
 function imStilSec(id){
   _imAktifStil=id;
-  // butonları güncelle
   document.querySelectorAll('#imStilPanel .im-stil-btn').forEach(b=>b.classList.remove('aktif'));
   const aktifBtn=[...document.querySelectorAll('#imStilPanel .im-stil-btn')].find(b=>b.getAttribute('onclick').includes("'"+id+"'"));
   if(aktifBtn) aktifBtn.classList.add('aktif');
-  // input'a ipucu göster
   const inp=document.getElementById('internalInput');
   const s=_imStiller.find(x=>x.id===id);
   if(id==='normal'){ inp.placeholder='Ekip arkadaşına mesaj yaz'; }
-  else { inp.placeholder='✍️ '+s.ad+' stiliyle yazıyorsun…'; }
+  else { inp.placeholder='✨ '+s.ad+' efektiyle yazıyorsun…'; }
   document.getElementById('imStilPanel').style.display='none';
-  // stil butonunu vurgula
   document.getElementById('internalStilBtn').style.color = (id==='normal') ? '' : 'var(--brand)';
   inp.focus();
 }
