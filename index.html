@@ -6920,24 +6920,24 @@ function seekVoice(e,aid){
 function jumpToMsg(id, text){
   const box=document.getElementById('messages');
   let t=null;
-  // 1) id ile ara (en kesin)
+  // 1) id ile ara (EN KESİN). Foto/belge yanıtında artık id geliyor -> doğru mesaja gider.
   if(id){
     t=box.querySelector('[data-mid="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]');
   }
-  // 2) id ile bulunamadıysa: alıntı METNİNE göre mesajı bul (foto/eski mesaj için)
+  // 2) id ile bulunamadıysa: alıntı METNİNE göre bul. AMA dikkat: "📷 Fotograf" / "📄 Belge"
+  //    gibi GENEL etiketler ayırt edici değil -> en son fotoya gitmesin diye bunları arama.
   if(!t && text){
     const ara=text.trim().toLocaleLowerCase('tr');
-    if(ara && ara.length>=2){
+    // genel medya etiketi mi? (ayırt edici metin yok)
+    const genelEtiket = /^(📷|📄|🎬|🎤|📎)?\s*(fotoğraf|fotograf|belge|video|sesli mesaj|ses)\s*$/i.test(ara);
+    if(ara && ara.length>=2 && !genelEtiket){
       const c=chats[activeJid];
       if(c && c.messages){
-        // metni eşleşen EN SON mesajı bul (geriye doğru), data-mid'ini al
+        // GERÇEK metin (caption/yazı) eşleşen EN SON mesajı bul
         for(let i=c.messages.length-1;i>=0;i--){
           const mm=c.messages[i];
-          const mt=(mm.text||'').toLocaleLowerCase('tr');
-          // foto alıntısı "📷 fotoğraf" gibi olabilir -> kind kontrolü
-          const fotoAlinti=ara.includes('fotoğraf')||ara.includes('fotograf')||ara.includes('📷');
-          const eslesme = (mt && mt.includes(ara)) || (fotoAlinti && mm.kind==='image');
-          if(eslesme){ t=box.querySelector('[data-mid="'+(window.CSS&&CSS.escape?CSS.escape(mm.id):mm.id)+'"]'); if(t) break; }
+          const mt=(mm.text||mm.caption||'').toLocaleLowerCase('tr');
+          if(mt && mt.includes(ara)){ t=box.querySelector('[data-mid="'+(window.CSS&&CSS.escape?CSS.escape(mm.id):mm.id)+'"]'); if(t) break; }
         }
       }
     }

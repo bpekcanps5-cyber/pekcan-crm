@@ -1637,7 +1637,9 @@ wss.on('connection', (ws) => {
           const chat = C.get(msg.jid);
           const orig = chat?.messages.find(x => x.id === msg.replyId);
           if (orig) {
-            replyTo = { sender: orig.fromMe ? 'Siz' : orig.sender, text: replyPreview(orig) };
+            // id: alintilanan mesajin id'si -> panelde alintiya tiklayinca DOGRU mesaja gider
+            // (Eskiden id yoktu; foto/belge yanitinda metne dusup yanlis/en son fotoya gidiyordu.)
+            replyTo = { id: orig.id || msg.replyId, sender: orig.fromMe ? 'Siz' : orig.sender, text: replyPreview(orig) };
             if (orig.raw && orig.raw.key) {
               // EN IYI: tam ham mesaj varsa onu kullan
               quotedOpt = { quoted: orig.raw };
@@ -1878,7 +1880,7 @@ wss.on('connection', (ws) => {
           addMessage(targetJid, {
             fromMe: true, kind: 'text', text: gonderilecekMetin,
             sender: msg.agent || 'Ben', time: nowTime(),
-            replyTo: { sender: orig.sender, text: replyPreview(orig) },
+            replyTo: { id: orig.id || null, sender: orig.sender, text: replyPreview(orig) },
           }, { name: orig.senderPush || targetJid.split('@')[0] }, _LID);
           ws.send(JSON.stringify({ type: 'openChat', jid: targetJid }));
         } catch (e) {
