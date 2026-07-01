@@ -1398,8 +1398,11 @@
   /* mobil geri butonu: masaüstünde GİZLİ (sadece telefonda görünür - media query'de açılır) */
   .mobil-geri{ display:none; }
   /* ── "BURADAYIM" grup ilgi işareti ── */
-  /* sol listede: yeşil yanıp sönen nokta (kim ilgileniyor) */
-  .buradayim-nisan{display:inline-flex;align-items:center;margin-left:5px;vertical-align:middle}
+  /* sol listede: biri ilgileniyorsa grup ADININ TAMAMI yeşil olur (uzaktan belli) */
+  .chat-name.buradayim-aktif{color:#16a34a !important;font-weight:800;
+    text-shadow:0 0 8px rgba(34,197,94,.25);animation:buradayimAdYanip 1.8s ease-in-out infinite}
+  @keyframes buradayimAdYanip{0%,100%{opacity:1}50%{opacity:.72}}
+  /* küçük yeşil nokta (grup başlığı rozetinde kullanılıyor) */
   .buradayim-nokta{width:9px;height:9px;border-radius:50%;background:#22c55e;display:inline-block;
     box-shadow:0 0 0 0 rgba(34,197,94,.7);animation:buradayimYanip 1.4s ease-in-out infinite}
   @keyframes buradayimYanip{
@@ -1410,6 +1413,9 @@
   /* yazı alanındaki buradayım butonu: aktifken yeşil vurgulu */
   .buradayim-btn.aktif{color:#22c55e !important;background:rgba(34,197,94,.14) !important}
   .buradayim-btn.aktif svg{filter:drop-shadow(0 0 3px rgba(34,197,94,.5))}
+  /* grup başlığında "kim ilgileniyor" yeşil rozeti */
+  .conv-buradayim-rozet{display:inline-flex;align-items:center;gap:5px;margin-left:10px;padding:3px 10px;
+    background:rgba(34,197,94,.13);color:#16a34a;border-radius:12px;font-size:12px;font-weight:600;vertical-align:middle}
 
   /* ============================================================
      📱 TELEFON / MOBİL GÖRÜNÜM (sadece dar ekran ≤768px)
@@ -5724,12 +5730,13 @@ _renderListRaw=function(){
 function chatRow(c){
   const pinIc=pinned.has(c.jid)?'<span class="pin-icon">'+pinSvg()+'</span>':'';
   const menIc=c.hasMention?'<span class="mention-badge" title="Burada senden bahsedildi">@</span>':'';
-  // "BURADAYIM": bu grupla ilgilenen ekip üyeleri (yeşil yanıp sönen nokta + isimler)
-  let buradayimIc='';
+  // "BURADAYIM": bu grupla ilgilenen ekip üyesi varsa -> grup ADI komple yeşil olur (belirgin)
+  let buradayimAdCls='';
+  let buradayimTitle='';
   const bList=_buradayim[c.jid];
   if(bList && bList.length){
-    const adlar=bList.map(x=>x.ad).join(', ');
-    buradayimIc='<span class="buradayim-nisan" title="Şu an ilgileniyor: '+esc(adlar)+'"><span class="buradayim-nokta"></span></span>';
+    buradayimAdCls=' buradayim-aktif';
+    buradayimTitle=' title="Şu an ilgileniyor: '+esc(bList.map(x=>x.ad).join(', '))+'"';
   }
   // ATAMA logosu: gruba kişi atanmışsa insan ikonu göster.
   //  - SANA atandıysa: dolu/yeşil ikon (senin işin)
@@ -5764,7 +5771,7 @@ function chatRow(c){
   return `<div class="chat ${c.jid===activeJid?'active':''}" onclick="openChat('${c.jid}')" oncontextmenu="openCtxMenu(event,'${c.jid}');return false;">
     ${avatarHtml(c)}
     <div class="chat-main">
-      <div class="chat-top"><span class="chat-name">${etiketNoktalari}${esc(c.name||c.jid)}${pinIc}${menIc}${buradayimIc}</span>
+      <div class="chat-top"><span class="chat-name${buradayimAdCls}"${buradayimTitle}>${etiketNoktalari}${esc(c.name||c.jid)}${pinIc}${menIc}</span>
         <span class="chat-time ${c.unread?'unread-time':''}">${esc(c.lastTime||'')}</span></div>
       <div class="chat-bottom"><span class="chat-preview${(c.messages&&c.messages.length&&acilMesajMi(c.messages[c.messages.length-1].text))?' acil':''}">${esc(previewText(c))}</span>
         ${c.unread?'<span class="badge">'+c.unread+'</span>':''}</div>
@@ -5858,6 +5865,22 @@ function updateConvHeader(c, jid){
     av.innerHTML=c.isGroup?groupSvg():initials(c.name||jid);
   }
   document.getElementById('convName').textContent=c.name||jid;
+  // "BURADAYIM": grup başlığında kimin ilgilendiğini yeşil rozetle göster
+  const nameEl=document.getElementById('convName');
+  const eskiRozet=document.getElementById('convBuradayimRozet');
+  if(eskiRozet) eskiRozet.remove();
+  if(c.isGroup){
+    const bList=_buradayim[jid];
+    if(bList && bList.length){
+      const adlar=bList.map(x=>x.ad).join(', ');
+      const rozet=document.createElement('span');
+      rozet.id='convBuradayimRozet';
+      rozet.className='conv-buradayim-rozet';
+      rozet.innerHTML='<span class="buradayim-nokta"></span> '+esc(adlar);
+      rozet.title='Bu grupla ilgilenen ekip üyeleri';
+      nameEl.parentNode.insertBefore(rozet, nameEl.nextSibling);
+    }
+  }
   // isim kopyala butonu sadece GRUPTA gorunsun (kisi sohbetinde gerek yok)
   const adKpBtn=document.getElementById('adKopyalaBtn');
   if(adKpBtn) adKpBtn.style.display = c.isGroup ? 'grid' : 'none';
@@ -5941,8 +5964,11 @@ function buradayimBtnGuncelle(){
 function handleBuradayimUpdate(jid, liste){
   if(liste && liste.length) _buradayim[jid]=liste;
   else delete _buradayim[jid];
-  renderList(); // sol listede yeşil işaretler güncellensin
-  if(jid===activeJid) buradayimBtnGuncelle();
+  renderList(); // sol listede işaretler güncellensin
+  if(jid===activeJid){
+    buradayimBtnGuncelle();
+    const c=chats[jid]; if(c) updateConvHeader(c, jid); // başlıktaki "kim ilgileniyor" tazelensin
+  }
 }
 
 function openChat(jid){
