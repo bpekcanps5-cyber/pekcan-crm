@@ -612,6 +612,11 @@ function tarihAraligi(kapsam) {
     const bas = bit - 7 * 24 * 60 * 60 * 1000; // son 7 gun
     return { bas, bit };
   }
+  if (kapsam === 'ay') {
+    // BU AY: ayin 1'i 00:00 -> simdi
+    const bas = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0).getTime();
+    return { bas, bit: Date.now() };
+  }
   return null; // tum
 }
 
@@ -733,7 +738,7 @@ app.post('/api/satislar/sil', express.json(), async (req, res) => {
 app.post('/api/satislar/ekle', express.json(), async (req, res) => {
   const y = satisYetki(req.body?.token);
   if (!y) return res.json({ ok: false, error: 'Oturum yok' });
-  // BRANŞ doğrula (sadece gecerli 9 brans)
+  // BRANŞ doğrula (sadece gecerli branslar)
   const istenenBrans = String(req.body?.urun || '').toLowerCase().trim();
   const urun = GECERLI_BRANSLAR[istenenBrans] || (BRANS_LISTESI.includes(istenenBrans) ? istenenBrans : null);
   if (!urun) return res.json({ ok: false, error: 'Geçersiz branş' });
@@ -741,6 +746,34 @@ app.post('/api/satislar/ekle', express.json(), async (req, res) => {
   if (isNaN(adet) || adet < 1 || adet > 9999) return res.json({ ok: false, error: 'Geçersiz adet' });
   const chatJid = (req.body?.chatJid || '').trim();
   if (!chatJid) return res.json({ ok: false, error: 'Grup seçili değil' });
+  // ─── YENI ALANLAR: odeme tipi / periyot / fiyat (kisa sureli trafik akisi) ───
+  let odemeTip = null, odemePeriyot = null, fiyat = null;
+  if (req.body?.odemeTip) {
+    const t = String(req.body.odemeTip).toLowerCase().trim();
+    if (!['mkk', 'acik', 'iadesiz'].includes(t)) return res.json({ ok: false, error: 'Geçersiz ödeme yöntemi' });
+    odemeTip = t;
+  }
+  if (req.body?.odemePeriyot) {
+    const p = String(req.body.odemePeriyot).toLowerCase().trim();
+    if (!['gunluk', 'haftalik', 'aylik'].includes(p)) return res.json({ ok: false, error: 'Geçersiz ödeme periyodu' });
+    odemePeriyot = p;
+  }
+  if (req.body?.fiyat !== undefined && req.body?.fiyat !== null && req.body?.fiyat !== '') {
+    const f = parseFloat(req.body.fiyat);
+    if (isNaN(f) || f < 0 || f > 1000000) return res.json({ ok: false, error: 'Geçersiz fiyat' });
+    fiyat = f;
+  }
+  // KISA SURELI TRAFIK kurallari: odeme tipi zorunlu; acik/iadesiz ise periyot + fiyat zorunlu
+  if (urun === 'kısa süreli trafik') {
+    if (!odemeTip) return res.json({ ok: false, error: 'Kısa süreli trafik için ödeme yöntemi seçin (MKK/AÇIK/İADESİZ)' });
+    if (odemeTip !== 'mkk') {
+      if (!odemePeriyot) return res.json({ ok: false, error: 'Ödeme periyodu seçin (Günlük/Haftalık/Aylık)' });
+      if (!fiyat || fiyat <= 0) return res.json({ ok: false, error: 'Fiyat seçin' });
+    }
+  } else {
+    // diger branslarda odeme tipi/periyot anlamsiz -> temizle (fiyat opsiyonel kalir)
+    odemeTip = null; odemePeriyot = null;
+  }
   // grup adini bul (o hattin sohbetlerinden)
   const C = hatChats(y.lineId);
   const chat = C.get(chatJid);
@@ -758,13 +791,15 @@ app.post('/api/satislar/ekle', express.json(), async (req, res) => {
     mesajId: '',
     hamMesaj: '(panelden eklendi)',
     ts: Date.now(),
+    fiyat, odemeTip, odemePeriyot,
   };
   try {
     const r = await db.saveSatis(kayit, y.lineId);
     if (r.ok && r.yeni) {
-      console.log(`💰 SATIŞ (panelden) [${y.lineId}]: ${urun} x${adet} | ${y.displayName || y.username} | ${chatName.slice(0, 25)}`);
+      const ek = odemeTip ? ` [${odemeTip}${odemePeriyot ? '/' + odemePeriyot : ''}${fiyat ? '/' + fiyat + '₺' : ''}]` : (fiyat ? ` [${fiyat}₺]` : '');
+      console.log(`💰 SATIŞ (panelden) [${y.lineId}]: ${urun} x${adet}${ek} | ${y.displayName || y.username} | ${chatName.slice(0, 25)}`);
       // canli haber ver (kontrol sekmesi aciksa guncellensin) + yoneticiye bildir
-      broadcastHat(y.lineId, { type: 'yeniSatis', satis: { ...kayit, line_id: y.lineId, onayli: false } });
+      broadcastHat(y.lineId, { type: 'yeniSatis', satis: { ...kayit, line_id: y.lineId, onayli: false, odeme_tip: odemeTip, odeme_periyot: odemePeriyot } });
       if (y.lineId !== 'ofis') {
         broadcastHat('ofis', { type: 'satisBildirim', mesaj: `Yeni satış: ${urun} x${adet} (${y.displayName || y.username})`, lineId: y.lineId });
       }
@@ -2802,9 +2837,15 @@ const GECERLI_BRANSLAR = {
   'isyeri': 'işyeri', 'işyeri': 'işyeri',
   'oss': 'öss', 'öss': 'öss',
   'imm': 'imm',
+  // YENI BRANSLAR (pazarlama satis paneli):
+  'kısa süreli trafik': 'kısa süreli trafik', 'kisa sureli trafik': 'kısa süreli trafik', 'kst': 'kısa süreli trafik', 'kisa': 'kısa süreli trafik',
+  'ferdi kaza': 'ferdi kaza', 'ferdikaza': 'ferdi kaza', 'ferdi': 'ferdi kaza',
+  'seyahat sağlık': 'seyahat sağlık', 'seyahat saglik': 'seyahat sağlık', 'seyahat': 'seyahat sağlık',
+  'özel sağlık': 'özel sağlık', 'ozel saglik': 'özel sağlık', 'özel saglik': 'özel sağlık',
+  'zorunlu koltuk': 'zorunlu koltuk', 'koltuk': 'zorunlu koltuk',
 };
 // Panelde/raporda gosterilecek sira (pazarlamaci bilgi kutusu + dashboard icin)
-const BRANS_LISTESI = ['trafik', 'kasko', 'dask', 'tss', 'yeşilkart', 'konut', 'işyeri', 'öss', 'imm'];
+const BRANS_LISTESI = ['kısa süreli trafik', 'kasko', 'trafik', 'dask', 'konut', 'işyeri', 'ferdi kaza', 'seyahat sağlık', 'tss', 'özel sağlık', 'yeşilkart', 'zorunlu koltuk', 'öss', 'imm'];
 
 // / ile baslar, sonra urun adi (harf), sonra (opsiyonel) adet (sayi, yoksa 1).
 // Eslesmezse VEYA gecerli bir brans degilse null doner (normal mesaj sayilir).

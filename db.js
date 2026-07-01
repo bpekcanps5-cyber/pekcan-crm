@@ -385,16 +385,36 @@ async function deleteMessage(chatJid, id, lineId = 'ofis') {
 // Bir satis kaydet. Ayni mesaj_id ile tekrar gelirse (WhatsApp yansimasi) cift yazmaz.
 async function saveSatis(s, lineId = 'ofis') {
   if (!aktif) return { ok: false };
+  // ONCE yeni kolonlarla dene (fiyat, odeme_tip, odeme_periyot). Kolonlar henuz
+  // eklenmemisse (SQL calistirilmadiysa) ESKI sekilde kaydet -> satis ASLA kaybolmaz.
   try {
     const r = await pool.query(
-      `INSERT INTO satislar (id, line_id, chat_jid, chat_name, urun, adet, satici, satici_jid, mesaj_id, ham_mesaj, ts, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())
+      `INSERT INTO satislar (id, line_id, chat_jid, chat_name, urun, adet, satici, satici_jid, mesaj_id, ham_mesaj, ts, fiyat, odeme_tip, odeme_periyot, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
        ON CONFLICT (id) DO NOTHING
        RETURNING *`,
-      [s.id, lineId, s.chatJid, s.chatName || '', s.urun, s.adet || 1, s.satici || '', s.saticiJid || '', s.mesajId || '', s.hamMesaj || '', s.ts || Date.now()]
+      [s.id, lineId, s.chatJid, s.chatName || '', s.urun, s.adet || 1, s.satici || '', s.saticiJid || '', s.mesajId || '', s.hamMesaj || '', s.ts || Date.now(),
+       (s.fiyat ?? null), (s.odemeTip ?? null), (s.odemePeriyot ?? null)]
     );
     return { ok: true, row: r.rows[0] || null, yeni: r.rows.length > 0 };
   } catch (e) {
+    // 42703 = kolon yok -> eski kolonlarla kaydet (SQL henuz calistirilmamis)
+    if (e.code === '42703' || /column .* does not exist/i.test(e.message || '')) {
+      try {
+        const r = await pool.query(
+          `INSERT INTO satislar (id, line_id, chat_jid, chat_name, urun, adet, satici, satici_jid, mesaj_id, ham_mesaj, ts, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())
+           ON CONFLICT (id) DO NOTHING
+           RETURNING *`,
+          [s.id, lineId, s.chatJid, s.chatName || '', s.urun, s.adet || 1, s.satici || '', s.saticiJid || '', s.mesajId || '', s.hamMesaj || '', s.ts || Date.now()]
+        );
+        console.warn('⚠️  satislar tablosunda fiyat/odeme kolonlari yok — SQL calistirilinca detaylar da kaydedilecek');
+        return { ok: true, row: r.rows[0] || null, yeni: r.rows.length > 0 };
+      } catch (e2) {
+        console.error('saveSatis hatasi (fallback):', e2.message);
+        return { ok: false, error: e2.message };
+      }
+    }
     console.error('saveSatis hatasi:', e.message);
     return { ok: false, error: e.message };
   }

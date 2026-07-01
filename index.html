@@ -984,6 +984,76 @@
   .sh-brans{padding:7px 13px;border-radius:9px;border:1.5px solid var(--border);background:var(--panel-2);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:all .12s;text-transform:capitalize}
   .sh-brans:hover{border-color:var(--brand)}
   .sh-brans.secili{background:var(--brand);color:#fff;border-color:var(--brand)}
+
+  /* ═══ SATIŞ GİRİŞİ: ödeme tipi / periyot / fiyat (kısa süreli trafik akışı) ═══ */
+  .sh-odemetipbox,.sh-periyotbox,.sh-fiyatbox{margin-bottom:14px;animation:shAcil .18s ease}
+  @keyframes shAcil{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .sh-odemetipler,.sh-periyotlar{display:flex;gap:8px;flex-wrap:wrap}
+  .sh-otip,.sh-periyot{padding:9px 15px;border-radius:10px;border:2px solid var(--border);background:var(--panel-2);color:var(--text);font-size:13.5px;font-weight:700;cursor:pointer;transition:all .13s}
+  .sh-otip:hover,.sh-periyot:hover{transform:translateY(-1px)}
+  /* her ödeme tipinin kendi rengi (seçilince) */
+  .sh-otip.otip-mkk.secili{background:#3b82f6;border-color:#3b82f6;color:#fff}
+  .sh-otip.otip-acik.secili{background:#16a34a;border-color:#16a34a;color:#fff}
+  .sh-otip.otip-iadesiz.secili{background:#f97316;border-color:#f97316;color:#fff}
+  .sh-otip.otip-mkk:hover{border-color:#3b82f6}
+  .sh-otip.otip-acik:hover{border-color:#16a34a}
+  .sh-otip.otip-iadesiz:hover{border-color:#f97316}
+  .sh-periyot.secili{background:var(--brand);border-color:var(--brand);color:#fff}
+  .sh-fiyatlar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px}
+  .sh-fiyat-chip{padding:8px 13px;border-radius:9px;border:2px solid var(--border);background:var(--panel-2);color:var(--text);font-size:13.5px;font-weight:700;cursor:pointer;transition:all .12s}
+  .sh-fiyat-chip:hover{border-color:#16a34a;color:#16a34a}
+  .sh-fiyat-chip.secili{background:#16a34a;border-color:#16a34a;color:#fff}
+  .sh-fiyat-elle{width:100%;max-width:200px;padding:9px 12px;border-radius:9px;border:1.5px solid var(--border);background:var(--panel-2);color:var(--text);font-size:14px;outline:none}
+  .sh-fiyat-elle:focus{border-color:var(--brand)}
+
+  /* ═══ DASHBOARD: özet + üretim sıralaması + galeri kıyaslaması + branş dağılımı ═══ */
+  .dash-ust{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .dash-kart.ciro .dk-buyuk{color:#16a34a}
+  .dash-orta{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+  .dash-panel{flex:1;min-width:280px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:15px 17px;box-shadow:var(--shadow-sm)}
+  .dp-baslik{font-size:14px;font-weight:800;margin-bottom:12px;display:flex;align-items:center;gap:7px}
+  .dp-alt{font-size:11px;font-weight:600;color:var(--muted)}
+  /* üretim sıralaması */
+  .uretim-liste{display:flex;flex-direction:column;gap:9px}
+  .uretim-satir{display:flex;align-items:center;gap:10px;cursor:pointer;padding:5px 7px;border-radius:9px;transition:background .12s}
+  .uretim-satir:hover{background:var(--panel-2)}
+  .us-madal{font-size:19px;width:28px;text-align:center;flex-shrink:0}
+  .us-no{font-size:12px;font-weight:800;color:var(--muted);background:var(--panel-2);width:22px;height:22px;border-radius:50%;display:inline-grid;place-items:center}
+  .us-orta{flex:1;min-width:0}
+  .us-ust{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+  .us-ad{font-weight:700;font-size:13.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .us-adet{font-size:12.5px;font-weight:800;color:var(--brand);white-space:nowrap}
+  .us-ciro{font-size:11.5px;font-weight:700;color:#16a34a;white-space:nowrap}
+  .us-bar-kap{height:6px;background:var(--panel-2);border-radius:4px;overflow:hidden}
+  .us-bar{height:100%;background:linear-gradient(90deg,var(--brand),#6366f1);border-radius:4px;transition:width .3s}
+  /* galeri kıyaslaması */
+  .galeri-liste{display:flex;flex-direction:column;gap:10px}
+  .galeri-satir{padding:9px 11px;border-radius:10px;border:1px solid var(--border);cursor:pointer;transition:all .13s;background:var(--panel-2)}
+  .galeri-satir:hover{border-color:var(--brand);transform:translateY(-1px)}
+  .galeri-satir.galeri-lider{border-color:#f59e0b;background:rgba(245,158,11,.06)}
+  .gs-ust{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px}
+  .gs-ad{font-weight:700;font-size:13px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .gs-adet{font-size:12px;font-weight:800;color:var(--brand);white-space:nowrap}
+  .gs-bar-kap{height:5px;background:rgba(0,0,0,.07);border-radius:3px;overflow:hidden;margin-bottom:5px}
+  .gs-bar{height:100%;background:linear-gradient(90deg,#f59e0b,#f97316);border-radius:3px}
+  .gs-alt{font-size:11.5px;color:var(--muted);font-weight:600}
+  .gs-diger{opacity:.75}
+  /* branş dağılımı */
+  .brans-liste{display:flex;flex-direction:column;gap:8px}
+  .brans-satir{display:flex;align-items:center;gap:9px}
+  .bs-ad{font-size:12.5px;font-weight:700;width:120px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:capitalize}
+  .bs-bar-kap{flex:1;height:7px;background:var(--panel-2);border-radius:4px;overflow:hidden}
+  .bs-bar{height:100%;border-radius:4px;transition:width .3s}
+  .bs-adet{font-size:12px;font-weight:800;color:var(--text);width:34px;text-align:right;flex-shrink:0}
+
+  /* ═══ SATIŞ KARTI: ödeme rozetleri ═══ */
+  .sk-brans-ad{font-weight:800;text-transform:capitalize}
+  .sk-otip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:7px;font-size:11px;font-weight:800;margin-left:4px;vertical-align:middle}
+  .ot-mkk{background:rgba(59,130,246,.14);color:#2563eb}
+  .ot-acik{background:rgba(22,163,74,.14);color:#16a34a}
+  .ot-iadesiz{background:rgba(249,115,22,.15);color:#ea580c}
+  .sk-periyot{display:inline-flex;align-items:center;padding:2px 8px;border-radius:7px;font-size:11px;font-weight:700;background:var(--panel-2);color:var(--muted);margin-left:4px;vertical-align:middle}
+  .sk-fiyat{display:inline-flex;align-items:center;padding:2px 9px;border-radius:7px;font-size:12px;font-weight:800;background:rgba(22,163,74,.12);color:#16a34a;margin-left:4px;vertical-align:middle}
   .sh-adetbox{margin-bottom:16px}
   .sh-adet-kutu{display:flex;align-items:center;max-width:150px}
   .sh-adet-kutu input{flex:1;text-align:center;border:1.5px solid var(--border);border-left:none;border-right:none;background:var(--panel-2);color:var(--text);font-size:17px;font-weight:700;padding:8px 0;outline:none;width:50px;-moz-appearance:textfield}
@@ -1734,6 +1804,30 @@
           <div class="sh-label">Branş seç:</div>
           <div class="sh-branslar" id="shBranslar"></div>
         </div>
+        <!-- KISA SÜRELİ TRAFİK seçilince: ödeme yöntemi (MKK / AÇIK / İADESİZ) -->
+        <div class="sh-odemetipbox" id="shOdemeTipBox" style="display:none">
+          <div class="sh-label">Ödeme yöntemi:</div>
+          <div class="sh-odemetipler">
+            <button class="sh-otip otip-mkk" data-otip="mkk" onclick="shOdemeTipSec('mkk')">💳 MKK</button>
+            <button class="sh-otip otip-acik" data-otip="acik" onclick="shOdemeTipSec('acik')">🔓 AÇIK</button>
+            <button class="sh-otip otip-iadesiz" data-otip="iadesiz" onclick="shOdemeTipSec('iadesiz')">🚫 İADESİZ</button>
+          </div>
+        </div>
+        <!-- AÇIK / İADESİZ seçilince: ödeme periyodu -->
+        <div class="sh-periyotbox" id="shPeriyotBox" style="display:none">
+          <div class="sh-label">Ödeme:</div>
+          <div class="sh-periyotlar">
+            <button class="sh-periyot" data-per="gunluk" onclick="shPeriyotSec('gunluk')">📅 Günlük</button>
+            <button class="sh-periyot" data-per="haftalik" onclick="shPeriyotSec('haftalik')">🗓️ Haftalık</button>
+            <button class="sh-periyot" data-per="aylik" onclick="shPeriyotSec('aylik')">📆 Aylık</button>
+          </div>
+        </div>
+        <!-- Fiyat: kısa sürelide (açık/iadesiz) sabit rakamlar + elle; diğer branşlarda opsiyonel elle -->
+        <div class="sh-fiyatbox" id="shFiyatBox" style="display:none">
+          <div class="sh-label" id="shFiyatLabel">Fiyat (₺):</div>
+          <div class="sh-fiyatlar" id="shFiyatlar"></div>
+          <input type="number" class="sh-fiyat-elle" id="shFiyatElle" min="0" max="1000000" placeholder="veya elle yaz…" oninput="shFiyatElleDegisti()">
+        </div>
         <div class="sh-adetbox">
           <div class="sh-label">Adet:</div>
           <div class="sh-adet-kutu">
@@ -1814,6 +1908,7 @@
           <div class="kapsam-secici" id="kapsamSecici">
             <button class="kapsam-btn active" data-kapsam="bugun" onclick="kontrolKapsam('bugun')">Bugün</button>
             <button class="kapsam-btn" data-kapsam="hafta" onclick="kontrolKapsam('hafta')">Bu hafta</button>
+            <button class="kapsam-btn" data-kapsam="ay" onclick="kontrolKapsam('ay')">Bu ay</button>
             <button class="kapsam-btn" data-kapsam="tum" onclick="kontrolKapsam('tum')">Tümü</button>
             <button class="kapsam-btn" data-kapsam="ozel" onclick="kontrolKapsam('ozel')">Tarih seç</button>
           </div>
@@ -3378,6 +3473,7 @@ function kontrolKapsam(k){
   if(alt){
     if(k==='bugun') alt.textContent='Bugünün satışları';
     else if(k==='hafta') alt.textContent='Son 7 günün satışları';
+    else if(k==='ay') alt.textContent='Bu ayın satışları';
     else if(k==='tum') alt.textContent='Tüm satışlar';
     else if(k==='ozel'){
       const b=document.getElementById('tarihBas')?.value, s=document.getElementById('tarihBit')?.value;
@@ -3443,35 +3539,110 @@ function kontrolDashCiz(){
   const toplamSatis=v.length;
   const onayli=v.filter(s=>s.onayli).length;
   const bekleyen=toplamSatis-onayli;
-  // satıcı bazlı toplam (kim ne kadar)
+  // CIRO: fiyati olan kayitlarda fiyat x adet toplami
+  const ciro=v.reduce((a,s)=>{ const f=parseFloat(s.fiyat); return a+((!isNaN(f)&&f>0)?f*(s.adet||1):0); },0);
+
+  // ÜRETİM SIRALAMASI: satıcı bazlı (adet + ciro), sıralı
   const saticiMap={};
-  v.forEach(s=>{ const ad=s.satici||'Bilinmeyen'; saticiMap[ad]=(saticiMap[ad]||0)+(s.adet||0); });
-  const saticilar=Object.entries(saticiMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
-  // ürün bazlı toplam
+  v.forEach(s=>{
+    const ad=s.satici||'Bilinmeyen';
+    if(!saticiMap[ad]) saticiMap[ad]={adet:0,ciro:0,kayit:0};
+    saticiMap[ad].adet+=(s.adet||0);
+    saticiMap[ad].kayit++;
+    const f=parseFloat(s.fiyat); if(!isNaN(f)&&f>0) saticiMap[ad].ciro+=f*(s.adet||1);
+  });
+  const siralama=Object.entries(saticiMap).sort((a,b)=>b[1].adet-a[1].adet);
+
+  // GALERİ KIYASLAMASI: grup (chat_name) bazlı — en çok üretim yaptıran galeriler.
+  // Her galeri için: toplam adet + o galeride EN ÇOK satan pazarlamacı ("sahibi").
+  const galeriMap={};
+  v.forEach(s=>{
+    const g=(s.chat_name||s.chat_jid||'?').trim()||'?';
+    if(!galeriMap[g]) galeriMap[g]={adet:0,ciro:0,saticilar:{},jid:s.chat_jid||''};
+    galeriMap[g].adet+=(s.adet||0);
+    const f=parseFloat(s.fiyat); if(!isNaN(f)&&f>0) galeriMap[g].ciro+=f*(s.adet||1);
+    const sa=s.satici||'?';
+    galeriMap[g].saticilar[sa]=(galeriMap[g].saticilar[sa]||0)+(s.adet||0);
+  });
+  const galeriler=Object.entries(galeriMap).sort((a,b)=>b[1].adet-a[1].adet).slice(0,8);
+
+  // BRANŞ DAĞILIMI (renkli mini barlar)
   const urunMap={};
   v.forEach(s=>{ const u=s.urun||'?'; urunMap[u]=(urunMap[u]||0)+(s.adet||0); });
-  const urunler=Object.entries(urunMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const urunler=Object.entries(urunMap).sort((a,b)=>b[1]-a[1]);
+  const maxUrun=urunler.length?urunler[0][1]:1;
+
+  const tl=(n)=>n>=1000?(n/1000).toFixed(n%1000===0?0:1).replace('.',',')+'K':String(Math.round(n));
 
   let html='';
+  // ── ÜST ÖZET KARTLARI ──
+  html+='<div class="dash-ust">';
   html+='<div class="dash-kart vurgu"><div class="dk-buyuk">'+toplamAdet+'</div><div class="dk-etiket">Toplam adet</div></div>';
   html+='<div class="dash-kart"><div class="dk-buyuk">'+toplamSatis+'</div><div class="dk-etiket">Satış kaydı</div></div>';
+  if(ciro>0) html+='<div class="dash-kart ciro"><div class="dk-buyuk">₺'+tl(ciro)+'</div><div class="dk-etiket">Ciro (fiyatlı satışlar)</div></div>';
   if(_kontrolAdmin){
     html+='<div class="dash-kart"><div class="dk-buyuk" style="color:#16a34a">'+onayli+'</div><div class="dk-etiket">Onaylı</div></div>';
     html+='<div class="dash-kart"><div class="dk-buyuk" style="color:#f59e0b">'+bekleyen+'</div><div class="dk-etiket">Onay bekliyor</div></div>';
   }
-  // satıcı özeti kartı
-  if(saticilar.length){
-    html+='<div class="dash-kart" style="flex:1.4;min-width:200px"><div class="dk-etiket" style="margin-top:0;margin-bottom:8px">Satıcılar</div><div class="satici-ozet">';
-    html+=saticilar.map(([ad,adet])=>'<div class="satici-satir"><span class="ss-ad">'+esc(ad)+'</span><span class="ss-adet">'+adet+'</span></div>').join('');
+  html+='</div>';
+
+  html+='<div class="dash-orta">';
+  // ── ÜRETİM SIRALAMASI (madalyalı) ──
+  if(siralama.length){
+    html+='<div class="dash-panel"><div class="dp-baslik">🏆 Üretim Sıralaması</div><div class="uretim-liste">';
+    siralama.forEach(([ad,x],i)=>{
+      const madal=i===0?'🥇':(i===1?'🥈':(i===2?'🥉':'<span class="us-no">'+(i+1)+'</span>'));
+      const ciroTxt=x.ciro>0?'<span class="us-ciro">₺'+tl(x.ciro)+'</span>':'';
+      const bar=Math.max(6, Math.round((x.adet/(siralama[0][1].adet||1))*100));
+      html+='<div class="uretim-satir" onclick="saticiFiltrele(\''+esc(ad).replace(/'/g,"\\'")+'\')" title="Sadece '+esc(ad)+' satışlarını göster">'+
+        '<span class="us-madal">'+madal+'</span>'+
+        '<div class="us-orta"><div class="us-ust"><span class="us-ad">'+esc(ad)+'</span><span class="us-adet">'+x.adet+' adet</span>'+ciroTxt+'</div>'+
+        '<div class="us-bar-kap"><div class="us-bar" style="width:'+bar+'%"></div></div></div>'+
+        '</div>';
+    });
     html+='</div></div>';
   }
-  // ürün özeti kartı
+  // ── GALERİ KIYASLAMASI ──
+  if(galeriler.length){
+    html+='<div class="dash-panel"><div class="dp-baslik">🏪 Galeri Kıyaslaması <span class="dp-alt">en çok kestiren galeriler</span></div><div class="galeri-liste">';
+    galeriler.forEach(([gAd,g],i)=>{
+      // sahibi: bu galeride en çok satan pazarlamacı
+      const sahip=Object.entries(g.saticilar).sort((a,b)=>b[1]-a[1])[0];
+      const digerSatici=Object.keys(g.saticilar).length-1;
+      const bar=Math.max(6, Math.round((g.adet/(galeriler[0][1].adet||1))*100));
+      const ciroTxt=g.ciro>0?' · ₺'+tl(g.ciro):'';
+      html+='<div class="galeri-satir'+(i===0?' galeri-lider':'')+'" onclick="satistanGrubaGit(event,\''+esc(g.jid)+'\',\''+esc(gAd).replace(/'/g,"\\'")+'\')" title="Sohbeti aç: '+esc(gAd)+'">'+
+        '<div class="gs-ust"><span class="gs-ad">'+(i===0?'👑 ':'')+esc(gAd)+'</span><span class="gs-adet">'+g.adet+' adet'+ciroTxt+'</span></div>'+
+        '<div class="gs-bar-kap"><div class="gs-bar" style="width:'+bar+'%"></div></div>'+
+        '<div class="gs-alt">👤 '+esc(sahip?sahip[0]:'?')+' ('+(sahip?sahip[1]:0)+')'+(digerSatici>0?' <span class="gs-diger">+'+digerSatici+' kişi</span>':'')+'</div>'+
+        '</div>';
+    });
+    html+='</div></div>';
+  }
+  // ── BRANŞ DAĞILIMI ──
   if(urunler.length){
-    html+='<div class="dash-kart" style="flex:1.2;min-width:170px"><div class="dk-etiket" style="margin-top:0;margin-bottom:8px">Ürünler</div><div class="satici-ozet">';
-    html+=urunler.map(([u,adet])=>'<div class="satici-satir"><span class="ss-ad" style="text-transform:capitalize">'+esc(u)+'</span><span class="ss-adet">'+adet+'</span></div>').join('');
+    html+='<div class="dash-panel"><div class="dp-baslik">📊 Branş Dağılımı</div><div class="brans-liste">';
+    urunler.forEach(([u,adet])=>{
+      const bar=Math.max(6, Math.round((adet/maxUrun)*100));
+      const renk=bransRenk(u);
+      html+='<div class="brans-satir"><span class="bs-ad" style="color:'+renk+'">'+esc(u)+'</span>'+
+        '<div class="bs-bar-kap"><div class="bs-bar" style="width:'+bar+'%;background:'+renk+'"></div></div>'+
+        '<span class="bs-adet">'+adet+'</span></div>';
+    });
     html+='</div></div>';
   }
+  html+='</div>';
   dash.innerHTML=html;
+}
+// Üretim sıralamasından kişiye tıklayınca filtrele
+function saticiFiltrele(ad){
+  const sel=document.getElementById('saticiSecim');
+  if(sel){ sel.value = (sel.value===ad)?'':ad; kontrolYukle(); }
+}
+// Branşa göre sabit renk (gözle ayırt etmek için)
+function bransRenk(b){
+  const R={'kısa süreli trafik':'#ef4444','kasko':'#8b5cf6','trafik':'#0ea5e9','dask':'#f59e0b','konut':'#10b981','işyeri':'#6366f1','ferdi kaza':'#ec4899','seyahat sağlık':'#14b8a6','tss':'#f97316','özel sağlık':'#06b6d4','yeşilkart':'#22c55e','zorunlu koltuk':'#a855f7','öss':'#64748b','imm':'#78716c'};
+  return R[(b||'').toLowerCase()]||'#64748b';
 }
 
 function kontrolListeCiz(){
@@ -3499,6 +3670,16 @@ function satisKartHtml(s){
   let rozet='';
   if(s.onayli) rozet='<span class="sk-rozet r-onay">✓ onaylı</span>';
   else if(s.duzenlendi) rozet='<span class="sk-rozet r-duzen">düzenlendi</span>';
+  // ── ÖDEME BİLGİLERİ (kısa süreli trafik): tip + periyot + fiyat rozetleri ──
+  let odemeRozetler='';
+  const oTip=(s.odeme_tip||s.odemeTip||'').toLowerCase();
+  const oPer=(s.odeme_periyot||s.odemePeriyot||'').toLowerCase();
+  const fiyat=parseFloat(s.fiyat);
+  if(oTip==='mkk') odemeRozetler+='<span class="sk-otip ot-mkk">💳 MKK</span>';
+  else if(oTip==='acik') odemeRozetler+='<span class="sk-otip ot-acik">🔓 AÇIK</span>';
+  else if(oTip==='iadesiz') odemeRozetler+='<span class="sk-otip ot-iadesiz">🚫 İADESİZ</span>';
+  if(oPer){ const P={gunluk:'📅 Günlük',haftalik:'🗓️ Haftalık',aylik:'📆 Aylık'}; odemeRozetler+='<span class="sk-periyot">'+(P[oPer]||oPer)+'</span>'; }
+  if(!isNaN(fiyat)&&fiyat>0) odemeRozetler+='<span class="sk-fiyat">₺'+(fiyat%1===0?fiyat:fiyat.toFixed(2))+'</span>';
   // aksiyon butonları: pazarlamacı sadece düzenle; yönetici onayla+sil+düzenle
   let aksiyon='';
   const kilitli=s.gun_kapandi;
@@ -3515,23 +3696,26 @@ function satisKartHtml(s){
   const grupGoster=grupAd||'(grup adı yok)';
   const grupJid=s.chat_jid||'';
   // satıcı + saat üst satır; grup TAM adı alt satırda (kesilmeden) + tıkla=gruba git + kopyala
-  const detay='<span class="sk-satici">'+esc(s.satici||'?')+'</span> · '+saat;
+  const detay='<span class="sk-satici">👤 '+esc(s.satici||'?')+'</span> · '+saat;
   const grupSatir='<div class="sk-grup">'+
-    '<span class="sk-grup-ad" onclick="satistanGrubaGit(event,\''+esc(grupJid)+'\',\''+esc(grupGoster).replace(/'/g,"\\'")+'\')" title="Sohbeti aç: '+esc(grupGoster)+'">📍 '+esc(grupGoster)+'</span>'+
+    '<span class="sk-grup-ad" onclick="satistanGrubaGit(event,\''+esc(grupJid)+'\',\''+esc(grupGoster).replace(/'/g,"\\'")+'\')" title="Sohbeti aç: '+esc(grupGoster)+'">🏪 '+esc(grupGoster)+'</span>'+
     (grupAd?'<span class="sk-grup-kopya" onclick="grupAdiKopyala(event,\''+esc(grupGoster).replace(/'/g,"\\'")+'\')" title="Grup adını kopyala">📋</span>':'')+
     '</div>';
-  return '<div class="satis-kart '+sinif+'">'+
+  const renk=bransRenk(s.urun);
+  return '<div class="satis-kart '+sinif+'" style="border-left:4px solid '+renk+'">'+
     '<div class="sk-adet">'+s.adet+'<small>adet</small></div>'+
-    '<div class="sk-urun"><div class="sk-urun-ad">'+esc(s.urun)+' '+rozet+'</div><div class="sk-detay">'+detay+'</div>'+grupSatir+'</div>'+
+    '<div class="sk-urun"><div class="sk-urun-ad"><span class="sk-brans-ad" style="color:'+renk+'">'+esc(s.urun)+'</span> '+odemeRozetler+' '+rozet+'</div><div class="sk-detay">'+detay+'</div>'+grupSatir+'</div>'+
     '<div class="sk-aksiyon">'+aksiyon+'</div>'+
     '</div>';
 }
 
 // Geçerli branşlar (server ile aynı sıra) — düzenleme modalında gösterilir
-const PANEL_BRANSLAR=['trafik','kasko','dask','tss','yeşilkart','konut','işyeri','öss','imm'];
+const PANEL_BRANSLAR=['kısa süreli trafik','kasko','trafik','dask','konut','işyeri','ferdi kaza','seyahat sağlık','tss','özel sağlık','yeşilkart','zorunlu koltuk'];
+// Kısa süreli trafiğin sabit fiyat seçenekleri (₺)
+const KST_FIYATLAR=[750,800,850,900,1000,1250,1500];
 
 // ---- Composer'daki SATIŞ EKLE paneli (pazarlamaci, gruba mesaj GONDERMEDEN kaydet) ----
-let _shSeciliBrans='';
+let _shSeciliBrans='', _shOdemeTip='', _shPeriyot='', _shFiyat=null;
 function satisHizliAc(){
   const c=chats[activeJid];
   if(!c||!c.isGroup){ showToast('Önce bir grup seçin'); return; }
@@ -3542,13 +3726,67 @@ function satisHizliAc(){
   // branş butonlarını çiz
   const kap=document.getElementById('shBranslar');
   if(kap) kap.innerHTML=PANEL_BRANSLAR.map(b=>'<button class="sh-brans" onclick="shBransSec(\''+b+'\')">'+b+'</button>').join('');
-  // adet sıfırla
+  // alt bölümleri gizle + sıfırla
+  shBolumleriSifirla();
   const ad=document.getElementById('shAdet'); if(ad) ad.value=1;
   document.getElementById('satisHizli').classList.add('acik');
+}
+// Ödeme tipi / periyot / fiyat bölümlerini gizle ve seçimlerini temizle
+function shBolumleriSifirla(){
+  const ob=document.getElementById('shOdemeTipBox'); if(ob) ob.style.display='none';
+  const pb=document.getElementById('shPeriyotBox'); if(pb) pb.style.display='none';
+  const fb=document.getElementById('shFiyatBox'); if(fb) fb.style.display='none';
+  document.querySelectorAll('.sh-otip').forEach(el=>el.classList.remove('secili'));
+  document.querySelectorAll('.sh-periyot').forEach(el=>el.classList.remove('secili'));
+  const fe=document.getElementById('shFiyatElle'); if(fe) fe.value='';
+  _shOdemeTip=''; _shPeriyot=''; _shFiyat=null;
 }
 function shBransSec(b){
   _shSeciliBrans=b;
   document.querySelectorAll('#shBranslar .sh-brans').forEach(el=>el.classList.toggle('secili', el.textContent.trim()===b));
+  shBolumleriSifirla();
+  if(b==='kısa süreli trafik'){
+    // KISA SÜRELİ TRAFİK -> ödeme yöntemi seçilmeli (MKK/AÇIK/İADESİZ)
+    document.getElementById('shOdemeTipBox').style.display='';
+  } else {
+    // Diğer branşlar -> fiyat OPSİYONEL (elle), sabit rakam yok
+    document.getElementById('shFiyatBox').style.display='';
+    document.getElementById('shFiyatLabel').textContent='Fiyat (₺, opsiyonel):';
+    document.getElementById('shFiyatlar').innerHTML='';
+  }
+}
+function shOdemeTipSec(t){
+  _shOdemeTip=t;
+  document.querySelectorAll('.sh-otip').forEach(el=>el.classList.toggle('secili', el.dataset.otip===t));
+  // MKK: periyot + fiyat YOK. AÇIK/İADESİZ: periyot + sabit fiyatlar ZORUNLU.
+  if(t==='mkk'){
+    document.getElementById('shPeriyotBox').style.display='none';
+    document.getElementById('shFiyatBox').style.display='none';
+    _shPeriyot=''; _shFiyat=null;
+    document.querySelectorAll('.sh-periyot').forEach(el=>el.classList.remove('secili'));
+  } else {
+    document.getElementById('shPeriyotBox').style.display='';
+    document.getElementById('shFiyatBox').style.display='';
+    document.getElementById('shFiyatLabel').textContent='Fiyat (₺):';
+    // sabit fiyat chip'leri
+    document.getElementById('shFiyatlar').innerHTML=KST_FIYATLAR.map(f=>
+      '<button class="sh-fiyat-chip" data-f="'+f+'" onclick="shFiyatSec('+f+')">'+f+' ₺</button>').join('');
+  }
+}
+function shPeriyotSec(p){
+  _shPeriyot=p;
+  document.querySelectorAll('.sh-periyot').forEach(el=>el.classList.toggle('secili', el.dataset.per===p));
+}
+function shFiyatSec(f){
+  _shFiyat=f;
+  document.querySelectorAll('.sh-fiyat-chip').forEach(el=>el.classList.toggle('secili', Number(el.dataset.f)===f));
+  const fe=document.getElementById('shFiyatElle'); if(fe) fe.value=''; // chip seçildi, elle alanı temizle
+}
+function shFiyatElleDegisti(){
+  const fe=document.getElementById('shFiyatElle');
+  const v=parseFloat(fe.value);
+  if(!isNaN(v)&&v>0){ _shFiyat=v; document.querySelectorAll('.sh-fiyat-chip').forEach(el=>el.classList.remove('secili')); }
+  else if(!fe.value){ _shFiyat=null; }
 }
 function shAdetDegis(d){
   const inp=document.getElementById('shAdet'); if(!inp) return;
@@ -3562,15 +3800,27 @@ async function satisHizliKaydet(){
   if(!_shSeciliBrans){ showToast('⚠️ Bir branş seçin'); return; }
   const adet=parseInt(document.getElementById('shAdet')?.value,10);
   if(isNaN(adet)||adet<1||adet>9999){ showToast('⚠️ Geçerli adet girin'); return; }
+  // Fiyatı elle yazıp chip seçmemişse son değeri al
+  shFiyatElleDegisti();
+  // KISA SÜRELİ TRAFİK doğrulamaları (akış: ödeme tipi -> periyot -> fiyat)
+  if(_shSeciliBrans==='kısa süreli trafik'){
+    if(!_shOdemeTip){ showToast('⚠️ Ödeme yöntemi seçin (MKK / AÇIK / İADESİZ)'); return; }
+    if(_shOdemeTip!=='mkk'){
+      if(!_shPeriyot){ showToast('⚠️ Ödeme periyodu seçin (Günlük / Haftalık / Aylık)'); return; }
+      if(!_shFiyat||_shFiyat<=0){ showToast('⚠️ Fiyat seçin veya yazın'); return; }
+    }
+  }
   const btn=document.getElementById('shKaydetBtn');
   if(btn){ btn.disabled=true; btn.textContent='Kaydediliyor…'; }
   try{
     const r=await fetch('/api/satislar/ekle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      token:authToken, urun:_shSeciliBrans, adet, chatJid:activeJid, chatName:c.name||''
+      token:authToken, urun:_shSeciliBrans, adet, chatJid:activeJid, chatName:c.name||'',
+      fiyat:_shFiyat||null, odemeTip:_shOdemeTip||null, odemePeriyot:_shPeriyot||null
     })});
     const d=await r.json();
     if(d.ok){
-      showToast('✓ Satış kaydedildi: '+_shSeciliBrans+' x'+adet);
+      const ek=_shOdemeTip?(' · '+_shOdemeTip.toUpperCase()+(_shPeriyot?' '+_shPeriyot:'')+(_shFiyat?' '+_shFiyat+'₺':'')):'';
+      showToast('✓ Satış kaydedildi: '+_shSeciliBrans+' x'+adet+ek);
       document.getElementById('satisHizli').classList.remove('acik');
     } else showToast('⚠️ '+(d.error||'Kaydedilemedi'));
   }catch(e){ showToast('⚠️ Bağlantı hatası'); }
