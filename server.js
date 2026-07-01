@@ -1302,6 +1302,31 @@ app.post('/upload-group-photo', express.raw({ type: '*/*', limit: '16mb' }), asy
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+// ============================================================
+// ZOMBI BAGLANTI TEMIZLEME (sabah "mesaj dusmuyor" sorununun ANA cozumu)
+// Gece internet dalgalaninca WebSocket "yari-acik" (olu ama acik gorunur) hale gelir.
+// Ne panel ne sunucu farketmezse mesajlar akmaz. Cozum: sunucu her panele DUZENLI
+// WebSocket-seviyesi ping atar; cevap (pong) vermeyen baglantiyi OLU sayip kapatir.
+// Panel de kendi tarafinda kopmayi anlayip otomatik yeniden baglanir -> mesajlar akar.
+// ============================================================
+wss.on('connection', (ws) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; }); // panel WebSocket-ping'e cevap verdi -> canli
+});
+// Her 30sn: cevap vermeyen (zombi) baglantilari kapat, digerlerine ping at.
+const _wsSaglikTimer = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      // onceki turda ping attik, PONG GELMEDI -> baglanti olu, sonlandir.
+      try { ws.terminate(); } catch (_) {}
+      return;
+    }
+    ws.isAlive = false;          // bir sonraki pong'a kadar "olu" varsay
+    try { ws.ping(); } catch (_) {} // WebSocket-seviyesi ping (panel otomatik pong doner)
+  });
+}, 30000);
+wss.on('close', () => clearInterval(_wsSaglikTimer));
+
 function broadcast(obj) {
   const data = JSON.stringify(obj);
   wss.clients.forEach((c) => { if (c.readyState === 1) c.send(data); });

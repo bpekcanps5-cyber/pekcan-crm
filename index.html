@@ -2609,6 +2609,8 @@ function connect(){
   ws=new WebSocket(wsProto+location.host);
   ws.onmessage=(ev)=>{
     const d=JSON.parse(ev.data);
+    // pong: sunucu hayatta, bağlantı canlı -> zombi sayacını sıfırla
+    if(d.type==='pong'){ _sonPong=Date.now(); return; }
     if(d.type==='status'){
       setConnected(d.connected);
       if(d.myJid){ myJid=d.myJid; myName=d.myName||'Ben'; updateMyName(); }
@@ -2942,11 +2944,20 @@ function connect(){
     // HAT KIMLIGI: bu panel hangi hatta (ofis/pazarlama) bagli — sunucu buna gore
     // SADECE bu hattin sohbetlerini/mesajlarini gonderir (izolasyon).
     if(authToken) ws.send(JSON.stringify({type:'merhaba', token:authToken}));
-    // ── HEARTBEAT (ping): her 25sn'de bir kucuk sinyal gonder ki Nginx/internet
-    //    altyapisi "bu baglanti olu" deyip KESMESIN. "Gelgitli baglanti"nin ana sebebi buydu. ──
+    // ── HEARTBEAT (ping/pong): her 25sn'de ping gonder. Sunucu 'pong' doner.
+    //    ZOMBI TESPITI: pong gelmezse baglanti "yari-acik" (olu) demektir -> zorla kapat +
+    //    yeniden baglan. "Panel acik ama mesaj dusmuyor" (ozellikle sabahlari) sorununun
+    //    ana sebebi buydu: WebSocket sessizce oluyordu, panel farketmiyordu. ──
     if(_pingTimer) clearInterval(_pingTimer);
+    _sonPong=Date.now(); // baglanti yeni acildi, pong sayaci sifirla
     _pingTimer=setInterval(()=>{
       if(ws && ws.readyState===WebSocket.OPEN){
+        // Son pong'dan bu yana 60sn (2+ ping) gectiyse -> baglanti OLU, yeniden kur
+        if(Date.now()-_sonPong > 60000){
+          console.warn('⚠️ WebSocket yanit vermiyor (zombi) — yeniden baglaniyorum');
+          try{ ws.close(); }catch(e){} // onclose tetiklenir -> reconnect
+          return;
+        }
         try{ ws.send(JSON.stringify({type:'ping'})); }catch(e){}
       }
     }, 25000);
@@ -2958,6 +2969,33 @@ function connect(){
   };
 }
 let _pingTimer=null;
+let _sonPong=Date.now(); // en son 'pong' alinan zaman (zombi tespiti icin)
+
+// ── SAYFA GORUNURLUK: bilgisayar/telefon uykudan donunce veya sekme one gelince
+//    baglantiyi HEMEN kontrol et. "Her sabah mesaj dusmuyor" sorununun onemli bir parcasi:
+//    gece sekme arka plandayken tarayici ping timer'ini durdurur, baglanti sessizce olur.
+//    Sabah ekrana donunce bunu aninda yakalayip yeniden baglaniriz. ──
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible'){
+    // WebSocket kapali/kapaniyorsa hemen yeniden baglan
+    if(!ws || ws.readyState===WebSocket.CLOSED || ws.readyState===WebSocket.CLOSING){
+      if(typeof connect==='function') connect();
+    } else if(ws.readyState===WebSocket.OPEN){
+      // acik gorunuyor ama zombi olabilir -> hemen ping at, cevap gelmezse timer kapatir
+      try{ ws.send(JSON.stringify({type:'ping'})); }catch(e){}
+      // 5sn icinde pong gelmezse baglanti oludur -> yenile
+      setTimeout(()=>{
+        if(Date.now()-_sonPong>8000 && ws && ws.readyState===WebSocket.OPEN){
+          try{ ws.close(); }catch(e){} // onclose -> reconnect
+        }
+      }, 5000);
+    }
+  }
+});
+// Agdaki cihaz internete geri donunce de aninda baglan (wifi degisimi vs.)
+window.addEventListener('online', ()=>{
+  if(!ws || ws.readyState!==WebSocket.OPEN){ if(typeof connect==='function') connect(); }
+});
 // Senkron durumu: gruplar/sohbetler cekilince gosterge guncellenir
 function handleSyncStatus(d){
   const p=document.getElementById('connPill');
