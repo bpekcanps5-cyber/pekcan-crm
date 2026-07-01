@@ -210,6 +210,33 @@ async function getSetting(key, varsayilan = null) {
 }
 
 // ============================================================
+// "BURADAYIM" — grup ilgi isareti (kim hangi grupla ilgileniyor)
+// settings'te 'grup_buradayim' -> { grupJid: [ {user, ad}, ... ] }
+// Kalici (kullanici kaldirana kadar), herkese gorunur.
+// ============================================================
+async function getBuradayim() {
+  const v = await getSetting('grup_buradayim', {});
+  return (v && typeof v === 'object') ? v : {};
+}
+// Bir kullanicinin bir gruptaki "buradayim" durumunu yak/sondur (toggle).
+// Doner: { durum: guncel liste, aktif: bool }
+async function toggleBuradayim(grupJid, user, ad) {
+  if (!aktif) return { ok: false };
+  try {
+    const hepsi = await getBuradayim();
+    let liste = Array.isArray(hepsi[grupJid]) ? hepsi[grupJid] : [];
+    const idx = liste.findIndex(x => x.user === user);
+    let aktif;
+    if (idx >= 0) { liste.splice(idx, 1); aktif = false; } // vardi -> kaldir
+    else { liste.push({ user, ad }); aktif = true; }        // yoktu -> ekle
+    if (liste.length) hepsi[grupJid] = liste;
+    else delete hepsi[grupJid]; // bos kaldiysa grubu tamamen sil (temiz kalsin)
+    await saveSetting('grup_buradayim', hepsi);
+    return { ok: true, aktif, liste };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+// ============================================================
 // ACILISTA TUM VERIYI OKU (bellege doldurmak icin)
 // ============================================================
 async function loadAll(lineId = 'ofis') {
@@ -1413,6 +1440,7 @@ module.exports = {
   saveGroupMessage, loadGroupMessages, deleteGroupMessage, editGroupMessage,
   createPoll, votePoll, getPollResults, getPollsResults,
   GRUP_CONV_KEY,
+  getBuradayim, toggleBuradayim,
   saveSession, loadSessions, deleteSession, updateSessionRole, updateUserRole, setMesajIsaret,
   addAssignment, removeAssignment, loadAssignments,
   addLabel, deleteLabel, loadLabels, etiketSiraKaydet, addChatLabel, removeChatLabel, loadChatLabels,

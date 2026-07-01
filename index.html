@@ -1397,6 +1397,19 @@
   .um-check input{width:18px;height:18px;cursor:pointer;accent-color:var(--brand)}
   /* mobil geri butonu: masaüstünde GİZLİ (sadece telefonda görünür - media query'de açılır) */
   .mobil-geri{ display:none; }
+  /* ── "BURADAYIM" grup ilgi işareti ── */
+  /* sol listede: yeşil yanıp sönen nokta (kim ilgileniyor) */
+  .buradayim-nisan{display:inline-flex;align-items:center;margin-left:5px;vertical-align:middle}
+  .buradayim-nokta{width:9px;height:9px;border-radius:50%;background:#22c55e;display:inline-block;
+    box-shadow:0 0 0 0 rgba(34,197,94,.7);animation:buradayimYanip 1.4s ease-in-out infinite}
+  @keyframes buradayimYanip{
+    0%{box-shadow:0 0 0 0 rgba(34,197,94,.6);opacity:1}
+    70%{box-shadow:0 0 0 7px rgba(34,197,94,0);opacity:.75}
+    100%{box-shadow:0 0 0 0 rgba(34,197,94,0);opacity:1}
+  }
+  /* yazı alanındaki buradayım butonu: aktifken yeşil vurgulu */
+  .buradayim-btn.aktif{color:#22c55e !important;background:rgba(34,197,94,.14) !important}
+  .buradayim-btn.aktif svg{filter:drop-shadow(0 0 3px rgba(34,197,94,.5))}
 
   /* ============================================================
      📱 TELEFON / MOBİL GÖRÜNÜM (sadece dar ekran ≤768px)
@@ -1682,6 +1695,9 @@
         </button>
         <button class="attach-btn" id="assignBtn" title="Gruba kişi etiketle" style="display:none">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+        </button>
+        <button class="attach-btn buradayim-btn" id="buradayimBtn" title="Bu grupla ilgileniyorum (buradayım)" style="display:none" onclick="buradayimToggle()">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
         </button>
         <button class="satis-btn" id="satisEkleBtn" title="Satış ekle (branş + adet)" style="display:none" onclick="satisHizliAc()">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
@@ -2769,6 +2785,8 @@ function connect(){
       // tam sohbet geldi (eksik vardi) -> oldugu gibi yerlestir
       if(d.chat){ chats[d.jid]=d.chat; if(activeJid===d.jid) renderMessagesDebounced(chats[d.jid]); renderList(); updateTitle(); }
     }
+    else if(d.type==='buradayimHepsi'){ _buradayim=d.durum||{}; renderList(); buradayimBtnGuncelle(); }
+    else if(d.type==='buradayimUpdate'){ handleBuradayimUpdate(d.jid, d.liste); }
     else if(d.type==='newChatResult'){ handleNewChatResult(d); }
     else if(d.type==='chatMerged'){
       // iki sohbet birlesti: eski jid'i kaldir, aciksa yeniye gec
@@ -5706,6 +5724,13 @@ _renderListRaw=function(){
 function chatRow(c){
   const pinIc=pinned.has(c.jid)?'<span class="pin-icon">'+pinSvg()+'</span>':'';
   const menIc=c.hasMention?'<span class="mention-badge" title="Burada senden bahsedildi">@</span>':'';
+  // "BURADAYIM": bu grupla ilgilenen ekip üyeleri (yeşil yanıp sönen nokta + isimler)
+  let buradayimIc='';
+  const bList=_buradayim[c.jid];
+  if(bList && bList.length){
+    const adlar=bList.map(x=>x.ad).join(', ');
+    buradayimIc='<span class="buradayim-nisan" title="Şu an ilgileniyor: '+esc(adlar)+'"><span class="buradayim-nokta"></span></span>';
+  }
   // ATAMA logosu: gruba kişi atanmışsa insan ikonu göster.
   //  - SANA atandıysa: dolu/yeşil ikon (senin işin)
   //  - Başkasına atandıysa: soluk ikon (birileri ilgileniyor)
@@ -5739,7 +5764,7 @@ function chatRow(c){
   return `<div class="chat ${c.jid===activeJid?'active':''}" onclick="openChat('${c.jid}')" oncontextmenu="openCtxMenu(event,'${c.jid}');return false;">
     ${avatarHtml(c)}
     <div class="chat-main">
-      <div class="chat-top"><span class="chat-name">${etiketNoktalari}${esc(c.name||c.jid)}${pinIc}${menIc}</span>
+      <div class="chat-top"><span class="chat-name">${etiketNoktalari}${esc(c.name||c.jid)}${pinIc}${menIc}${buradayimIc}</span>
         <span class="chat-time ${c.unread?'unread-time':''}">${esc(c.lastTime||'')}</span></div>
       <div class="chat-bottom"><span class="chat-preview${(c.messages&&c.messages.length&&acilMesajMi(c.messages[c.messages.length-1].text))?' acil':''}">${esc(previewText(c))}</span>
         ${c.unread?'<span class="badge">'+c.unread+'</span>':''}</div>
@@ -5890,6 +5915,36 @@ function mobilGeri(){
   const ip=document.getElementById('infoPanel'); if(ip) ip.classList.remove('show');
 }
 
+// ============================================================
+// "BURADAYIM" — grup ilgi işareti (kim hangi grupla ilgileniyor)
+// _buradayim: { grupJid: [ {user, ad}, ... ] } — tüm gruplar için, herkese görünür
+// ============================================================
+let _buradayim={};
+function buradayimToggle(){
+  if(!activeJid || !connected) return;
+  const c=chats[activeJid];
+  if(!c || !c.isGroup) return; // sadece grupta
+  ws.send(JSON.stringify({type:'buradayimToggle', jid:activeJid}));
+}
+// Açık sohbetin butonunu güncelle (ben bu grupta işaretli miyim?)
+function buradayimBtnGuncelle(){
+  const btn=document.getElementById('buradayimBtn');
+  if(!btn) return;
+  const c=activeJid&&chats[activeJid];
+  const benimAd=currentUser&&currentUser.username;
+  const liste=(activeJid&&_buradayim[activeJid])||[];
+  const benVarMi=liste.some(x=>x.user===benimAd);
+  btn.classList.toggle('aktif', benVarMi);
+  btn.title = benVarMi ? 'Buradan ayrıl (işareti kaldır)' : 'Bu grupla ilgileniyorum (buradayım)';
+}
+// Bir grup için buradayım güncellemesi geldi
+function handleBuradayimUpdate(jid, liste){
+  if(liste && liste.length) _buradayim[jid]=liste;
+  else delete _buradayim[jid];
+  renderList(); // sol listede yeşil işaretler güncellensin
+  if(jid===activeJid) buradayimBtnGuncelle();
+}
+
 function openChat(jid){
   activeJid=jid; clearReply();
   document.body.classList.add('sohbet-acik'); // 📱 telefonda sohbeti tam ekran aç (masaüstünde etkisiz)
@@ -5905,6 +5960,10 @@ function openChat(jid){
   updateConvHeader(c, jid);
   // Atama butonu sadece GRUPTA gorunsun (kisi sohbetinde atama yok)
   document.getElementById('assignBtn').style.display = c.isGroup ? 'grid' : 'none';
+  // "Buradayım" butonu da sadece grupta görünsün + durumunu güncelle
+  const bBtn=document.getElementById('buradayimBtn');
+  if(bBtn){ bBtn.style.display = c.isGroup ? 'grid' : 'none'; }
+  buradayimBtnGuncelle();
   // SATIŞ EKLE butonu: SADECE pazarlamaci + grup sohbetinde gorunur (ofiste yok)
   const satisBtn=document.getElementById('satisEkleBtn');
   if(satisBtn){

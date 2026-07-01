@@ -1399,6 +1399,7 @@ wss.on('connection', (ws) => {
         ws._lineId = lineId;
         ws._username = s ? s.username : null;
         ws._role = s ? s.role : null; // wipeAll gibi yonetici-only islemler icin
+        ws._displayName = s ? (s.displayName || s.username) : null; // "buradayim" isareti icin ad
         console.log(`   🔗 merhaba: token ${msg.token ? 'var' : 'YOK'} | kullanici=${ws._username||'-'} | hat=${lineId}`);
         // PAZARLAMACI ise ve hatti henuz baglanmadiysa baslat (restart sonrasi QR/baglanti gelsin)
         if (lineId !== 'ofis') {
@@ -1417,6 +1418,10 @@ wss.on('connection', (ws) => {
         // bu hattin GUNCEL sohbetlerini gonder (ofis ise global, pazarlama ise kendi hatti)
         const C = hatChats(lineId);
         ws.send(JSON.stringify({ type: 'chats', chats: Array.from(C.values()).map(stripRaw) }));
+        // "BURADAYIM" durumu: hangi grupla kim ilgileniyor -> panel yesil isaretleri gostersin
+        if (db.isReady()) {
+          try { const b = await db.getBuradayim(); ws.send(JSON.stringify({ type: 'buradayimHepsi', durum: b })); } catch (_) {}
+        }
         return;
       }
 
@@ -1949,6 +1954,16 @@ wss.on('connection', (ws) => {
         if (chat) {
           ws.send(JSON.stringify({ type: 'chatSync', jid: msg.jid, chat: stripRaw(chat, 300) }));
         }
+      }
+
+      // "BURADAYIM": kullanici bir grupla ilgileniyor isaretini yak/sondur -> HERKESE yay
+      else if (msg.type === 'buradayimToggle') {
+        if (!ws._username || !db.isReady()) return;
+        const ad = ws._displayName || ws._username;
+        const r = await db.toggleBuradayim(msg.jid, ws._username, ad);
+        if (!r.ok) { ws.send(JSON.stringify({ type: 'opError', error: 'İşaret güncellenemedi.' })); return; }
+        // guncel listeyi TUM panellere gonder (herkes gorsun kim girdi)
+        broadcast({ type: 'buradayimUpdate', jid: msg.jid, liste: r.liste || [] });
       }
 
       // 6) TUMUNU okundu yap (+ tum bahsedilme isaretlerini temizle)
