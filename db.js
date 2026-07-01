@@ -235,6 +235,16 @@ async function toggleBuradayim(grupJid, user, ad) {
     return { ok: true, aktif, liste };
   } catch (e) { return { ok: false, error: e.message }; }
 }
+// YONETICI: bir gruptaki TUM "buradayim" isaretlerini temizle (herkesinkini kaldir).
+async function clearBuradayim(grupJid) {
+  if (!aktif) return { ok: false };
+  try {
+    const hepsi = await getBuradayim();
+    delete hepsi[grupJid];
+    await saveSetting('grup_buradayim', hepsi);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
 
 // ============================================================
 // ACILISTA TUM VERIYI OKU (bellege doldurmak icin)
@@ -1440,7 +1450,7 @@ module.exports = {
   saveGroupMessage, loadGroupMessages, deleteGroupMessage, editGroupMessage,
   createPoll, votePoll, getPollResults, getPollsResults,
   GRUP_CONV_KEY,
-  getBuradayim, toggleBuradayim,
+  getBuradayim, toggleBuradayim, clearBuradayim,
   saveSession, loadSessions, deleteSession, updateSessionRole, updateUserRole, setMesajIsaret,
   addAssignment, removeAssignment, loadAssignments,
   addLabel, deleteLabel, loadLabels, etiketSiraKaydet, addChatLabel, removeChatLabel, loadChatLabels,

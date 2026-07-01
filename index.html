@@ -1402,6 +1402,15 @@
   .chat-name.buradayim-aktif{color:#16a34a !important;font-weight:800;
     text-shadow:0 0 8px rgba(34,197,94,.25);animation:buradayimAdYanip 1.8s ease-in-out infinite}
   @keyframes buradayimAdYanip{0%,100%{opacity:1}50%{opacity:.72}}
+  /* "İlgilenilen" filtresi: yeşil tonlu */
+  .filter-buradayim{color:#16a34a}
+  .filter-buradayim.active{background:#16a34a !important;color:#fff !important;border-color:#16a34a !important}
+  /* yönetici "Etiketlenenler" filtresi: mor tonlu (ayırt edilsin) */
+  .filter-yonetici{color:#7c3aed}
+  .filter-yonetici.active{background:#7c3aed !important;color:#fff !important;border-color:#7c3aed !important}
+  /* yönetici sağ tık: ilgilenmeyi kaldır (yeşil vurgulu) */
+  .ctx-buradayim-sil{color:#16a34a;font-weight:600}
+  .ctx-buradayim-sil:hover{background:rgba(34,197,94,.12)}
   /* küçük yeşil nokta (grup başlığı rozetinde kullanılıyor) */
   .buradayim-nokta{width:9px;height:9px;border-radius:50%;background:#22c55e;display:inline-block;
     box-shadow:0 0 0 0 rgba(34,197,94,.7);animation:buradayimYanip 1.4s ease-in-out infinite}
@@ -1600,6 +1609,8 @@
       <div class="filter" data-filter="people">Kişiler<span class="n" id="fPeople"></span></div>
       <div class="filter" data-filter="mentions">Bahsedilmeler<span class="n" id="fMentions"></span></div>
       <div class="filter" data-filter="assigned">Bana Etiketlenenler<span class="n" id="fAssigned"></span></div>
+      <div class="filter filter-yonetici" data-filter="tumAtanan" id="filterTumAtanan" style="display:none">👥 Etiketlenenler<span class="n" id="fTumAtanan"></span></div>
+      <div class="filter filter-buradayim" data-filter="buradayim">🟢 İlgilenilen<span class="n" id="fBuradayim"></span></div>
       <div class="filter" data-filter="unread">Okunmamış<span class="n" id="fUnread"></span></div>
       <div class="filter" data-filter="archived">Arşiv<span class="n" id="fArch"></span></div>
     </div>
@@ -4714,6 +4725,9 @@ function applyUser(){
   // "Tehlikeli islemler" (grup sifirlama) SADECE yoneticide gorunur.
   const tb=document.getElementById('tehlikeliBolge');
   if(tb) tb.style.display = currentUser.role==='admin' ? 'block' : 'none';
+  // "Etiketlenenler" filtresi (herkesin atandığı gruplar) SADECE yöneticide görünür
+  const fta=document.getElementById('filterTumAtanan');
+  if(fta) fta.style.display = (currentUser.role==='admin'||currentUser.role==='pzr_yonetici') ? '' : 'none';
   // ── KONTROL SEKMESİ + ALT SEKME YETKİLERİ ──
   // Roller: admin (yönetici), pazarlama (lineTip), muhasebeci, agent (temsilci)
   const rol = currentUser.role;
@@ -5552,6 +5566,15 @@ function matchesFilter(c){
     const u=currentUser&&currentUser.username;
     if(!u||!c.atananlar||!c.atananlar.includes(u))return false;
   }
+  // İLGİLENİLEN (buradayım): bu grupla ilgilenen biri var mı (yeşil olanlar)
+  if(currentFilter==='buradayim'){
+    const b=_buradayim[c.jid];
+    if(!b || !b.length) return false;
+  }
+  // TÜM ETİKETLENENLER (yönetici): herhangi birine etiketlenmiş tüm gruplar
+  if(currentFilter==='tumAtanan'){
+    if(!c.atananlar || !c.atananlar.length) return false;
+  }
   return true;
 }
 // Bu gruba ben etiketlendim mi? (liste isareti + bahsedilme yonlendirme icin)
@@ -5708,7 +5731,7 @@ _renderListRaw=function(){
     list.innerHTML='<div style="padding:40px 20px;text-align:center;color:var(--faint);font-size:13px">'+(currentFilter==='archived'?'Arsivde sohbet yok.':(searchTerm?'Sonuç bulunamadı.':'Henuz mesaj yok.<br>Birinden mesaj gelince burada gorunecek.'))+'</div>';
   }
   // SAYAÇLAR: tek geciste hesapla (eskiden chatArray()+filter 7-8 kez cagriliyordu -> yavaslik).
-  let nAll=0,nGroup=0,nPeople=0,nMention=0,nAssigned=0,nUnread=0;
+  let nAll=0,nGroup=0,nPeople=0,nMention=0,nAssigned=0,nUnread=0,nBuradayim=0,nTumAtanan=0;
   const u=currentUser&&currentUser.username;
   for(const c of Object.values(chats)){
     if(archived.has(c.jid)) continue;
@@ -5717,12 +5740,16 @@ _renderListRaw=function(){
     if(c.hasMention) nMention++;
     if(c.unread) nUnread++;
     if(u && c.atananlar && c.atananlar.includes(u)) nAssigned++;
+    if(_buradayim[c.jid] && _buradayim[c.jid].length) nBuradayim++;
+    if(c.atananlar && c.atananlar.length) nTumAtanan++;
   }
   document.getElementById('fAll').textContent=' '+nAll;
   document.getElementById('fGroups').textContent=' '+nGroup;
   const fp=document.getElementById('fPeople'); if(fp) fp.textContent=' '+nPeople;
   const fm=document.getElementById('fMentions'); if(fm) fm.textContent=' '+nMention;
   const fa=document.getElementById('fAssigned'); if(fa) fa.textContent=' '+nAssigned;
+  const fb=document.getElementById('fBuradayim'); if(fb) fb.textContent=' '+nBuradayim;
+  const fta=document.getElementById('fTumAtanan'); if(fta) fta.textContent=' '+nTumAtanan;
   document.getElementById('fUnread').textContent=' '+nUnread;
   document.getElementById('fArch').textContent=' '+archived.size;
   document.getElementById('chatCount').textContent=nAll+' sohbet';
@@ -5821,12 +5848,28 @@ function mesajSonucAc(jid, msgId){
 
 function openCtxMenu(e,jid){
   const isPin=pinned.has(jid), isArch=archived.has(jid);
-  ctxMenu.innerHTML=`
+  let html=`
     <div class="ctx-item" onclick="togglePin('${jid}')">${pinSvg()}${isPin?'Sabitlemeyi kaldir':'Sabitle'}</div>
     <div class="ctx-item" onclick="toggleArchive('${jid}')">${archiveSvg()}${isArch?'Arsivden cikar':'Arsivle'}</div>`;
+  // YÖNETİCİ: bu grupta biri "buradayım" bastıysa (yeşil), yönetici kaldırabilir
+  const yonetici = currentUser && (currentUser.role==='admin' || currentUser.role==='pzr_yonetici');
+  const bList=_buradayim[jid];
+  if(yonetici && bList && bList.length){
+    const adlar=bList.map(x=>x.ad).join(', ');
+    html+=`<div class="ctx-item ctx-buradayim-sil" onclick="buradayimYoneticiKaldir('${jid}')" title="${esc(adlar)}">🟢 İlgilenmeyi kaldır (${bList.length})</div>`;
+  }
+  ctxMenu.innerHTML=html;
   ctxMenu.style.left=Math.min(e.clientX,window.innerWidth-185)+'px';
   ctxMenu.style.top=e.clientY+'px';
   ctxMenu.classList.add('show');
+}
+// YÖNETİCİ: bir gruptaki TÜM "buradayım" işaretlerini kaldır (herkesinkini)
+function buradayimYoneticiKaldir(jid){
+  ctxMenu.classList.remove('show');
+  const bList=_buradayim[jid]; if(!bList||!bList.length) return;
+  const adlar=bList.map(x=>x.ad).join(', ');
+  if(!confirm('Bu gruptaki ilgilenme işaretini kaldırmak istediğine emin misin?\n\nİlgilenen: '+adlar)) return;
+  if(connected) ws.send(JSON.stringify({type:'buradayimTemizle', jid})); // yönetici: hepsini temizle
 }
 function togglePin(jid){
   pinned.has(jid)?pinned.delete(jid):pinned.add(jid);

@@ -1965,6 +1965,15 @@ wss.on('connection', (ws) => {
         // guncel listeyi TUM panellere gonder (herkes gorsun kim girdi)
         broadcast({ type: 'buradayimUpdate', jid: msg.jid, liste: r.liste || [] });
       }
+      // YONETICI: bir gruptaki TUM "buradayim" isaretlerini temizle (herkesinkini)
+      else if (msg.type === 'buradayimTemizle') {
+        const yonetici = ws._role === 'admin' || ws._role === 'pzr_yonetici';
+        if (!yonetici) { ws.send(JSON.stringify({ type: 'opError', error: 'Bu işlem için yetkiniz yok.' })); return; }
+        if (!db.isReady()) return;
+        const r = await db.clearBuradayim(msg.jid);
+        if (!r.ok) { ws.send(JSON.stringify({ type: 'opError', error: 'İşaret kaldırılamadı.' })); return; }
+        broadcast({ type: 'buradayimUpdate', jid: msg.jid, liste: [] }); // herkeste sonsun
+      }
 
       // 6) TUMUNU okundu yap (+ tum bahsedilme isaretlerini temizle)
       else if (msg.type === 'markAllRead' && SOCK && CONNECTED) {
