@@ -2916,7 +2916,8 @@ function connect(){
   const wsProto = location.protocol === 'https:' ? 'wss://' : 'ws://';
   ws=new WebSocket(wsProto+location.host);
   ws.onmessage=(ev)=>{
-    const d=JSON.parse(ev.data);
+    let d;
+    try{ d=JSON.parse(ev.data); }catch(e){ return; } // bozuk mesaj akışı düşürmesin
     // pong: sunucu hayatta, bağlantı canlı -> zombi sayacını sıfırla
     if(d.type==='pong'){ _sonPong=Date.now(); return; }
     if(d.type==='status'){
@@ -4335,6 +4336,16 @@ function openInternalChat(other){
     try{ ws.send(JSON.stringify({type:'internalRead', other})); }catch(e){}
   }
   if(connected) ws.send(JSON.stringify({type:'internalLoad', other}));
+  // GÜVENCE: 6sn içinde cevap (internalConversation) gelmezse "Yükleniyor…" sonsuza
+  // kadar kalmasın. Bağlantı/DB gecikmesinde kullanıcı "Tekrar dene" ile yeniden çeker.
+  clearTimeout(_imLoadTimer);
+  _imLoadTimer=setTimeout(()=>{
+    if(_internalOther!==other) return; // başka sohbete geçildi, boşver
+    const box=document.getElementById('internalMessages');
+    if(box && box.innerHTML.includes('Yükleniyor')){
+      box.innerHTML='<div style="text-align:center;color:var(--faint);font-size:13px;padding:24px">Mesajlar yüklenemedi.<br><button onclick="openInternalChat(\''+esc(other)+'\')" style="margin-top:10px;padding:7px 16px;border-radius:8px;border:none;background:var(--brand);color:#fff;font-weight:600;cursor:pointer">🔄 Tekrar dene</button></div>';
+    }
+  }, 6000);
   // sohbet açılınca: kayıtlı temayı uygula, pin butonunu güncelle, yazı stilini sıfırla
   document.getElementById('iconvSub').textContent='Ekip içi mesaj';
   document.getElementById('imPinBtn').style.display=''; // birebirde pin görünür
@@ -4347,10 +4358,22 @@ function openInternalChat(other){
 }
 
 // Konusma gecmisi geldi
+let _imLoadTimer=null; // iç mesaj yükleme zaman aşımı güvencesi
 function renderInternalConversation(d){
-  if(d.other!==_internalOther) return; // baska konusma acilmis olabilir
-  _internalMsgs=d.messages||[];
+  clearTimeout(_imLoadTimer); // cevap geldi -> zaman aşımı güvencesini iptal et
+  // Bu cevap ŞU AN açık sohbete ait değilse yoksay AMA "Yükleniyor…" ekranda
+  // takılı kalmasın diye yine de eski içeriği bırakma (başka sohbet çizecek zaten).
+  if(d.other!==_internalOther){
+    return; // doğru sohbetin cevabı geldiğinde aşağısı çalışır
+  }
+  _internalMsgs=Array.isArray(d.messages)?d.messages:[];
   drawInternalMessages();
+  // güvenlik: drawInternalMessages bir sebeple boş bıraktıysa "Yükleniyor…" kalmasın
+  const box=document.getElementById('internalMessages');
+  if(box && box.innerHTML.includes('Yükleniyor')){
+    box.innerHTML = _internalMsgs.length ? box.innerHTML :
+      '<div style="text-align:center;color:var(--faint);font-size:13px;padding:24px">Henüz mesaj yok. İlk mesajı sen yaz 👋</div>';
+  }
 }
 
 function drawInternalMessages(){

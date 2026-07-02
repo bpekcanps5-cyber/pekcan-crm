@@ -1537,12 +1537,18 @@ wss.on('connection', (ws) => {
       // Bir konusmayi ac (iki kullanici arasi gecmis)
       if (msg.type === 'internalLoad') {
         if (!ws._username || !db.isReady()) { ws.send(JSON.stringify({ type: 'internalConversation', other: msg.other, messages: [] })); return; }
-        const rows = await db.loadInternalConversation(ws._username, msg.other, 300);
-        // acilinca okundu isaretle
-        await db.markInternalRead(ws._username, msg.other);
-        const n = await db.internalUnreadCount(ws._username);
+        let rows = [];
+        try { rows = await db.loadInternalConversation(ws._username, msg.other, 300); } catch (e) { rows = []; }
+        // MESAJLARI ÖNCE GÖNDER (okundu işaretleme sonra) -> okundu/sayaç bir hata verse
+        // bile mesajlar KESİN gelir, panelde "Yükleniyor…" takılı kalmaz.
         ws.send(JSON.stringify({ type: 'internalConversation', other: msg.other, messages: rows }));
-        ws.send(JSON.stringify({ type: 'internalUnread', count: n }));
+        try {
+          await db.markInternalRead(ws._username, msg.other);
+          const n = await db.internalUnreadCount(ws._username);
+          ws.send(JSON.stringify({ type: 'internalUnread', count: n }));
+          // okundu -> gonderene bildir (tikleri maviye)
+          wss.clients.forEach((c) => { if (c.readyState === 1 && c._username === msg.other) c.send(JSON.stringify({ type: 'internalReadUpdate', by: ws._username })); });
+        } catch (e) { /* okundu isaretlenemese de mesajlar gitti */ }
         return;
       }
 
