@@ -478,13 +478,20 @@ app.post('/api/users/active', express.json(), async (req, res) => {
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
   // o an bagli WS'lerden aktif username'leri topla
   const aktifSet = new Set();
-  wss.clients.forEach((c) => { if (c.readyState === 1 && c._username) aktifSet.add(c._username); });
+  const girisMap = {}; // username -> en eski acik baglantinin giris zamani (gercek giris saati)
+  wss.clients.forEach((c) => {
+    if (c.readyState === 1 && c._username) {
+      aktifSet.add(c._username);
+      if (c._girisTs && (!girisMap[c._username] || c._girisTs < girisMap[c._username])) girisMap[c._username] = c._girisTs;
+    }
+  });
   const users = await db.listUsers();
   const liste = users.map(u => ({
     username: u.username,
     displayName: u.display_name || u.username,
     role: u.role,
     active: aktifSet.has(u.username),
+    girisTs: girisMap[u.username] || null, // aktifse giris saati
   }));
   res.json({ ok: true, users: liste });
 });
@@ -1435,6 +1442,7 @@ wss.on('connection', (ws) => {
         ws._username = s ? s.username : null;
         ws._role = s ? s.role : null; // wipeAll gibi yonetici-only islemler icin
         ws._displayName = s ? (s.displayName || s.username) : null; // "buradayim" isareti icin ad
+        if (ws._username && !ws._girisTs) ws._girisTs = Date.now(); // aktif kullanicilar panelinde giris saati
         console.log(`   🔗 merhaba: token ${msg.token ? 'var' : 'YOK'} | kullanici=${ws._username||'-'} | hat=${lineId}`);
         // PAZARLAMACI ise ve hatti henuz baglanmadiysa baslat (restart sonrasi QR/baglanti gelsin)
         if (lineId !== 'ofis') {
@@ -1457,6 +1465,8 @@ wss.on('connection', (ws) => {
         // "BURADAYIM" durumu: hangi grupla kim ilgileniyor -> panel yesil isaretleri gostersin
         if (db.isReady()) {
           try { const b = await db.getBuradayim(); ws.send(JSON.stringify({ type: 'buradayimHepsi', durum: b })); } catch (_) {}
+          try { const f = await db.getSetting('favoriler', []); ws.send(JSON.stringify({ type: 'favoriler', liste: Array.isArray(f) ? f : [] })); } catch (_) {}
+          try { const ms = await db.getSetting('mesaj_sabit', {}); ws.send(JSON.stringify({ type: 'mesajSabitler', durum: (ms && typeof ms === 'object') ? ms : {} })); } catch (_) {}
         }
         return;
       }
@@ -1570,6 +1580,13 @@ wss.on('connection', (ws) => {
         await db.markInternalRead(ws._username, msg.other);
         const n = await db.internalUnreadCount(ws._username);
         ws.send(JSON.stringify({ type: 'internalUnread', count: n }));
+        // GONDERENE ANINDA bildir: mesajlari OKUNDU -> onun ekraninda tikler maviye
+        // doner + balonlar silige gecer (beklemeden, o anda).
+        wss.clients.forEach((c) => {
+          if (c.readyState === 1 && c._username === msg.other) {
+            c.send(JSON.stringify({ type: 'internalReadUpdate', by: ws._username }));
+          }
+        });
         return;
       }
 
@@ -1585,6 +1602,24 @@ wss.on('connection', (ws) => {
           if (c.readyState === 1 && c._username === msg.other) {
             // karsi tarafa: onun penceresinde 'other' BENIM (gonderen)
             c.send(JSON.stringify({ type: 'internalMsgDeleted', id: msg.id, other: ws._username, hardDelete: !!r.hardDelete }));
+          }
+        });
+        return;
+      }
+
+      // Ic sohbeti KALICI SIL (kullanici istegi): mesajlar DB'den TAMAMEN silinir,
+      // IKI TARAFTAN da gider, yeni mesaj gelse bile eskiler ASLA geri gelmez.
+      if (msg.type === 'internalConvSil') {
+        if (!ws._username || !db.isReady()) return;
+        if (!msg.other || msg.other === '__GRUP__') { ws.send(JSON.stringify({ type: 'opError', error: 'Grup sohbeti silinemez.' })); return; }
+        const r = await db.deleteInternalConversation(ws._username, msg.other);
+        if (!r.ok) { ws.send(JSON.stringify({ type: 'opError', error: 'Sohbet silinemedi.' })); return; }
+        console.log(`🗑️  İç sohbet KALICI silindi: ${ws._username} <-> ${msg.other} (${r.silinen || 0} mesaj)`);
+        // iki tarafa da bildir -> acik pencereler kapansin, listeler yenilensin
+        ws.send(JSON.stringify({ type: 'internalConvDeleted', other: msg.other }));
+        wss.clients.forEach((c) => {
+          if (c.readyState === 1 && c._username === msg.other) {
+            c.send(JSON.stringify({ type: 'internalConvDeleted', other: ws._username }));
           }
         });
         return;
@@ -1993,25 +2028,75 @@ wss.on('connection', (ws) => {
       }
 
       // ACIKLAMA TAZELE: panel bir grubu HER ACTIGINDA gonderir. Guncel aciklama/ad/uye
-      // sayisini arka planda ceker (60sn tazelik: sik acilislarda WhatsApp'i bogmaz),
-      // degistiyse hafif msgUpdate ile TUM panellere yayar. groups.update eventi kacsa
-      // veya 30dk onbellek eskimis olsa bile ekip gruba girince GUNCEL aciklamayi gorur.
+      // (ve foto eksikse foto) ARKA PLANDA cekilir (15sn tazelik). Basarisiz olursa 2sn
+      // sonra BIR KEZ daha dener -> gruba girince aciklama KESIN gelir.
       else if (msg.type === 'aciklamaTazele') {
         const chat = C.get(msg.jid);
         if (chat && chat.isGroup) {
-          getGroupMeta(msg.jid, 60 * 1000).then((meta) => {
-            if (!meta) return;
-            const c = C.get(msg.jid); if (!c) return;
+          const uygula = (meta) => {
+            const c = C.get(msg.jid); if (!c || !meta) return false;
             let degisti = false;
             if (meta.subject && meta.subject.trim() && c.name !== meta.subject.trim()) { c.name = meta.subject.trim(); degisti = true; }
-            if (meta.desc !== undefined && c.description !== (meta.desc || '')) { c.description = meta.desc || ''; degisti = true; }
+            if (meta.desc !== undefined && c.description !== (meta.desc || '')) { c.description = (meta.desc || '').trim(); degisti = true; }
             if (meta.participants && c.memberCount !== meta.participants.length) { c.memberCount = meta.participants.length; degisti = true; }
             if (degisti) {
               broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { name: c.name, description: c.isGroup ? (c.description || '') : '', memberCount: c.memberCount || 0, avatar: c.avatar || null } });
               if (db.isReady()) db.saveChat(c, _LID).catch(() => {});
             }
+            return true;
+          };
+          getGroupMeta(msg.jid, 15 * 1000, SOCK).then((meta) => {
+            if (!uygula(meta)) {
+              // ilk deneme bos dondu (rate-limit ani olabilir) -> 2sn sonra BIR kez daha
+              setTimeout(() => { getGroupMeta(msg.jid, 0, SOCK).then(uygula).catch(() => {}); }, 2000);
+            }
           }).catch(() => {});
+          // FOTO eksikse arka planda cek (kullanici: "fotoyu da ceksin")
+          if (chat.avatar === undefined || chat.avatar === null) {
+            getAvatar(msg.jid, false, SOCK).then((av) => {
+              const c = C.get(msg.jid); if (!c) return;
+              c.avatar = av || '';
+              if (av) {
+                broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { name: c.name, description: c.isGroup ? (c.description || '') : '', memberCount: c.memberCount || 0, avatar: av } });
+                if (db.isReady()) db.saveChat(c, _LID).catch(() => {});
+              }
+            }).catch(() => {});
+          }
         }
+      }
+
+      // MESAJ SABITLE (grup icinde, WhatsApp gibi): toggle + HERKESE yay. Max 3 sabit.
+      else if (msg.type === 'mesajSabitle') {
+        if (!ws._username || !db.isReady()) return;
+        try {
+          let hepsi = await db.getSetting('mesaj_sabit', {});
+          if (!hepsi || typeof hepsi !== 'object') hepsi = {};
+          let liste = Array.isArray(hepsi[msg.jid]) ? hepsi[msg.jid] : [];
+          const idx = liste.findIndex(x => x.mid === msg.mid);
+          if (idx >= 0) liste.splice(idx, 1); // vardi -> kaldir
+          else {
+            liste.push({ mid: msg.mid, text: String(msg.text || '').slice(0, 200), sender: String(msg.sender || '').slice(0, 60), ts: Date.now(), sabitleyen: ws._displayName || ws._username });
+            if (liste.length > 3) liste.shift(); // WhatsApp gibi en fazla 3 sabit
+          }
+          if (liste.length) hepsi[msg.jid] = liste; else delete hepsi[msg.jid];
+          await db.saveSetting('mesaj_sabit', hepsi);
+          broadcast({ type: 'mesajSabitUpdate', jid: msg.jid, liste });
+        } catch (e) { ws.send(JSON.stringify({ type: 'opError', error: 'Mesaj sabitlenemedi.' })); }
+      }
+
+      // FAVORILER: sohbeti favorilere ekle/cikar -> HERKESE yay (ortak liste, WhatsApp gibi)
+      else if (msg.type === 'favoriToggle') {
+        if (!ws._username || !db.isReady()) return;
+        try {
+          let f = await db.getSetting('favoriler', []);
+          if (!Array.isArray(f)) f = [];
+          const idx = f.indexOf(msg.jid);
+          let favori;
+          if (idx >= 0) { f.splice(idx, 1); favori = false; }
+          else { f.push(msg.jid); favori = true; }
+          await db.saveSetting('favoriler', f);
+          broadcast({ type: 'favoriUpdate', jid: msg.jid, favori });
+        } catch (e) { ws.send(JSON.stringify({ type: 'opError', error: 'Favori güncellenemedi.' })); }
       }
 
       // "BURADAYIM": kullanici bir grupla ilgileniyor isaretini yak/sondur -> HERKESE yay
@@ -3154,8 +3239,8 @@ let rateLimitUntil = 0; // bu zamana kadar istek atma (rate limit yedikten sonra
 const META_GAP = 400;     // her tur sonrasi bekleme (ms) — 1200'den dusuruldu, cok daha hizli
 const META_PARALEL = 3;   // ayni anda kac grup birden cekilsin (tek tek yerine 3'lu)
 
-function metaQueuePush(jid, resolve) {
-  metaQueue.push({ jid, resolve });
+function metaQueuePush(jid, resolve, sock = null) {
+  metaQueue.push({ jid, resolve, sock });
   metaQueueRun();
 }
 async function metaQueueRun() {
@@ -3170,16 +3255,18 @@ async function metaQueueRun() {
     // Bu turda kuyruktan en fazla META_PARALEL is al, AYNI ANDA cek (paralel).
     const tur = metaQueue.splice(0, META_PARALEL);
     let rateLimitYendi = false;
-    await Promise.all(tur.map(async ({ jid, resolve }) => {
+    await Promise.all(tur.map(async ({ jid, resolve, sock }) => {
       let result = null;
       try {
-        result = await waSock.groupMetadata(jid);
+        // sock verildiyse O HATTIN soketiyle sorgula (ortak gruplarda ikisi de calisir,
+        // ayri gruplarda dogru hat calisir); verilmediyse ofis (waSock).
+        result = await (sock || waSock).groupMetadata(jid);
         if (result?.subject && result.subject.trim()) groupMetaCache.set(jid, { meta: result, ts: Date.now() });
       } catch (e) {
         if ((e.message || '').includes('rate-overlimit') || (e.message || '').includes('429')) {
           // WhatsApp "yavasla" dedi: 60 sn boyunca hic istek atma + bu isi kuyruga geri koy
           rateLimitYendi = true;
-          metaQueue.unshift({ jid, resolve });
+          metaQueue.unshift({ jid, resolve, sock });
           return; // bu isin resolve'u sonraki denemede yapilacak
         }
         // baska hata: bos don
@@ -3249,14 +3336,15 @@ function retryGroupName(jid) {
 // ONBELLEK SURESI: 5dk -> 30dk. Grup adi/aciklamasi cok seyrek degisir; 5 dakikada bir
 // yeniden cekmek sokete gereksiz yuk biniyordu (mesaj gonderimini de yavaslatan etkenlerden).
 // Aciklama gercekten degisirse zaten groups.update event'i gelir ve onbellegi tazeler.
-async function getGroupMeta(jid, maxYas = 30 * 60 * 1000) {
+async function getGroupMeta(jid, maxYas = 30 * 60 * 1000, sock = null) {
   const cached = groupMetaCache.get(jid);
   // sadece GERCEK adi olan onbellegi kullan (sayi/bos onbellek tekrar denensin)
   if (cached && cached.meta?.subject && cached.meta.subject.trim() && (Date.now() - cached.ts) < maxYas) {
     return cached.meta;
   }
-  // kuyruga koy, sonucu bekle
-  return new Promise((resolve) => metaQueuePush(jid, resolve));
+  // kuyruga koy, sonucu bekle. sock verildiyse O HATTIN soketiyle sorgulanir
+  // (pazarlama gruplari icin kritik: ofis o gruba uye degilse ofis soketi goremez).
+  return new Promise((resolve) => metaQueuePush(jid, resolve, sock));
 }
 
 // ============================================================
@@ -3338,6 +3426,130 @@ async function siraliKaydet(chatlar) {
   }
 }
 
+// ============================================================
+// TOPLU AÇIKLAMA SENKRONU ("açıklamalar düşmüyor" KÖK çözümü)
+// Her hattın (ofis + TÜM pazarlama) gruplarının güncel açıklama/ad/üye bilgisi
+// TEK WhatsApp isteğiyle çekilir (grup başına ayrı sorgu YOK -> sistemi yormaz).
+// Sadece LİSTEDE OLAN gruplar güncellenir (pazarlama izolasyonu korunur, grup EKLENMEZ).
+// Değişenler 'ozetToplu' ile panellere parçalı yayınlanır (takılma yok).
+// Bağlanınca + HER 4 DAKİKADA çalışır -> açıklamalar en geç 4dk içinde herkeste güncel;
+// gruba girince zaten anlık tazeleme (aciklamaTazele) da var.
+// ============================================================
+async function topluAciklamaSenkron(lineId) {
+  const line = lines.get(lineId);
+  const sock = line ? line.sock : null;
+  const C = hatChats(lineId);
+  if (!sock || !line || !line.connected || !C || !C.size) return;
+  let groups;
+  try { groups = await sock.groupFetchAllParticipating(); } catch (e) { return; }
+  const girisler = Object.entries(groups || {});
+  const degisenler = [];
+  let i = 0;
+  const isle = () => {
+    // 200'erlik parçalarla işle -> event loop bloke olmaz (takılma yaşanmaz)
+    const parca = girisler.slice(i, i + 200);
+    for (const [jid, meta] of parca) {
+      if (!jid.endsWith('@g.us')) continue;
+      if (!C.has(jid)) continue; // listede olmayan grubu EKLEME
+      const c = C.get(jid);
+      let d = false;
+      const ad = (meta.subject && meta.subject.trim()) ? meta.subject.trim() : null;
+      if (ad && c.name !== ad) { c.name = ad; d = true; }
+      // ACIKLAMA: toplu sorguda desc alani COGU grupta HIC GELMEZ (undefined).
+      // undefined = "bilinmiyor" -> mevcut aciklamaya DOKUNMA (silme hatasi buydu!).
+      // Alan geldiyse ('' dahil) gercek durumdur -> uygula.
+      if (meta.desc !== undefined) {
+        const yeniDesc = (meta.desc || '').trim();
+        if ((c.description || '') !== yeniDesc) { c.description = yeniDesc; d = true; }
+      }
+      const uye = meta.participants ? meta.participants.length : 0;
+      if (uye && c.memberCount !== uye) { c.memberCount = uye; d = true; }
+      if (d) degisenler.push({ jid, name: c.name, description: c.description || '', memberCount: c.memberCount || 0 });
+    }
+    i += 200;
+    if (i < girisler.length) { setImmediate(isle); return; }
+    // bitti: değişenleri PARÇALI yayınla + DB'ye arka planda kaydet
+    if (degisenler.length) {
+      console.log(`📝 Açıklama senkronu [${lineId}]: ${degisenler.length} grup güncellendi (ad/açıklama/üye)`);
+      for (let j = 0; j < degisenler.length; j += 100) {
+        broadcastHat(lineId, { type: 'ozetToplu', liste: degisenler.slice(j, j + 100) });
+      }
+      if (db.isReady()) {
+        (async () => { for (const g of degisenler) { const c = C.get(g.jid); if (c) await db.saveChat(c, lineId).catch(() => {}); } })().catch(() => {});
+      }
+    }
+  };
+  isle();
+}
+// HER 4 DAKİKADA: bağlı tüm hatlarda senkron (ofis + pazarlama hepsi)
+setInterval(() => {
+  try { for (const [lid, line] of lines) { if (line && line.connected) topluAciklamaSenkron(lid); } } catch (_) {}
+}, 4 * 60 * 1000);
+
+// ============================================================
+// OFİS AÇIKLAMA + FOTO TARAMASI ("hepsini anında çekmeli"nin motoru)
+// Toplu sorgu çoğu grupta AÇIKLAMAYI HİÇ döndürmez; tek-grup sorgusu (groupMetadata)
+// GÜVENİLİR getirir. Bu tarama: listedeki grupları EN SON KONUŞULANDAN başlayarak
+// tek tek gezer; AÇIKLAMASI veya FOTOĞRAFI eksik olanları doldurur, panellere anında
+// yayınlar ve DB'ye KALICI kaydeder (sonraki açılışlarda hazır gelir). Nazik tempoda
+// çalışır (rate-limit'e uyar), dolu olanları atlar -> sistemi/WhatsApp'ı yormaz.
+// ============================================================
+let _aciklamaTaramaCalisiyor = false;
+async function ofisAciklamaTaramasi() {
+  if (_aciklamaTaramaCalisiyor) return;
+  const line = lines.get('ofis');
+  if (!line || !line.connected) return;
+  _aciklamaTaramaCalisiyor = true;
+  try {
+    const gruplar = Array.from(chats.values())
+      .filter(c => c.isGroup)
+      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)); // aktif gruplar ÖNCE dolsun
+    let doldurulan = 0, fotoAlinan = 0;
+    for (const c of gruplar) {
+      if (!line.connected) break; // bağlantı koptuysa dur (tekrar bağlanınca yeniden başlar)
+      const descEksik = !(c.description && c.description.trim())
+        && !(c._descTs && (Date.now() - c._descTs) < 30 * 60 * 1000); // "sorduk, yok" damgası: 30dk tekrar sorma
+      const fotoEksik = (c.avatar === undefined || c.avatar === null); // '' = "sorduk, yok" (tekrar sorma)
+      if (!descEksik && !fotoEksik) continue;
+      // AÇIKLAMA (tek-grup sorgusu — güvenilir; kuyruk rate-limit'i kendisi yönetir)
+      if (descEksik) {
+        const meta = await getGroupMeta(c.jid, 10 * 60 * 1000);
+        if (meta) {
+          let d = false;
+          if (meta.subject && meta.subject.trim() && c.name !== meta.subject.trim()) { c.name = meta.subject.trim(); d = true; }
+          if (meta.desc !== undefined) {
+            const yeni = (meta.desc || '').trim();
+            if ((c.description || '') !== yeni) { c.description = yeni; d = true; if (yeni) doldurulan++; }
+            c._descTs = Date.now(); // sorduk (bos da olsa) -> 30dk tekrar sorma
+          }
+          if (meta.participants && meta.participants.length && c.memberCount !== meta.participants.length) { c.memberCount = meta.participants.length; d = true; }
+          if (d) {
+            broadcastHat('ofis', { type: 'msgUpdate', jid: c.jid, ozet: { name: c.name, description: c.description || '', memberCount: c.memberCount || 0, avatar: c.avatar || null } });
+            if (db.isReady()) db.saveChat(c, 'ofis').catch(() => {});
+          }
+        }
+      }
+      // GRUP FOTOĞRAFI (kullanıcı: "fotoyu da çeksin")
+      if (fotoEksik) {
+        try {
+          const av = await getAvatar(c.jid);
+          c.avatar = av || ''; // '' = fotoğrafı yok, bir daha sorma
+          if (av) {
+            fotoAlinan++;
+            broadcastHat('ofis', { type: 'msgUpdate', jid: c.jid, ozet: { name: c.name, description: c.description || '', memberCount: c.memberCount || 0, avatar: av } });
+            if (db.isReady()) db.saveChat(c, 'ofis').catch(() => {});
+          }
+        } catch (_) { c.avatar = ''; }
+      }
+      await new Promise(r => setTimeout(r, 120)); // nazik tempo
+    }
+    if (doldurulan || fotoAlinan) console.log(`🔎 Ofis tarama: ${doldurulan} açıklama + ${fotoAlinan} grup fotoğrafı dolduruldu (kalıcı kaydedildi)`);
+  } catch (_) {}
+  _aciklamaTaramaCalisiyor = false;
+}
+// Bağlantıdan sonra + her 10 dakikada: eksik kalan/yeni grupları doldur
+setInterval(() => { try { ofisAciklamaTaramasi(); } catch (_) {} }, 10 * 60 * 1000);
+
 async function fetchAllGroups() {
   // Bu fonksiyon SADECE ofis hatti icindir. Global waSock yerine ofis hattinin
   // kendi soketini kullan — yoksa iki hat acikken Volkan'in soketiyle calisip karisir.
@@ -3360,10 +3572,12 @@ async function fetchAllGroups() {
         const chat = chats.get(jid);
         if (gercekAd) chat.name = gercekAd;
         if (uyeSayisi) chat.memberCount = uyeSayisi;
-        // ACIKLAMA: meta.desc doluysa onu yaz, BOSSA eski aciklamayi SIL.
-        // (Eski hata: "if(meta.desc)" -> aciklama silinmis/bos grupta eski aciklama ekranda
-        //  kaliyordu. Artik her zaman guncelliyoruz -> yanlis/eski aciklama kalmaz.)
-        chat.description = (meta.desc && meta.desc.trim()) ? meta.desc.trim() : '';
+        // ACIKLAMA: toplu sorguda desc COGU grupta HIC GELMEZ (undefined = bilinmiyor).
+        // undefined ise DOKUNMA (eski hata: bilinmiyor'u "bos" sanip dolu aciklamayi siliyordu).
+        // Alan geldiyse ('' dahil) gercek durumdur -> uygula (gercek silinme yansir).
+        if (meta.desc !== undefined) {
+          chat.description = (meta.desc && meta.desc.trim()) ? meta.desc.trim() : '';
+        }
         guncellenen++;
       }
     }
@@ -4022,13 +4236,14 @@ function downloadToFile(url, filePath) {
     }).on('error', (e) => { file.close(); fs.unlink(filePath, () => {}); reject(e); });
   });
 }
-async function getAvatar(jid, taze = false) {
+async function getAvatar(jid, taze = false, sock = null) {
   // taze=false: onbellekten ver (hizli). taze=true: WhatsApp'tan YENIDEN cek (logo degistiyse yakala).
+  // sock: verilirse O HATTIN soketiyle cekilir (pazarlama gruplari icin), yoksa ofis.
   if (!taze && avatarCache.has(jid)) return avatarCache.get(jid);
   let result = null;
   try {
     // 8 sn zaman asimi: bazi (LID) jid'lerde profilePictureUrl sonsuza kadar bekleyebilir
-    const urlPromise = waSock.profilePictureUrl(jid, 'image');
+    const urlPromise = (sock || waSock).profilePictureUrl(jid, 'image');
     const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('avatar zaman asimi')), 8000));
     const url = await Promise.race([urlPromise, timeout]);
     if (url) {
@@ -4256,6 +4471,8 @@ async function startWA(lineId = 'ofis') {
         // Katildigim TUM gruplari cek (ofis ortak hatti — tum gruplari gorur)
         setTimeout(() => fetchAllGroups(), 8000);
         setTimeout(() => fetchAllGroups(), 30000);
+        // ACIKLAMA+FOTO TARAMASI: adlar geldikten sonra eksik aciklama/fotolari tek tek doldur
+        setTimeout(() => ofisAciklamaTaramasi(), 45000);
         setTimeout(() => fetchAllGroups(), 75000);
       } else {
         // ---- PAZARLAMA HATTI ----
@@ -4277,6 +4494,9 @@ async function startWA(lineId = 'ofis') {
             }
             hafifChatsYayinla(lineId, line.chats);
             console.log(`   ✅ Pazarlama hatti '${lineId}': ${line.chats.size} kendi sohbeti yuklendi (eski gruplar cekilmedi).`);
+            // ACIKLAMALAR: pazarlama hattinda toplu cekim yoktu -> "aciklamalar dusmuyor"un
+            // ana sebebi. Baglaninca 12sn sonra TUM gruplarin aciklamasi tek istekle cekilir.
+            setTimeout(() => topluAciklamaSenkron(lineId), 12000);
           } catch (e) { console.log(`   ⚠️  Pazarlama hatti yukleme hatasi (${lineId}): ` + e.message); }
         }
         // Pazarlama icin fetchAllGroups YOK (eski gruplar karismasin, sadece canli akis).

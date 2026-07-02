@@ -776,26 +776,28 @@ async function internalUnreadCount(username) {
 
 // Ic mesaj SIL — sadece KENDI mesajini silebilir (from_user kontrolu cagiran tarafta).
 // "deleted" kolonu varsa onu true yapar (mesaj "silindi" gorunur); yoksa satiri komple siler.
-async function deleteInternalMessage(id, requester) {
+// IC SOHBETI KALICI SIL: iki kisi arasindaki TUM mesajlar DB'den TAMAMEN silinir
+// (IKI TARAFTAN da gider). Yeni mesaj gelse bile eski mesajlar ASLA geri gelmez.
+// Grup sohbeti (GRUP_CONV_KEY) bu fonksiyonla SILINEMEZ (server tarafinda da engelli).
+async function deleteInternalConversation(userA, userB) {
   if (!aktif) return { ok: false };
   try {
-    // once "deleted" kolonuyla soft-delete dene (mesaj "bu mesaj silindi" olarak kalsin)
+    const r = await pool.query(`DELETE FROM internal_messages WHERE conv_key = $1`, [_convKey(userA, userB)]);
+    return { ok: true, silinen: r.rowCount };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+async function deleteInternalMessage(id, requester) {
+  if (!aktif) return { ok: false };
+  // KALICI SILME (kullanici istegi): kisi sohbetlerinde mesaj DB'den TAMAMEN silinir.
+  // "Bu mesaj silindi" izi kalmaz, sohbet yeniden yuklenince geri dusmez.
+  try {
     const r = await pool.query(
-      `UPDATE internal_messages SET deleted = true, text = '', media_url = NULL
-        WHERE id = $1 AND from_user = $2 RETURNING id`,
+      `DELETE FROM internal_messages WHERE id = $1 AND from_user = $2 RETURNING id`,
       [id, requester]
     );
-    return { ok: r.rowCount > 0 };
-  } catch (e) {
-    // deleted kolonu yoksa: satiri tamamen sil (yine de kendi mesaji olmali)
-    try {
-      const r2 = await pool.query(
-        `DELETE FROM internal_messages WHERE id = $1 AND from_user = $2 RETURNING id`,
-        [id, requester]
-      );
-      return { ok: r2.rowCount > 0, hardDelete: true };
-    } catch (e2) { return { ok: false, error: e2.message }; }
-  }
+    return { ok: r.rowCount > 0, hardDelete: true };
+  } catch (e) { return { ok: false, error: e.message }; }
 }
 
 // Ic mesaj DUZENLE — sadece kendi mesajini, sadece METIN. "edited" kolonu varsa isaretler.
@@ -1465,7 +1467,7 @@ module.exports = {
   ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, updateUser,
   saveInternalMessage, loadInternalConversation, listInternalConversations,
   markInternalRead, internalUnreadCount,
-  deleteInternalMessage, editInternalMessage,
+  deleteInternalMessage, editInternalMessage, deleteInternalConversation,
   hideInternalConversation,
   saveGroupMessage, loadGroupMessages, deleteGroupMessage, editGroupMessage,
   createPoll, votePoll, getPollResults, getPollsResults,
