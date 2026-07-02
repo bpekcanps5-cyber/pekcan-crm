@@ -1591,6 +1591,12 @@
   /* lightbox pin: işaretliyse YEŞİL yanar (fotolar arasında nerede kaldığın belli olur) */
   #lbPin.aktif{color:#22c55e !important;background:rgba(34,197,94,.18) !important}
   #lbPin.aktif svg{filter:drop-shadow(0 0 4px rgba(34,197,94,.6))}
+  /* iç mesaj sol liste: OKUNMAMIŞ = isim beyaz+kalın, son mesaj net; OKUNDU = hafif gri/silik */
+  #internalList .chat.im-okunmamis .chat-name{font-weight:800;color:var(--text)}
+  #internalList .chat.im-okunmamis .chat-last{color:var(--text);font-weight:600}
+  #internalList .chat.im-okundu .chat-name{font-weight:600;color:var(--muted)}
+  #internalList .chat.im-okundu .chat-last{color:var(--faint)}
+  #internalList .chat.im-okundu .avatar{opacity:.82}
   /* ── "BURADAYIM" grup ilgi işareti ── */
   /* sol listede: biri ilgileniyorsa grup ADININ TAMAMI yeşil olur (uzaktan belli) */
   .chat-name.buradayim-aktif{color:#16a34a !important;font-weight:800;
@@ -4241,6 +4247,7 @@ function satisExcelIndir(){
 
 // Sol liste: konusmalar (kiminle, son mesaj, okunmamis)
 function renderInternalList(d){
+  d=d||{};
   _internalUsers = d.users||_internalUsers;
   _internalMe = d.me||_internalMe;
   _sonInternalItems = d.items||_sonInternalItems||[];
@@ -4272,8 +4279,10 @@ function renderInternalList(d){
       const unread = Number(it.unread)||0;
       const rozet = unread>0?'<span class="badge">'+unread+'</span>':'';
       const aktif = it.other_user===_internalOther?' active':'';
+      // OKUNMAMIŞ: satır beyaz + kalın (im-okunmamis). OKUNDU: hafif gri/silik (im-okundu).
+      const okunmaCls = unread>0?' im-okunmamis':' im-okundu';
       const sabitIk = _imSabitliler.includes(it.other_user)?'<span class="im-pin-ik">📌</span>':'';
-      return '<div class="chat'+aktif+'" onclick="openInternalChat(\''+esc(it.other_user)+'\')">'
+      return '<div class="chat'+aktif+okunmaCls+'" onclick="openInternalChat(\''+esc(it.other_user)+'\')">'
         + '<div class="avatar" style="background:'+gradientFor(ad)+'">'+esc(initials(ad))+'</div>'
         + '<div class="chat-main"><div class="chat-top"><span class="chat-name">'+esc(ad)+'</span>'+sabitIk+'</div>'
         + '<div class="chat-bottom"><span class="chat-last">'+esc(sonKim)+esc((imEfektCoz((it.last_text||'').trim()).metin||'📎 Dosya').slice(0,40))+'</span>'+rozet+'</div></div>'
@@ -4281,17 +4290,18 @@ function renderInternalList(d){
     }).join('');
   }
   list.innerHTML=grupKart+kalanlar;
+  // SEKME ROZETİ: toplam okunmamış iç mesaj (birebir + grup) -> her liste tazelemede güncel.
+  // Böylece Sohbetler sekmesindeyken bile iç mesaj rozeti anlık doğru görünür.
+  let toplamOkunmamis=(_grupUnread>0?1:0);
+  for(const it of (_sonInternalItems||[])){ if((Number(it.unread)||0)>0) toplamOkunmamis++; }
+  setInternalBadge(toplamOkunmamis);
 }
 
 // Bir ekip uyesiyle konusmayi ac
 function openInternalChat(other){
+  const oncekiOther=_internalOther;
   _internalOther=other;
   document.body.classList.add('sohbet-acik'); // 📱 telefonda iç mesaj sohbetini tam ekran aç
-  // OKUNDU ANINDA: sohbet açıldığı an karşı tarafa "okudum" gider ->
-  // onun ekranında tikler ANINDA maviye döner + mesajları silikleşir (beklemeden).
-  if(connected && other!=='__GRUP__'){
-    try{ ws.send(JSON.stringify({type:'internalRead', other})); }catch(e){}
-  }
   const u=_internalUsers.find(x=>x.username===other);
   const ad=u?(u.displayName||u.username):other;
   document.getElementById('iconvName').textContent=ad;
@@ -4299,9 +4309,32 @@ function openInternalChat(other){
   document.getElementById('iconvAvatar').style.background=gradientFor(ad);
   document.getElementById('internalEmpty').style.display='none';
   document.getElementById('internalContent').style.display='flex';
+  // GEÇİŞ DÜZELTMESİ: başka sohbete geçtiysek eski mesajları ANINDA temizle
+  // (yoksa yeni yüklenene kadar önceki sohbetin mesajları ekranda kalıyordu).
+  if(oncekiOther!==other){
+    _internalMsgs=[];
+    const box=document.getElementById('internalMessages');
+    if(box) box.innerHTML='<div style="text-align:center;color:var(--faint);font-size:13px;padding:20px">Yükleniyor…</div>';
+  }
+  // SEÇİLİ SATIRI ANINDA işaretle (server cevabını BEKLEME -> tek tıkta seçili görünür).
+  // "2-3 kere tıklama" sorununun sebebi buydu: seçili sınıfı sadece liste yeniden
+  // çizilince güncelleniyordu; artık tıkladığın an DOM'da işaretlenir.
+  if(_mainTab==='internal'){
+    document.querySelectorAll('#internalList .chat').forEach(c=>c.classList.remove('active'));
+    document.querySelectorAll('#internalList .chat').forEach(c=>{
+      const oc=c.getAttribute('onclick')||'';
+      if(oc.includes("openInternalChat('"+other+"'")) c.classList.add('active');
+    });
+    // bu sohbetin okunmamış rozetini ANINDA kaldır + satırı "okundu" yap (silik/gri)
+    const it=(_sonInternalItems||[]).find(x=>x.other_user===other);
+    if(it){ it.unread=0; }
+  }
+  // OKUNDU ANINDA: sohbet açıldığı an karşı tarafa "okudum" gider (tikleri maviye döner)
+  // + kendi listemde rozet anında düşer.
+  if(connected && other!=='__GRUP__'){
+    try{ ws.send(JSON.stringify({type:'internalRead', other})); }catch(e){}
+  }
   if(connected) ws.send(JSON.stringify({type:'internalLoad', other}));
-  // listede secili goster
-  if(_mainTab==='internal') document.querySelectorAll('#internalList .chat').forEach(c=>c.classList.remove('active'));
   // sohbet açılınca: kayıtlı temayı uygula, pin butonunu güncelle, yazı stilini sıfırla
   document.getElementById('iconvSub').textContent='Ekip içi mesaj';
   document.getElementById('imPinBtn').style.display=''; // birebirde pin görünür
@@ -4310,6 +4343,7 @@ function openInternalChat(other){
   imTemaUygula(_imAktifTema);
   imPinButonGuncelle();
   imStilSec('normal');
+  renderInternalList({}); // sol liste anında tazelensin (seçili + rozet)
 }
 
 // Konusma gecmisi geldi
@@ -4518,14 +4552,16 @@ function handleInternalMessage(m){
   if(_mainTab==='internal' && _internalOther===karsiTaraf){
     _internalMsgs.push(m);
     drawInternalMessages();
-    // okundu isaretle (ben aliciysam)
-    if(!benim && connected) ws.send(JSON.stringify({type:'internalRead', other:karsiTaraf}));
+    // acik sohbet: aliciysam ANINDA okundu gonder (karsinin tikleri maviye doner)
+    if(!benim && connected){ ws.send(JSON.stringify({type:'internalRead', other:karsiTaraf})); }
   } else if(!benim){
-    // baska konusmaya geldi: ping + liste tazele
+    // baska konusmaya/sekmeye geldi: ping (sekme farketmez)
     playPing();
   }
-  // her durumda listeyi tazele (son mesaj/okunmamis guncellensin)
-  if(_mainTab==='internal' && connected) ws.send(JSON.stringify({type:'internalList'}));
+  // LİSTEYİ HER DURUMDA tazele — hangi sekmede olursan ol iç mesaj rozeti/son mesaj
+  // anlık güncellensin (eskiden sadece 'internal' sekmesindeyken güncelliyordu ->
+  // "sekme değiştirmek gerekiyor" sorunu buydu). İç mesaj badge'i de tazelenir.
+  if(connected) ws.send(JSON.stringify({type:'internalList'}));
 }
 
 // OKUNDU ANINDA: karşı taraf mesajlarımı okudu -> tikler maviye + balonlar siliğe (o an)
