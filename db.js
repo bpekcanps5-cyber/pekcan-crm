@@ -671,27 +671,29 @@ async function saveInternalMessage(m) {
 // Iki kullanici arasindaki konusmayi getir (son N mesaj, eskiden yeniye)
 async function loadInternalConversation(userA, userB, limit = 200) {
   if (!aktif) return [];
+  // KRİTİK: conv_key yerine from_user/to_user KOLONLARINDAN çek. Liste (listInternalConversations)
+  // da böyle yapıyor -> ikisi TUTARLI olur. Eski mesajlarda conv_key yanlış/boş kaydedilmişse
+  // (liste mesajı gösterip sohbet açınca gelmemesinin sebebi buydu) yine de bulunur.
   try {
-    // Once dosya sutunlari (media_url, file_name, kind) DAHIL cekmeyi dene.
     const r = await pool.query(
       `SELECT id, from_user, to_user, text, media_url, file_name, kind, ts, read_at
          FROM internal_messages
-        WHERE conv_key = $1
+        WHERE (from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1)
         ORDER BY ts ASC
-        LIMIT $2`,
-      [_convKey(userA, userB), limit]
+        LIMIT $3`,
+      [userA, userB, limit]
     );
     return r.rows;
   } catch (e) {
-    // dosya sutunlari yoksa: dosyasiz cek (eski tablo yapisi)
+    // dosya sutunlari yoksa (eski tablo): dosyasiz cek
     try {
       const r2 = await pool.query(
         `SELECT id, from_user, to_user, text, ts, read_at
            FROM internal_messages
-          WHERE conv_key = $1
+          WHERE (from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1)
           ORDER BY ts ASC
-          LIMIT $2`,
-        [_convKey(userA, userB), limit]
+          LIMIT $3`,
+        [userA, userB, limit]
       );
       return r2.rows;
     } catch (e2) { return []; }
@@ -753,10 +755,11 @@ async function hideInternalConversation(username, other) {
 async function markInternalRead(reader, other) {
   if (!aktif) return { ok: false };
   try {
+    // conv_key yerine kolonlardan (yükleme/liste ile tutarlı) -> bozuk conv_key'de de çalışır
     await pool.query(
       `UPDATE internal_messages SET read_at = now()
-        WHERE conv_key = $1 AND to_user = $2 AND read_at IS NULL`,
-      [_convKey(reader, other), reader]
+        WHERE from_user = $1 AND to_user = $2 AND read_at IS NULL`,
+      [other, reader]
     );
     return { ok: true };
   } catch (e) { return { ok: false, error: e.message }; }
@@ -782,7 +785,12 @@ async function internalUnreadCount(username) {
 async function deleteInternalConversation(userA, userB) {
   if (!aktif) return { ok: false };
   try {
-    const r = await pool.query(`DELETE FROM internal_messages WHERE conv_key = $1`, [_convKey(userA, userB)]);
+    // kolonlardan sil (conv_key bozuksa bile iki taraf arasındaki HER mesajı siler)
+    const r = await pool.query(
+      `DELETE FROM internal_messages
+        WHERE (from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1)`,
+      [userA, userB]
+    );
     return { ok: true, silinen: r.rowCount };
   } catch (e) { return { ok: false, error: e.message }; }
 }
