@@ -3504,14 +3504,13 @@ async function ofisAciklamaTaramasi() {
     const gruplar = Array.from(chats.values())
       .filter(c => c.isGroup)
       .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)); // aktif gruplar ÖNCE dolsun
-    let doldurulan = 0, fotoAlinan = 0;
+    // ══ FAZ 1: SADECE AÇIKLAMA (hızlı tur — foto BEKLETMEZ, önce hepsi dolsun) ══
+    let doldurulan = 0, islenen = 0;
     for (const c of gruplar) {
-      if (!line.connected) break; // bağlantı koptuysa dur (tekrar bağlanınca yeniden başlar)
+      if (!line.connected) break;
+      islenen++;
       const descEksik = !(c.description && c.description.trim())
-        && !(c._descTs && (Date.now() - c._descTs) < 30 * 60 * 1000); // "sorduk, yok" damgası: 30dk tekrar sorma
-      const fotoEksik = (c.avatar === undefined || c.avatar === null); // '' = "sorduk, yok" (tekrar sorma)
-      if (!descEksik && !fotoEksik) continue;
-      // AÇIKLAMA (tek-grup sorgusu — güvenilir; kuyruk rate-limit'i kendisi yönetir)
+        && !(c._descTs && (Date.now() - c._descTs) < 30 * 60 * 1000); // "sorduk, yok": 30dk tekrar sorma
       if (descEksik) {
         const meta = await getGroupMeta(c.jid, 10 * 60 * 1000);
         if (meta) {
@@ -3520,7 +3519,7 @@ async function ofisAciklamaTaramasi() {
           if (meta.desc !== undefined) {
             const yeni = (meta.desc || '').trim();
             if ((c.description || '') !== yeni) { c.description = yeni; d = true; if (yeni) doldurulan++; }
-            c._descTs = Date.now(); // sorduk (bos da olsa) -> 30dk tekrar sorma
+            c._descTs = Date.now();
           }
           if (meta.participants && meta.participants.length && c.memberCount !== meta.participants.length) { c.memberCount = meta.participants.length; d = true; }
           if (d) {
@@ -3528,22 +3527,34 @@ async function ofisAciklamaTaramasi() {
             if (db.isReady()) db.saveChat(c, 'ofis').catch(() => {});
           }
         }
+        await new Promise(r => setTimeout(r, 70)); // nazik tempo (kuyruk rate-limit'i ayrıca fren)
       }
-      // GRUP FOTOĞRAFI (kullanıcı: "fotoyu da çeksin")
-      if (fotoEksik) {
-        try {
-          const av = await getAvatar(c.jid);
-          c.avatar = av || ''; // '' = fotoğrafı yok, bir daha sorma
-          if (av) {
-            fotoAlinan++;
-            broadcastHat('ofis', { type: 'msgUpdate', jid: c.jid, ozet: { name: c.name, description: c.description || '', memberCount: c.memberCount || 0, avatar: av } });
-            if (db.isReady()) db.saveChat(c, 'ofis').catch(() => {});
-          }
-        } catch (_) { c.avatar = ''; }
-      }
-      await new Promise(r => setTimeout(r, 120)); // nazik tempo
+      // CANLI İLERLEME (pm2 log'da izlenir): her 100 grupta bir satır
+      if (islenen % 100 === 0) console.log(`🔎 Açıklama taraması: ${islenen}/${gruplar.length} grup gezildi, ${doldurulan} açıklama dolduruldu…`);
     }
-    if (doldurulan || fotoAlinan) console.log(`🔎 Ofis tarama: ${doldurulan} açıklama + ${fotoAlinan} grup fotoğrafı dolduruldu (kalıcı kaydedildi)`);
+    console.log(`🔎 FAZ1 bitti: ${gruplar.length} grup gezildi, ${doldurulan} açıklama dolduruldu (kalıcı kaydedildi)`);
+    // ══ FAZ 2: GRUP FOTOĞRAFLARI (açıklamalar bittikten SONRA — kısa zaman aşımı) ══
+    let fotoAlinan = 0;
+    for (const c of gruplar) {
+      if (!line.connected) break;
+      if (!(c.avatar === undefined || c.avatar === null)) continue; // '' = "sorduk, yok"
+      try {
+        // 2.5sn dış zaman aşımı: yavaş cevaplar taramayı KİLİTLEMESİN.
+        // Zaman aşımında damga KOYMA (belki foto var ama yavaştı) -> sonraki turda tekrar dener.
+        const av = await Promise.race([
+          getAvatar(c.jid),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('yavas')), 2500)),
+        ]);
+        c.avatar = av || ''; // null = gerçekten yok -> '' damgala (tekrar sorma)
+        if (av) {
+          fotoAlinan++;
+          broadcastHat('ofis', { type: 'msgUpdate', jid: c.jid, ozet: { name: c.name, description: c.description || '', memberCount: c.memberCount || 0, avatar: av } });
+          if (db.isReady()) db.saveChat(c, 'ofis').catch(() => {});
+        }
+      } catch (_) { /* zaman aşımı: damgasız bırak, sonraki tur dener */ }
+      await new Promise(r => setTimeout(r, 60));
+    }
+    if (fotoAlinan) console.log(`🔎 FAZ2 bitti: ${fotoAlinan} grup fotoğrafı alındı`);
   } catch (_) {}
   _aciklamaTaramaCalisiyor = false;
 }
