@@ -2033,6 +2033,7 @@ wss.on('connection', (ws) => {
       else if (msg.type === 'aciklamaTazele') {
         const chat = C.get(msg.jid);
         if (chat && chat.isGroup) {
+          const zorla = !!msg.zorla; // 🔄 Yenile tusu: ONBELLEKSIZ cek + sonucu HER DURUMDA don
           const uygula = (meta) => {
             const c = C.get(msg.jid); if (!c || !meta) return false;
             let degisti = false;
@@ -2043,12 +2044,24 @@ wss.on('connection', (ws) => {
               broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { name: c.name, description: c.isGroup ? (c.description || '') : '', memberCount: c.memberCount || 0, avatar: c.avatar || null } });
               if (db.isReady()) db.saveChat(c, _LID).catch(() => {});
             }
+            // zorla istekte: sonucu isteyen panele HER DURUMDA bildir (degismese/bos olsa bile)
+            if (zorla) {
+              try { ws.send(JSON.stringify({ type: 'aciklamaTazeleSonuc', jid: msg.jid, name: c.name, description: c.description || '', memberCount: c.memberCount || 0 })); } catch (_) {}
+            }
             return true;
           };
-          getGroupMeta(msg.jid, 15 * 1000, SOCK).then((meta) => {
+          getGroupMeta(msg.jid, zorla ? 0 : 15 * 1000, SOCK).then((meta) => {
             if (!uygula(meta)) {
               // ilk deneme bos dondu (rate-limit ani olabilir) -> 2sn sonra BIR kez daha
-              setTimeout(() => { getGroupMeta(msg.jid, 0, SOCK).then(uygula).catch(() => {}); }, 2000);
+              setTimeout(() => {
+                getGroupMeta(msg.jid, 0, SOCK).then((m2) => {
+                  if (!uygula(m2) && zorla) {
+                    // ikinci de bos: yine cevap ver ki panel beklemede kalmasin
+                    const c = C.get(msg.jid);
+                    try { ws.send(JSON.stringify({ type: 'aciklamaTazeleSonuc', jid: msg.jid, name: c ? c.name : '', description: (c && c.description) || '', memberCount: (c && c.memberCount) || 0 })); } catch (_) {}
+                  }
+                }).catch(() => {});
+              }, 2000);
             }
           }).catch(() => {});
           // FOTO eksikse arka planda cek (kullanici: "fotoyu da ceksin")

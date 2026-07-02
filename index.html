@@ -3078,6 +3078,7 @@ function connect(){
       if(d.chat){ chats[d.jid]=d.chat; if(activeJid===d.jid) renderMessagesDebounced(chats[d.jid]); renderList(); updateTitle(); }
     }
     else if(d.type==='buradayimHepsi'){ _buradayim=d.durum||{}; renderList(); buradayimBtnGuncelle(); }
+    else if(d.type==='aciklamaTazeleSonuc'){ handleAciklamaTazeleSonuc(d); }
     else if(d.type==='ozetToplu'){
       // TOPLU açıklama/ad/üye güncellemesi (4dk'lık senkron) -> tek seferde uygula, TEK render
       let acikDegisti=false;
@@ -3091,6 +3092,7 @@ function connect(){
       renderList();
       if(acikDegisti && chats[activeJid]){
         updateConvHeader(chats[activeJid], activeJid);
+        grupBandiGuncelle(chats[activeJid]);
         if(document.getElementById('infoPanel').classList.contains('show')) openInfo();
       }
     }
@@ -6497,6 +6499,63 @@ function baslatTazeleme(jid){
   }, 4000);
 }
 
+// 🔄 AÇIKLAMAYI ELLE YENİLE: bilgi panelindeki tuş. WhatsApp'tan ÖNBELLEKSİZ taze çeker,
+// sonuç HER DURUMDA döner (açıklama yoksa da bilirsin). Otomatik sistemler de çalışıyor;
+// bu tuş "şimdi, kesin" garantisi.
+let _aciklamaYenileTimer=null;
+function aciklamaYenile(){
+  if(!activeJid || !connected) return;
+  const btn=document.getElementById('descYenileBtn');
+  if(btn){ btn.textContent='⏳ Çekiliyor…'; btn.style.pointerEvents='none'; }
+  try{ ws.send(JSON.stringify({type:'aciklamaTazele', jid:activeJid, zorla:true})); }catch(e){}
+  clearTimeout(_aciklamaYenileTimer);
+  _aciklamaYenileTimer=setTimeout(()=>{ // 8sn cevap gelmezse butonu geri al
+    const b=document.getElementById('descYenileBtn');
+    if(b && b.textContent.includes('Çekiliyor')){ b.textContent='🔄 Yenile'; b.style.pointerEvents=''; showToast('⚠️ Cevap gelmedi, tekrar dene'); }
+  }, 8000);
+}
+// Sunucudan yenileme SONUCU geldi (zorla istekte her durumda gelir)
+function handleAciklamaTazeleSonuc(d){
+  clearTimeout(_aciklamaYenileTimer);
+  const c=chats[d.jid];
+  if(c){
+    if(d.name) c.name=d.name;
+    if(d.description!==undefined) c.description=d.description;
+    if(d.memberCount) c.memberCount=d.memberCount;
+    renderList();
+    if(d.jid===activeJid){
+      updateConvHeader(c, d.jid);
+      grupBandiGuncelle(c);
+      if(document.getElementById('infoPanel').classList.contains('show')) openInfo();
+    }
+  }
+  const btn=document.getElementById('descYenileBtn');
+  if(btn){ btn.textContent='🔄 Yenile'; btn.style.pointerEvents=''; }
+  showToast(d.description && d.description.trim() ? '✓ Açıklama yenilendi' : 'ℹ️ Bu grupta açıklama yok (WhatsApp\'ta da boş)');
+}
+
+// SOHBET ÜSTÜNDEKİ AÇIKLAMA BANDI: c.description'a göre doldur/gizle.
+// openChat'te + AÇIKLAMA HER GÜNCELLENDİĞİNDE (msgUpdate/ozetToplu/yenile) çağrılır ->
+// bant artık eski görüntüde kalmaz, taze açıklama anında yansır.
+function grupBandiGuncelle(c){
+  const gd=document.getElementById('groupDesc'); if(!gd) return;
+  if(c && c.isGroup && c.description && c.description.trim()){
+    gd.style.display='block';
+    const dt=document.getElementById('groupDescText');
+    dt.textContent=c.description;
+    dt.classList.add('collapsed');
+    const tog=document.getElementById('gdToggle');
+    const long=c.description.length>120 || (c.description.match(/\n/g)||[]).length>=2;
+    tog.style.display=long?'inline-block':'none';
+    tog.textContent='Devamını gör';
+  } else {
+    // Aciklama YOK: hem gizle hem ICERIGI TEMIZLE (onceki grubun aciklamasi kalmasin)
+    gd.style.display='none';
+    const dt=document.getElementById('groupDescText');
+    if(dt) dt.textContent='';
+  }
+}
+
 // 📱 TELEFON: sohbetten listeye geri dön (sohbet tam ekranını kapat)
 function mobilGeri(){
   document.body.classList.remove('sohbet-acik');
@@ -6599,25 +6658,7 @@ function openChat(jid){
   // PERIYODIK TAZELEME: bu sohbet acik kaldigi surece her birkac saniyede bir
   // DB'den eksik mesajlari kontrol et (canli kacan mesaji yakalamak icin).
   baslatTazeleme(jid);
-  const gd=document.getElementById('groupDesc');
-  if(c.isGroup && c.description && c.description.trim()){
-    gd.style.display='block';
-    const dt=document.getElementById('groupDescText');
-    dt.textContent=c.description;
-    dt.classList.add('collapsed');
-    // uzunsa (3+ satir veya 120+ karakter) "devamini gor" goster
-    const tog=document.getElementById('gdToggle');
-    const long=c.description.length>120 || (c.description.match(/\n/g)||[]).length>=2;
-    tog.style.display=long?'inline-block':'none';
-    tog.textContent='Devamını gör';
-  } else {
-    // Aciklama YOK: hem gizle hem ICERIGI TEMIZLE (yoksa onceki grubun aciklamasi
-    // DOM'da kalip gorunebiliyordu). Bu, "aciklamasiz grupta baskasinin aciklamasi" bug'inin
-    // kesin cozumu — element bos olsun, sadece display:none yetmiyor olabilir.
-    gd.style.display='none';
-    const dt=document.getElementById('groupDescText');
-    if(dt) dt.textContent='';
-  }
+  grupBandiGuncelle(c);
   document.getElementById('offlineBanner').style.display=connected?'none':'block';
   // FLAS ONLEME: bellekte mesaj VARSA hemen ciz (bos kare gorunmesin).
   // Bellekte mesaj YOKSA bos beyaz birakmak yerine kisa "yukleniyor" goster;
@@ -7835,8 +7876,8 @@ function handleMsgUpdate(d){
     if(o.memberCount!==undefined) c.memberCount=o.memberCount;
     if(o.avatar) c.avatar=o.avatar;
     if(o.members!==undefined) c.members=o.members;
-    // açık sohbetse başlığı + bilgi panelini tazele (açıklama anında görünsün)
-    if(d.jid===activeJid){ updateConvHeader(c, d.jid); if(document.getElementById('infoPanel').classList.contains('show')) openInfo(); }
+    // açık sohbetse başlığı + bilgi panelini + açıklama BANDINI tazele (anında görünsün)
+    if(d.jid===activeJid){ updateConvHeader(c, d.jid); grupBandiGuncelle(c); if(document.getElementById('infoPanel').classList.contains('show')) openInfo(); }
     renderList(); updateTitle();
   }
   // mesaj güncellemesi
@@ -8291,7 +8332,7 @@ function openInfo(){
 
   // Aciklama (grupta her zaman duzenlenebilir; kis ise sadece varsa goster)
   if(c.isGroup){
-    html+='<div class="info-section"><div class="is-title">Açıklama <span class="copy-btn" onclick="editGroupDesc()">Düzenle</span></div>';
+    html+='<div class="info-section"><div class="is-title">Açıklama <span class="copy-btn" id="descYenileBtn" onclick="aciklamaYenile()" title="WhatsApp\'tan taze çek">🔄 Yenile</span> <span class="copy-btn" onclick="editGroupDesc()">Düzenle</span></div>';
     html+='<div class="info-desc" id="infoDescText">'+(c.description?esc(c.description):'<span style="color:var(--faint)">Açıklama yok. Eklemek için Düzenle\'ye dokun.</span>')+'</div></div>';
   } else if(c.description){
     html+='<div class="info-section"><div class="is-title">Açıklama <span class="copy-btn" onclick="copyText(\'desc\')">Kopyala</span></div>';
