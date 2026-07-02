@@ -2767,9 +2767,12 @@ function connect(){
       }
     }
     else if(d.type==='chats'){
-      const old=chats; chats={};
+      // PARÇALI GELİŞ: sunucu artık listeyi 400'erlik hafif parçalar halinde yollar
+      // (takılma önleme). İlk parça listeyi sıfırlar, append'li parçalar üstüne ekler.
+      const old=chats;
+      if(!d.append) chats={};
       d.chats.forEach(c=>{
-        const prev=old[c.jid];
+        const prev=old[c.jid]||chats[c.jid];
         // gelen veride avatar/uye yoksa eskisini koru
         if(prev){
           if(!c.avatar && prev.avatar) c.avatar=prev.avatar;
@@ -2777,9 +2780,12 @@ function connect(){
           if(prev.customName){ c.customName=prev.customName; c.name=prev.customName; }
           // Aciklama: SADECE veri hic gelmediyse (undefined/null) eskisini koru.
           // Bos string ('') ise grup gercekten aciklamasiz/silinmis demektir -> bos birak.
-          // (Eskiden bos gelince de eskisini koruyordu; bu yuzden aciklamasiz grupta
-          //  onceki grubun aciklamasi gorunuyordu. Duzeltildi.)
           if((c.description===undefined||c.description===null) && prev.description) c.description=prev.description;
+          // HAFİF paket (son 1 mesaj), eldeki TAM mesaj listesini EZMESİN
+          // (kullanıcı o an sohbete bakıyor olabilir — mesajları kaybolmasın)
+          if(c._hafif && prev.messages && prev.messages.length>(c.messages?c.messages.length:0)){
+            c.messages=prev.messages; c._hafif=false;
+          }
         }
         chats[c.jid]=c;
       });
@@ -6267,6 +6273,18 @@ function handleBuradayimUpdate(jid, liste){
 function openChat(jid){
   activeJid=jid; clearReply();
   document.body.classList.add('sohbet-acik'); // 📱 telefonda sohbeti tam ekran aç (masaüstünde etkisiz)
+  // HAFİF sohbet (açılışta sadece son 1 mesaj geldi): tam mesaj listesini sunucudan çek.
+  // chatSync cevabı gelince otomatik render edilir (~100-300ms, hissedilmez).
+  const _hc=chats[jid];
+  if(_hc && _hc._hafif && connected){
+    try{ ws.send(JSON.stringify({type:'syncChat', jid})); }catch(e){}
+    delete _hc._hafif; // bir kez iste (tekrar açışta yeniden istenmesin)
+  }
+  // AÇIKLAMA TAZELE: grup HER açılışta güncel açıklama/ad arka planda çekilir
+  // (değiştiyse msgUpdate ile anında yansır — "açıklama düşmüyor" çözümü)
+  if(_hc && _hc.isGroup && connected){
+    try{ ws.send(JSON.stringify({type:'aciklamaTazele', jid})); }catch(e){}
+  }
   _typingActive=false; clearTimeout(_typingTimer); // onceki sohbetin yaziyor durumunu temizle
   // sonsuz scroll durumunu sıfırla (yeni sohbette baştan başlasın)
   _eskiYukleniyor=false;

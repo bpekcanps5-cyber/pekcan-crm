@@ -1451,8 +1451,9 @@ wss.on('connection', (ws) => {
         const myName = line ? line.myName : '';
         ws.send(JSON.stringify({ type: 'status', connected: bagli, myJid, myName, qr: !bagli && !!qrImg, qrImage: (!bagli ? qrImg : null) }));
         // bu hattin GUNCEL sohbetlerini gonder (ofis ise global, pazarlama ise kendi hatti)
+        // HAFIF + PARCALI: eskiden 32MB tek paket ~1.5-4sn kilitliyordu (takilmalarin ana sebebi)
         const C = hatChats(lineId);
-        ws.send(JSON.stringify({ type: 'chats', chats: Array.from(C.values()).map(stripRaw) }));
+        hafifChatsGonder(ws, C);
         // "BURADAYIM" durumu: hangi grupla kim ilgileniyor -> panel yesil isaretleri gostersin
         if (db.isReady()) {
           try { const b = await db.getBuradayim(); ws.send(JSON.stringify({ type: 'buradayimHepsi', durum: b })); } catch (_) {}
@@ -1988,6 +1989,28 @@ wss.on('connection', (ws) => {
         const chat = C.get(msg.jid);
         if (chat) {
           ws.send(JSON.stringify({ type: 'chatSync', jid: msg.jid, chat: stripRaw(chat, 300) }));
+        }
+      }
+
+      // ACIKLAMA TAZELE: panel bir grubu HER ACTIGINDA gonderir. Guncel aciklama/ad/uye
+      // sayisini arka planda ceker (60sn tazelik: sik acilislarda WhatsApp'i bogmaz),
+      // degistiyse hafif msgUpdate ile TUM panellere yayar. groups.update eventi kacsa
+      // veya 30dk onbellek eskimis olsa bile ekip gruba girince GUNCEL aciklamayi gorur.
+      else if (msg.type === 'aciklamaTazele') {
+        const chat = C.get(msg.jid);
+        if (chat && chat.isGroup) {
+          getGroupMeta(msg.jid, 60 * 1000).then((meta) => {
+            if (!meta) return;
+            const c = C.get(msg.jid); if (!c) return;
+            let degisti = false;
+            if (meta.subject && meta.subject.trim() && c.name !== meta.subject.trim()) { c.name = meta.subject.trim(); degisti = true; }
+            if (meta.desc !== undefined && c.description !== (meta.desc || '')) { c.description = meta.desc || ''; degisti = true; }
+            if (meta.participants && c.memberCount !== meta.participants.length) { c.memberCount = meta.participants.length; degisti = true; }
+            if (degisti) {
+              broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { name: c.name, description: c.isGroup ? (c.description || '') : '', memberCount: c.memberCount || 0, avatar: c.avatar || null } });
+              if (db.isReady()) db.saveChat(c, _LID).catch(() => {});
+            }
+          }).catch(() => {});
         }
       }
 
@@ -2806,10 +2829,8 @@ wss.on('connection', (ws) => {
             console.log('   ↳ Supabase grup verileri silindi (kisiler korundu)');
           } catch (e) { console.error('   ⚠️  Supabase grup silme hatasi:', e.message); }
         }
-        // Panele guncel listeyi gonder (sadece kalan kisiler)
-        const kalan = [];
-        if (C2 && C2.forEach) C2.forEach(c => kalan.push(stripRaw(c)));
-        broadcastHat(_LID, { type: 'chats', chats: kalan });
+        // Panele guncel listeyi gonder (sadece kalan kisiler) — hafif + parcali
+        hafifChatsYayinla(_LID, (C2 && C2.forEach) ? C2 : new Map());
         broadcastHat(_LID, { type: 'opOk', message: 'Gruplar silindi. Kayıtlı kişiler korundu. Yeni mesaj geldikçe gruplar temiz şekilde geri gelecek.' });
         console.log('   ↳ tamam.');
       }
@@ -3346,7 +3367,7 @@ async function fetchAllGroups() {
         guncellenen++;
       }
     }
-    broadcastHat('ofis', { type: 'chats', chats: Array.from(chats.values()).map(stripRaw) });
+    hafifChatsYayinla('ofis', chats);
     console.log(`👥 Grup adlari alindi: ${grupAdlari.size} grup adi bellekte, ${guncellenen} aktif grup guncellendi`);
     // ID'de (sayi) kalmis listedeki gruplari grupAdlari'ndan duzelt
     let duzeltilen = 0;
@@ -3359,7 +3380,7 @@ async function fetchAllGroups() {
     // TEK toplu broadcast (eskiden her grup icin ayri broadcast vardi -> panel yavasliyordu)
     if (duzeltilen) {
       console.log(`   🔤 ${duzeltilen} grubun adi ID'den gercek ada duzeltildi`);
-      broadcastHat('ofis', { type: 'chats', chats: Array.from(chats.values()).map(stripRaw) });
+      hafifChatsYayinla('ofis', chats);
     }
     broadcastHat('ofis', { type: 'syncStatus', done: true, chatCount: chats.size });
     // SADECE listedeki (mesaji olan) gruplari DB'ye yaz — tum 7547'yi degil (hiz icin).
@@ -3563,6 +3584,57 @@ function stripRaw(chat, limit = 60) {
     atananlar: chatAssignments.get(chat.jid) || [], // bu gruba atanan ekip uyeleri
     etiketler: chatLabels.get(chat.jid) || [],      // bu gruba bagli etiket id'leri
   };
+}
+
+// ============================================================
+// TAKILMA ONLEME (3-4 sn donmalarin cozumu):
+// Eskiden panel her baglandiginda 2000+ sohbet x 60 mesaj TEK pakette
+// hazirlaniyordu (~32MB, ~1.5-4sn). Bu surede Node KILITLENIR: mesaj islenmez,
+// fotograf panele dusmez, aciklama cekilemez. Cozum iki katman:
+//  1) HAFIF sohbet: liste icin sadece SON 1 mesaj gider (onizleme). Panel
+//     sohbeti ACINCA syncChat ile 300 mesaji ayrica ceker (tek sohbet, kucuk).
+//  2) PARCALI gonderim: 400'erlik parcalar, aralarinda setImmediate ->
+//     event loop nefes alir, akan mesajlar/istekler islenmeye devam eder.
+// Olcum: 1435ms tek bloke -> max 11ms parca; 32MB -> 1.3MB.
+// ============================================================
+function stripHafif(chat) {
+  const son = chat.messages.length
+    ? [(({ raw, key, ...rest }) => rest)(chat.messages[chat.messages.length - 1])]
+    : [];
+  return {
+    ...chat,
+    description: (chat.isGroup ? (chat.description || '') : ''),
+    messages: son,
+    _hafif: true, // panel bunu gorunce sohbet acilinca tam listeyi ister
+    atananlar: chatAssignments.get(chat.jid) || [],
+    etiketler: chatLabels.get(chat.jid) || [],
+  };
+}
+const HAFIF_PARCA = 400; // her pakette kac sohbet
+// TEK panele parcali gonder (merhaba/baglanis icin)
+function hafifChatsGonder(ws, C) {
+  const arr = Array.from(C.values());
+  let i = 0;
+  const gonder = () => {
+    if (!ws || ws.readyState !== 1) return; // panel kapandiysa birak
+    const parca = arr.slice(i, i + HAFIF_PARCA).map(stripHafif);
+    try { ws.send(JSON.stringify({ type: 'chats', chats: parca, append: i > 0 })); } catch (_) { return; }
+    i += HAFIF_PARCA;
+    if (i < arr.length) setImmediate(gonder);
+  };
+  gonder();
+}
+// Bir hattin TUM panellerine parcali yayinla (toplu guncellemeler icin)
+function hafifChatsYayinla(lineId, C) {
+  const arr = Array.from(C.values());
+  let i = 0;
+  const gonder = () => {
+    const parca = arr.slice(i, i + HAFIF_PARCA).map(stripHafif);
+    broadcastHat(lineId, { type: 'chats', chats: parca, append: i > 0 });
+    i += HAFIF_PARCA;
+    if (i < arr.length) setImmediate(gonder);
+  };
+  gonder();
 }
 
 // Mesajin tipini ve metnini coz
@@ -4177,7 +4249,7 @@ async function startWA(lineId = 'ofis') {
           console.log('   📂 Bellek bos — DB\'den sohbetler yeniden yukleniyor...');
           try {
             await loadFromDB();
-            broadcastHat('ofis', { type: 'chats', chats: Array.from(chats.values()).map(stripRaw) });
+            hafifChatsYayinla('ofis', chats);
             console.log(`   ✅ ${chats.size} sohbet DB'den geri yuklendi.`);
           } catch (e) { console.log('   ⚠️  DB yukleme hatasi: ' + e.message); }
         }
@@ -4203,7 +4275,7 @@ async function startWA(lineId = 'ofis') {
                 pinned: row.pinned, archived: row.archived, hasMention: row.has_mention,
               });
             }
-            broadcastHat(lineId, { type: 'chats', chats: Array.from(line.chats.values()).map(stripRaw) });
+            hafifChatsYayinla(lineId, line.chats);
             console.log(`   ✅ Pazarlama hatti '${lineId}': ${line.chats.size} kendi sohbeti yuklendi (eski gruplar cekilmedi).`);
           } catch (e) { console.log(`   ⚠️  Pazarlama hatti yukleme hatasi (${lineId}): ` + e.message); }
         }
@@ -4418,7 +4490,7 @@ async function startWA(lineId = 'ofis') {
         }
       }
       // panele guncel listeyi gonder (ofis gecmisi -> sadece ofis panellerine)
-      broadcastHat('ofis', { type: 'chats', chats: Array.from(chats.values()).map(stripRaw) });
+      hafifChatsYayinla('ofis', chats);
       console.log(`📚 Gecmis yuklendi: ${histChats?.length || 0} sohbet, ${histMessages?.length || 0} mesaj`);
     } catch (e) { console.error('Gecmis yukleme hatasi:', e.message); }
   });
@@ -4617,7 +4689,8 @@ async function startWA(lineId = 'ofis') {
           degisti = true;
         }
         if (degisti) {
-          broadcastHat(lineId, { type: 'message', jid, chat: stripRaw(chat) });
+          // HAFIF yayin: sadece ad/aciklama/uye ozeti gider (eskiden 60 mesajli tam sohbet gidiyordu)
+          broadcastHat(lineId, { type: 'msgUpdate', jid, ozet: { name: chat.name, description: chat.isGroup ? (chat.description || '') : '', memberCount: chat.memberCount || 0, avatar: chat.avatar || null } });
           console.log(`✏️  grup guncellendi: ${chat.name}`);
         }
       }
