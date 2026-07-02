@@ -4274,6 +4274,7 @@ function renderInternalList(d){
     kalanlar='<div style="padding:20px 18px;text-align:center;color:var(--faint);font-size:13px">Birebir mesaj için yukarıdan "Yeni mesaj".</div>';
   } else {
     kalanlar=items.map(it=>{
+      if(!it.other_user || !String(it.other_user).trim()) return ''; // bozuk/boş kullanıcı -> atla
       const u=_internalUsers.find(x=>x.username===it.other_user);
       const ad=u?(u.displayName||u.username):it.other_user;
       const sonKim = it.last_from===_internalMe?'Sen: ':'';
@@ -4336,6 +4337,7 @@ function openInternalChat(other){
     try{ ws.send(JSON.stringify({type:'internalRead', other})); }catch(e){}
   }
   if(connected) ws.send(JSON.stringify({type:'internalLoad', other}));
+  console.log('[İÇ MESAJ] internalLoad gönderildi -> other:', JSON.stringify(other), '| connected:', connected);
   // GÜVENCE: 6sn içinde cevap (internalConversation) gelmezse "Yükleniyor…" sonsuza
   // kadar kalmasın. Bağlantı/DB gecikmesinde kullanıcı "Tekrar dene" ile yeniden çeker.
   clearTimeout(_imLoadTimer);
@@ -4360,6 +4362,7 @@ function openInternalChat(other){
 // Konusma gecmisi geldi
 let _imLoadTimer=null; // iç mesaj yükleme zaman aşımı güvencesi
 function renderInternalConversation(d){
+  console.log('[İÇ MESAJ] cevap geldi:', d.other, '| mesaj sayısı:', (d.messages||[]).length, '| aktif sohbet:', _internalOther);
   clearTimeout(_imLoadTimer); // cevap geldi -> zaman aşımı güvencesini iptal et
   // Bu cevap ŞU AN açık sohbete ait değilse yoksay AMA "Yükleniyor…" ekranda
   // takılı kalmasın diye yine de eski içeriği bırakma (başka sohbet çizecek zaten).

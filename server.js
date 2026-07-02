@@ -1536,18 +1536,24 @@ wss.on('connection', (ws) => {
 
       // Bir konusmayi ac (iki kullanici arasi gecmis)
       if (msg.type === 'internalLoad') {
-        if (!ws._username || !db.isReady()) { ws.send(JSON.stringify({ type: 'internalConversation', other: msg.other, messages: [] })); return; }
+        const other = (msg.other || '').trim();
+        console.log(`🔍 internalLoad: "${ws._username}" <- "${other}" istedi (dbReady=${db.isReady()})`);
+        if (!ws._username || !other || !db.isReady()) {
+          console.log(`   ⚠️ erken çıkış: username=${!!ws._username} other=${!!other} db=${db.isReady()}`);
+          ws.send(JSON.stringify({ type: 'internalConversation', other: msg.other, messages: [] })); return;
+        }
         let rows = [];
-        try { rows = await db.loadInternalConversation(ws._username, msg.other, 300); } catch (e) { rows = []; }
+        try { rows = await db.loadInternalConversation(ws._username, other, 300); }
+        catch (e) { console.log(`   ❌ loadInternalConversation HATASI: ${e.message}`); rows = []; }
+        console.log(`   ✅ ${rows.length} mesaj bulundu -> panele gönderiliyor`);
         // MESAJLARI ÖNCE GÖNDER (okundu işaretleme sonra) -> okundu/sayaç bir hata verse
         // bile mesajlar KESİN gelir, panelde "Yükleniyor…" takılı kalmaz.
-        ws.send(JSON.stringify({ type: 'internalConversation', other: msg.other, messages: rows }));
+        ws.send(JSON.stringify({ type: 'internalConversation', other, messages: rows }));
         try {
-          await db.markInternalRead(ws._username, msg.other);
+          await db.markInternalRead(ws._username, other);
           const n = await db.internalUnreadCount(ws._username);
           ws.send(JSON.stringify({ type: 'internalUnread', count: n }));
-          // okundu -> gonderene bildir (tikleri maviye)
-          wss.clients.forEach((c) => { if (c.readyState === 1 && c._username === msg.other) c.send(JSON.stringify({ type: 'internalReadUpdate', by: ws._username })); });
+          wss.clients.forEach((c) => { if (c.readyState === 1 && c._username === other) c.send(JSON.stringify({ type: 'internalReadUpdate', by: ws._username })); });
         } catch (e) { /* okundu isaretlenemese de mesajlar gitti */ }
         return;
       }
