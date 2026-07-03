@@ -3028,16 +3028,15 @@ const BRANS_LISTESI = ['kısa süreli trafik', 'kasko', 'trafik', 'dask', 'konut
 // ============================================================
 function posMuFormu(dosyaAdi) {
   if (!dosyaAdi) return false;
-  const ad = String(dosyaAdi).replace(/\.pdf$/i, '');
-  // token = harf/rakam dışı karakterlerle ayrılmış parçalar (boşluk, _, -, ., (), vs.)
-  const tokenlar = ad.split(/[^a-zA-ZçğıöşüÇĞİÖŞÜ]+/).filter(Boolean);
-  for (let tok of tokenlar) {
-    const t = trKucult(tok);
-    if (t.length < 2 || t.length > 5) continue;      // pos-benzeri kısa token (ps..ppoos)
-    if (!/^[pos]+$/.test(t)) continue;               // SADECE p, o, s harflerinden oluşsun
-    if (!t.includes('p') || !t.includes('s')) continue; // en az bir P ve bir S (PS, PSO, POS, PPOS, POOS…)
-    return true; // pos formu -> üretim dışı
-  }
+  const ad = trKucult(String(dosyaAdi).replace(/\.pdf$/i, ''));
+  const s = '[^a-zçğıöşü0-9]'; // harf/rakam olmayan sınır
+  // 1) POS/PSO/PS AYRI kelime olarak (en yaygın) — kelime sınırıyla, gerçek poliçeyi elemez.
+  //    "SIGORTASI PSO 40" ✓, "34PSO" ✓ (rakam sınır), "(POS)" ✓ ama "POSTA/APOSTOL/DEPOSITO" ✗
+  if (new RegExp(`(^|${s}|[0-9])(p+o+s+|p+s+o+|p+s+)([0-9]|${s}|$)`).test(ad)) return true;
+  // 2) BİTİŞİK yazım: bilinen poliçe kelimesinin HEMEN SONUNA yapışmış POS/PSO
+  //    ("SIGORTASIPSO", "TRAFIKPOS" gibi). Sadece bu güvenli kelimelerden sonra bakılır ki
+  //    "POSTA/APOSTOL" gibi masum kelimeler yanlışlıkla yakalanmasın.
+  if (/(sigortas[ıi]|sigorta|trafik|kasko|dask|police|polices[ıi])(pos|pso|ps)([0-9]|[^a-zçğıöşü]|$)/.test(ad)) return true;
   return false;
 }
 
