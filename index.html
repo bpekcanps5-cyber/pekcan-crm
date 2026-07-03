@@ -1591,6 +1591,11 @@
   /* lightbox pin: işaretliyse YEŞİL yanar (fotolar arasında nerede kaldığın belli olur) */
   #lbPin.aktif{color:#22c55e !important;background:rgba(34,197,94,.18) !important}
   #lbPin.aktif svg{filter:drop-shadow(0 0 4px rgba(34,197,94,.6))}
+  /* Performans: POS temizleme aracı */
+  .perf-arac-satir{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 16px}
+  .perf-pos-btn{padding:9px 16px;border-radius:10px;border:1.5px solid #f59e0b;background:rgba(245,158,11,.12);color:#f59e0b;font-size:13.5px;font-weight:700;cursor:pointer;transition:all .14s}
+  .perf-pos-btn:hover{background:#f59e0b;color:#fff}
+  .perf-pos-not{font-size:11.5px;color:var(--muted);flex:1;min-width:200px}
   /* iç mesaj sol liste: OKUNMAMIŞ = isim beyaz+kalın, son mesaj net; OKUNDU = hafif gri/silik */
   #internalList .chat.im-okunmamis .chat-name{font-weight:800;color:var(--text)}
   #internalList .chat.im-okunmamis .chat-last{color:var(--text);font-weight:600}
@@ -2082,7 +2087,6 @@
       <div class="kontrol-yonetici" id="kontrolYonetici" style="display:none">
         <button class="ky-btn ky-kapat" onclick="gunuKapat()" title="Bugünün satışlarını kilitle ve özet al">🔒 Günü Kapat</button>
         <button class="ky-btn ky-excel" onclick="satisExcelIndir()" title="Görünen satışları Excel olarak indir">📊 Excel İndir</button>
-        <button class="ky-btn ky-pos" onclick="posTemizleAc()" title="Yanlışlıkla poliçe sayılmış POS formlarını (PSO/PS/PPOS...) bul ve sil">🧹 POS Temizle</button>
       </div>
       <!-- Satış listesi -->
       <div class="kontrol-liste" id="kontrolListe"></div>
@@ -3550,6 +3554,10 @@ function performansCiz(d){
   html+='<div class="perf-ozet-kart"><div class="poz-ikon">⏱️</div><div class="poz-buyuk">'+(t.ikiAylik||0)+'</div><div class="poz-etiket">2 Aylık</div></div>';
   html+='<div class="perf-ozet-kart"><div class="poz-ikon">✂️</div><div class="poz-buyuk">'+(t.kesim||0)+'</div><div class="poz-etiket">Kesim Mesajı</div></div>';
   html+='</div>';
+  // YÖNETİCİ: POS temizleme aracı (yanlışlıkla poliçe sayılmış POS formları)
+  if(_kontrolAdmin){
+    html+='<div class="perf-arac-satir"><button class="perf-pos-btn" onclick="posTemizleAc()" title="Yanlış yazılmış POS formlarını (PSO/PS/PPOS/POOS...) bul ve sil — hak yenmesin">🧹 POS Yazım Hatalarını Bul & Temizle</button><span class="perf-pos-not">POS = üretim dışı. Yanlış yazılmış olanları bulur, gösterir, silmeden önce onay ister.</span></div>';
+  }
 
   if(!liste.length){
     html+='<div class="perf-bos">📭<br>Bu dönemde poliçe yüklemesi yok.<br><span style="font-size:12.5px;opacity:.8">Birisi gruba PDF sürükleyince burada görünecek.</span></div>';
@@ -4242,7 +4250,8 @@ async function posTemizleAc(){
     const d2=await r2.json();
     if(d2.ok){
       alert('✓ '+d2.silinen+' adet yanlış POS kaydı silindi.\nÜretim sayıları düzeltildi.');
-      kontrolYukle(); // dashboard'u tazele (sayılar güncellensin)
+      if(typeof performansYukle==='function') performansYukle(); // performans raporunu tazele
+      if(typeof kontrolYukle==='function') kontrolYukle();
     } else showToast('⚠️ '+(d2.error||'Silinemedi'));
   }catch(e){ showToast('⚠️ Bağlantı hatası'); }
 }
