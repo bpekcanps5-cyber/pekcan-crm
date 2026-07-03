@@ -628,6 +628,34 @@ function tarihAraligi(kapsam) {
 }
 
 // Satışları getir. Pazarlamaci KENDI hattini, yonetici TUMUNU (veya secili hat) gorur.
+// ═══ POS TEMİZLİĞİ (yanlışlıkla poliçe sayılmış POS formları) — SADECE ADMIN ═══
+// Önce LİSTELE (kim, hangi dosya) -> yönetici görsün; sonra SİL.
+app.post('/api/pos/liste', express.json(), async (req, res) => {
+  const y = satisYetki(req.body?.token);
+  if (!y || !y.isAdmin) return res.json({ ok: false, error: 'Yetki yok' });
+  try {
+    const kayitlar = await db.posBenzeriPoliceler(posMuFormu, req.body?.lineId || null);
+    // özet: kişi başı kaç POS yanlış sayılmış
+    const kisiSayaci = {};
+    kayitlar.forEach(k => { const ad = k.kullanici_ad || k.kullanici || '?'; kisiSayaci[ad] = (kisiSayaci[ad] || 0) + 1; });
+    res.json({
+      ok: true,
+      toplam: kayitlar.length,
+      kisiler: Object.entries(kisiSayaci).map(([ad, n]) => ({ ad, adet: n })).sort((a, b) => b.adet - a.adet),
+      ornekler: kayitlar.slice(0, 50).map(k => ({ ad: k.kullanici_ad || k.kullanici, dosya: k.dosya_adi, grup: k.chat_name, tarih: k.ts })),
+    });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+app.post('/api/pos/temizle', express.json(), async (req, res) => {
+  const y = satisYetki(req.body?.token);
+  if (!y || !y.isAdmin) return res.json({ ok: false, error: 'Yetki yok' });
+  try {
+    const r = await db.posBenzeriSil(posMuFormu, req.body?.lineId || null);
+    if (r.ok) console.log(`🧹 POS temizliği (${y.username}): ${r.silinen} yanlış POS kaydı silindi`);
+    res.json(r);
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
 app.post('/api/satislar', express.json(), async (req, res) => {
   const y = satisYetki(req.body?.token);
   if (!y) return res.json({ ok: false, error: 'Oturum yok' });
@@ -1537,15 +1565,12 @@ wss.on('connection', (ws) => {
       // Bir konusmayi ac (iki kullanici arasi gecmis)
       if (msg.type === 'internalLoad') {
         const other = (msg.other || '').trim();
-        console.log(`🔍 internalLoad: "${ws._username}" <- "${other}" istedi (dbReady=${db.isReady()})`);
         if (!ws._username || !other || !db.isReady()) {
-          console.log(`   ⚠️ erken çıkış: username=${!!ws._username} other=${!!other} db=${db.isReady()}`);
           ws.send(JSON.stringify({ type: 'internalConversation', other: msg.other, messages: [] })); return;
         }
         let rows = [];
         try { rows = await db.loadInternalConversation(ws._username, other, 300); }
-        catch (e) { console.log(`   ❌ loadInternalConversation HATASI: ${e.message}`); rows = []; }
-        console.log(`   ✅ ${rows.length} mesaj bulundu -> panele gönderiliyor`);
+        catch (e) { console.log(`❌ internalLoad hatası (${ws._username}<-${other}): ${e.message}`); rows = []; }
         // MESAJLARI ÖNCE GÖNDER (okundu işaretleme sonra) -> okundu/sayaç bir hata verse
         // bile mesajlar KESİN gelir, panelde "Yükleniyor…" takılı kalmaz.
         ws.send(JSON.stringify({ type: 'internalConversation', other, messages: rows }));
@@ -2978,6 +3003,28 @@ const GECERLI_BRANSLAR = {
 // Panelde/raporda gosterilecek sira (pazarlamaci bilgi kutusu + dashboard icin)
 const BRANS_LISTESI = ['kısa süreli trafik', 'kasko', 'trafik', 'dask', 'konut', 'işyeri', 'ferdi kaza', 'seyahat sağlık', 'tss', 'özel sağlık', 'yeşilkart', 'zorunlu koltuk', 'öss', 'imm'];
 
+// ============================================================
+// POS FORMU TESPİTİ (kredi kartı bosum formu — ÜRETİM DIŞI, poliçe/kesim SAYILMAZ)
+// POS çoğu zaman YANLIŞ yazılıyor: PSO, PS, PPOS, POOS, PPO, POS, PSS...
+// Bu fonksiyon dosya adında P + O(lar) + S(ler) karışımı "pos benzeri" bir TOKEN
+// (kelime) olup olmadığına bakar. Sadece harf sınırıyla çevrili token'lara bakılır ki
+// gerçek kelimelerin (ör. "kompozit") içindeki harfler yanlışlıkla POS sanılmasın.
+// ============================================================
+function posMuFormu(dosyaAdi) {
+  if (!dosyaAdi) return false;
+  const ad = String(dosyaAdi).replace(/\.pdf$/i, '');
+  // token = harf/rakam dışı karakterlerle ayrılmış parçalar (boşluk, _, -, ., (), vs.)
+  const tokenlar = ad.split(/[^a-zA-ZçğıöşüÇĞİÖŞÜ]+/).filter(Boolean);
+  for (let tok of tokenlar) {
+    const t = trKucult(tok);
+    if (t.length < 2 || t.length > 5) continue;      // pos-benzeri kısa token (ps..ppoos)
+    if (!/^[pos]+$/.test(t)) continue;               // SADECE p, o, s harflerinden oluşsun
+    if (!t.includes('p') || !t.includes('s')) continue; // en az bir P ve bir S (PS, PSO, POS, PPOS, POOS…)
+    return true; // pos formu -> üretim dışı
+  }
+  return false;
+}
+
 // / ile baslar, sonra urun adi (harf), sonra (opsiyonel) adet (sayi, yoksa 1).
 // Eslesmezse VEYA gecerli bir brans degilse null doner (normal mesaj sayilir).
 function satisAyristir(text) {
@@ -3036,8 +3083,10 @@ function policeAdiAyristir(dosyaAdi) {
   const adLower = trKucult(dosyaAdi);
   // sadece PDF'leri poliçe say
   if (!adLower.endsWith('.pdf')) return null;
-  // "POS" geçiyorsa REDDET (kelime sınırıyla — içinde geçenleri yanlış elemesin)
-  if (/\bpos\b/i.test(dosyaAdi) || /[ _-]pos[ _.-]/i.test(dosyaAdi)) return null;
+  // ═══ POS (kredi kartı bosum formu) = ÜRETİM DIŞI, SAYILMAZ ═══
+  // POS sık sık YANLIŞ yazılıyor: PSO, PS, PPOS, POOS, PPO, POS vb. Hepsini yakala.
+  // Kelime sınırıyla bakılır (başka kelimenin içindekini yanlış elemesin).
+  if (posMuFormu(dosyaAdi)) return null;
   // BRANŞ TESPİTİ — 2 aşamalı:
   let brans = '';
   // 1) ÖNCE tam kelimeler (en güvenilir). İlk eşleşen kazanır.

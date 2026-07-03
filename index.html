@@ -2082,6 +2082,7 @@
       <div class="kontrol-yonetici" id="kontrolYonetici" style="display:none">
         <button class="ky-btn ky-kapat" onclick="gunuKapat()" title="Bugünün satışlarını kilitle ve özet al">🔒 Günü Kapat</button>
         <button class="ky-btn ky-excel" onclick="satisExcelIndir()" title="Görünen satışları Excel olarak indir">📊 Excel İndir</button>
+        <button class="ky-btn ky-pos" onclick="posTemizleAc()" title="Yanlışlıkla poliçe sayılmış POS formlarını (PSO/PS/PPOS...) bul ve sil">🧹 POS Temizle</button>
       </div>
       <!-- Satış listesi -->
       <div class="kontrol-liste" id="kontrolListe"></div>
@@ -4216,6 +4217,36 @@ function fallbackKopya(metin){
   document.body.removeChild(ta);
 }
 
+// ═══ POS TEMİZLİĞİ: yanlışlıkla poliçe sayılmış POS formlarını bul & sil (admin) ═══
+async function posTemizleAc(){
+  showToast('POS kayıtları taranıyor…');
+  try{
+    const r=await fetch('/api/pos/liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
+    const d=await r.json();
+    if(!d.ok){ showToast('⚠️ '+(d.error||'Hata')); return; }
+    if(d.toplam===0){ alert('✓ Temiz! Yanlışlıkla poliçe sayılmış POS formu bulunamadı.'); return; }
+    // kim kaç tane POS yanlış saymış - özet
+    const kisiListe=d.kisiler.map(k=>'  • '+k.ad+': '+k.adet+' adet').join('\n');
+    const ornekListe=(d.ornekler||[]).slice(0,8).map(o=>'  • '+(o.ad||'?')+' — '+(o.dosya||'').slice(0,45)).join('\n');
+    const onay=confirm(
+      '🧹 POS TEMİZLİĞİ\n\n'+
+      'Yanlışlıkla POLİÇE sayılmış '+d.toplam+' adet POS formu bulundu.\n'+
+      '(POS = kredi kartı bosum formu, üretim dışı olmalı)\n\n'+
+      'KİŞİ BAŞI:\n'+kisiListe+'\n\n'+
+      'ÖRNEKLER:\n'+ornekListe+'\n\n'+
+      'Bunları silersem üretim sayıları DÜZELİR (hak yenmez).\n'+
+      'Silmek istiyor musun? (Bu işlem geri alınamaz)'
+    );
+    if(!onay) return;
+    const r2=await fetch('/api/pos/temizle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
+    const d2=await r2.json();
+    if(d2.ok){
+      alert('✓ '+d2.silinen+' adet yanlış POS kaydı silindi.\nÜretim sayıları düzeltildi.');
+      kontrolYukle(); // dashboard'u tazele (sayılar güncellensin)
+    } else showToast('⚠️ '+(d2.error||'Silinemedi'));
+  }catch(e){ showToast('⚠️ Bağlantı hatası'); }
+}
+
 function satisExcelIndir(){
   if(!_kontrolVeri.length){ showToast('İndirilecek satış yok'); return; }
   const basliklar=['Tarih','Saat','Ürün','Adet','Satıcı','Grup','Onaylı','Düzenlendi','Eski Adet'];
@@ -4337,7 +4368,6 @@ function openInternalChat(other){
     try{ ws.send(JSON.stringify({type:'internalRead', other})); }catch(e){}
   }
   if(connected) ws.send(JSON.stringify({type:'internalLoad', other}));
-  console.log('[İÇ MESAJ] internalLoad gönderildi -> other:', JSON.stringify(other), '| connected:', connected);
   // GÜVENCE: 6sn içinde cevap (internalConversation) gelmezse "Yükleniyor…" sonsuza
   // kadar kalmasın. Bağlantı/DB gecikmesinde kullanıcı "Tekrar dene" ile yeniden çeker.
   clearTimeout(_imLoadTimer);
@@ -4362,7 +4392,6 @@ function openInternalChat(other){
 // Konusma gecmisi geldi
 let _imLoadTimer=null; // iç mesaj yükleme zaman aşımı güvencesi
 function renderInternalConversation(d){
-  console.log('[İÇ MESAJ] cevap geldi:', d.other, '| mesaj sayısı:', (d.messages||[]).length, '| aktif sohbet:', _internalOther);
   clearTimeout(_imLoadTimer); // cevap geldi -> zaman aşımı güvencesini iptal et
   // Bu cevap ŞU AN açık sohbete ait değilse yoksay AMA "Yükleniyor…" ekranda
   // takılı kalmasın diye yine de eski içeriği bırakma (başka sohbet çizecek zaten).
@@ -4460,11 +4489,11 @@ function drawInternalMessages(){
     }
     // DÜZENLENDİ etiketi
     const duzenlendiEt = (m.edited || m.duzenlendi) ? '<span class="im-duzenlendi">düzenlendi</span>' : '';
-    // OKUNDU TİKİ: sadece BENİM gönderdiğim mesajlarda. read_at doluysa çift mavi (okundu),
-    // boşsa tek tik (iletildi). (Server loadInternalConversation read_at döndürüyor.)
+    // OKUNDU: karşı taraf mesajı gördü mü (read_at dolu mu) — hem tik hem silik-balon için TEK tanım
+    const okundu = !!(m.read_at || m.readAt);
+    // OKUNDU TİKİ: sadece BENİM gönderdiğim mesajlarda. okunduysa çift mavi, boşsa tek tik.
     let tik='';
     if(ben){
-      const okundu = !!(m.read_at || m.readAt);
       tik = okundu
         ? '<span class="im-tik okundu"><svg viewBox="0 0 18 18" width="16" height="16"><path fill="currentColor" d="M17.4 5.6l-1.3-1.1c-.2-.1-.4-.1-.5.1l-6 7.2-.2.2 1 1.1c.2.2.5.2.7 0l6.7-7c.1-.2.1-.4-.1-.6zm-5 0L11 4.5c-.2-.1-.4-.1-.5.1l-6 7.2-2.4-2.4c-.2-.2-.4-.2-.6 0l-1 1c-.2.2-.2.4 0 .6l3.9 3.9c.2.2.5.2.7 0l7.4-8.7c.1-.2.1-.4-.1-.6z"/></svg></span>'
         : '<span class="im-tik"><svg viewBox="0 0 18 18" width="16" height="16"><path fill="currentColor" d="M6.6 12.5L2.4 8.3c-.2-.2-.4-.2-.6 0l-1 1c-.2.2-.2.4 0 .6l5.5 5.5c.2.2.5.2.7 0l9.4-11c.1-.2.1-.4-.1-.6l-1.1-.9c-.2-.1-.4-.1-.5.1L6.6 12.5z"/></svg></span>';

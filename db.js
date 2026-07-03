@@ -1366,6 +1366,38 @@ async function loadPoliceYuklemeler(baslangicTs = null, bitisTs = null, lineId =
 }
 
 // ============================================================
+// POS TEMİZLİĞİ: yanlışlıkla poliçe sayılmış POS formlarını (PSO/PS/PPOS...) bul & sil.
+// posKontrol: server'dan gecen posMuFormu fonksiyonu (dosya adına bakar).
+// ============================================================
+async function posBenzeriPoliceler(posKontrol, lineId = null) {
+  if (!aktif) return [];
+  try {
+    let sql = 'SELECT * FROM police_yuklemeler WHERE 1=1';
+    const params = [];
+    if (lineId) { params.push(lineId); sql += ` AND line_id = $${params.length}`; }
+    sql += ' ORDER BY ts DESC LIMIT 20000';
+    const r = await pool.query(sql, params);
+    // dosya adı POS-benzeri olanları süz
+    return r.rows.filter(row => posKontrol(row.dosya_adi || ''));
+  } catch (e) { return []; }
+}
+async function posBenzeriSil(posKontrol, lineId = null) {
+  const bulunan = await posBenzeriPoliceler(posKontrol, lineId);
+  if (!bulunan.length) return { ok: true, silinen: 0, kayitlar: [] };
+  const idler = bulunan.map(r => r.id);
+  try {
+    // 500'erlik gruplar halinde sil (çok büyük IN listesi olmasın)
+    let silinen = 0;
+    for (let i = 0; i < idler.length; i += 500) {
+      const parca = idler.slice(i, i + 500);
+      const r = await pool.query(`DELETE FROM police_yuklemeler WHERE id = ANY($1)`, [parca]);
+      silinen += r.rowCount;
+    }
+    return { ok: true, silinen, kayitlar: bulunan.map(r => ({ ad: r.kullanici_ad, dosya: r.dosya_adi, grup: r.chat_name })) };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+// ============================================================
 // AKTİVİTE MESAJLARI (aktivite_mesajlar) — "ilgileniyorum/kesiyorum" sayımı
 // Gruplarda kesim/ilgilenme mesajı yazan kişiyi loglar (yanlış yazım dahil).
 // Performans raporunda "kaç kesim mesajı" olarak gösterilir. Ayrı/yan veridir.
@@ -1487,6 +1519,6 @@ module.exports = {
   addAllowedIp, removeAllowedIp, loadAllowedIps,
   setUserLine, getUserLine, loadUserLines, saveLine, loadLines, deleteLineData,
   saveSatis, loadSatislar, loadTumSatislar, updateSatisAdet, setSatisOnay, deleteSatis, gunuKapat, loadKapaliGunler,
-  savePoliceYukleme, loadPoliceYuklemeler, saveAktivite, loadAktiviteler,
+  savePoliceYukleme, loadPoliceYuklemeler, posBenzeriPoliceler, posBenzeriSil, saveAktivite, loadAktiviteler,
   odemeEkle, odemeleriListele, odemeSil, odemeBul, odemeNotGuncelle,
 };
