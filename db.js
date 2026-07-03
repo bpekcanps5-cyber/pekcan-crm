@@ -1377,8 +1377,8 @@ async function posBenzeriPoliceler(posKontrol, lineId = null) {
     if (lineId) { params.push(lineId); sql += ` AND line_id = $${params.length}`; }
     sql += ' ORDER BY ts DESC LIMIT 20000';
     const r = await pool.query(sql, params);
-    // dosya adı POS-benzeri olanları süz
-    return r.rows.filter(row => posKontrol(row.dosya_adi || ''));
+    // POS-benzeri: dosya adı VEYA branş alanı POS yazımı içeriyorsa (yazım hatası ikisinde de olabilir)
+    return r.rows.filter(row => posKontrol(row.dosya_adi || '') || posKontrol(row.brans || ''));
   } catch (e) { return []; }
 }
 async function posBenzeriSil(posKontrol, lineId = null) {

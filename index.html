@@ -4232,7 +4232,25 @@ async function posTemizleAc(){
     const r=await fetch('/api/pos/liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
     const d=await r.json();
     if(!d.ok){ showToast('⚠️ '+(d.error||'Hata')); return; }
-    if(d.toplam===0){ alert('✓ Temiz! Yanlışlıkla poliçe sayılmış POS formu bulunamadı.'); return; }
+    if(d.toplam===0){
+      // TEŞHİS: neden bulunamadı? DB'de ne var göster
+      let mesaj='✓ Otomatik tespit POS bulamadı.\n\n';
+      if(d.teshis){
+        mesaj+='📊 TEŞHİS:\n';
+        mesaj+='Veritabanındaki toplam poliçe: '+d.teshis.toplamKayit+'\n\n';
+        if(d.teshis.supheliPos && d.teshis.supheliPos.length){
+          mesaj+='⚠️ POS olabilecek '+d.teshis.supheliPos.length+' şüpheli kayıt bulundu:\n';
+          mesaj+=d.teshis.supheliPos.slice(0,12).map(k=>'  • '+(k.ad||'?')+' — "'+(k.dosya||'').slice(0,50)+'" [branş: '+(k.brans||'?')+']').join('\n');
+          mesaj+='\n\nBunlar dosya adında pos/pso/ps geçiyor ama otomatik tespit yakalamadı. Bu örnekleri bana (geliştiriciye) gönderirsen tespiti düzeltirim.';
+        } else {
+          mesaj+='İlk 10 dosya adı örneği:\n';
+          mesaj+=(d.teshis.ornekDosyalar||[]).slice(0,10).map(f=>'  • '+f.slice(0,55)).join('\n');
+          mesaj+='\n\nHiçbirinde POS yazımı görünmüyor. Belki bu kayıtlar zaten temiz, veya farklı yazılmışlar.';
+        }
+      }
+      alert(mesaj);
+      return;
+    }
     // kim kaç tane POS yanlış saymış - özet
     const kisiListe=d.kisiler.map(k=>'  • '+k.ad+': '+k.adet+' adet').join('\n');
     const ornekListe=(d.ornekler||[]).slice(0,8).map(o=>'  • '+(o.ad||'?')+' — '+(o.dosya||'').slice(0,45)).join('\n');

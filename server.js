@@ -638,11 +638,24 @@ app.post('/api/pos/liste', express.json(), async (req, res) => {
     // özet: kişi başı kaç POS yanlış sayılmış
     const kisiSayaci = {};
     kayitlar.forEach(k => { const ad = k.kullanici_ad || k.kullanici || '?'; kisiSayaci[ad] = (kisiSayaci[ad] || 0) + 1; });
+    // TEŞHİS: POS bulunamadıysa, DB'de gerçekte ne var görelim (dosya adı örnekleri)
+    let teshis = null;
+    if (kayitlar.length === 0) {
+      const tumu = await db.loadPoliceYuklemeler(null, null, req.body?.lineId || null);
+      // "pso/pos/ps" gibi ifade GEÇEN ama yakalanamayanları ara (ham metin taraması)
+      const supheli = tumu.filter(k => /p\W*s|p\W*o\W*s|pos|pso/i.test((k.dosya_adi || '') + ' ' + (k.brans || ''))).slice(0, 30);
+      teshis = {
+        toplamKayit: tumu.length,
+        ornekDosyalar: tumu.slice(0, 20).map(k => (k.dosya_adi || '(ad yok)')),
+        supheliPos: supheli.map(k => ({ ad: k.kullanici_ad || k.kullanici, dosya: k.dosya_adi, brans: k.brans })),
+      };
+    }
     res.json({
       ok: true,
       toplam: kayitlar.length,
       kisiler: Object.entries(kisiSayaci).map(([ad, n]) => ({ ad, adet: n })).sort((a, b) => b.adet - a.adet),
       ornekler: kayitlar.slice(0, 50).map(k => ({ ad: k.kullanici_ad || k.kullanici, dosya: k.dosya_adi, grup: k.chat_name, tarih: k.ts })),
+      teshis,
     });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
