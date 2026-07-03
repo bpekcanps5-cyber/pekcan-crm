@@ -1596,6 +1596,26 @@
   .perf-pos-btn{padding:9px 16px;border-radius:10px;border:1.5px solid #f59e0b;background:rgba(245,158,11,.12);color:#f59e0b;font-size:13.5px;font-weight:700;cursor:pointer;transition:all .14s}
   .perf-pos-btn:hover{background:#f59e0b;color:#fff}
   .perf-pos-not{font-size:11.5px;color:var(--muted);flex:1;min-width:200px}
+  /* POS temizleme modalı */
+  .pos-arac-bar{display:flex;align-items:center;gap:14px;padding:10px 12px;background:var(--panel-2);border-radius:10px;margin-bottom:10px;flex-wrap:wrap}
+  .pos-tumsec{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;cursor:pointer;user-select:none}
+  .pos-tumsec input{width:17px;height:17px;cursor:pointer}
+  .pos-sayac{font-size:13px;color:var(--brand);font-weight:700;flex:1}
+  .btn.danger{background:#ef4444;color:#fff;border:none}
+  .btn.danger:hover:not(:disabled){background:#dc2626}
+  .btn.danger:disabled{opacity:.5;cursor:not-allowed}
+  .pos-liste{overflow-y:auto;flex:1;padding-right:4px}
+  .pos-kisi-grup{margin-bottom:14px}
+  .pos-kisi-baslik{font-size:13.5px;font-weight:800;color:var(--text);padding:6px 4px;position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--border);z-index:1}
+  .pos-kisi-adet{font-size:11.5px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,.14);padding:2px 8px;border-radius:8px;margin-left:6px}
+  .pos-satir{display:flex;align-items:flex-start;gap:10px;padding:9px 8px;border-radius:9px;cursor:pointer;transition:background .12s;border:1px solid transparent}
+  .pos-satir:hover{background:var(--panel-2)}
+  .pos-satir:has(.pos-chk:checked){background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3)}
+  .pos-chk{width:18px;height:18px;cursor:pointer;margin-top:2px;flex-shrink:0;accent-color:#ef4444}
+  .pos-satir-ic{flex:1;min-width:0}
+  .pos-dosya{font-size:13px;font-weight:600;color:var(--text);word-break:break-word;line-height:1.4}
+  .pos-dosya mark{background:#fca5a5;color:#7f1d1d;padding:0 3px;border-radius:3px;font-weight:800}
+  .pos-meta{font-size:11.5px;color:var(--muted);margin-top:3px}
   /* iç mesaj sol liste: OKUNMAMIŞ = isim beyaz+kalın, son mesaj net; OKUNDU = hafif gri/silik */
   #internalList .chat.im-okunmamis .chat-name{font-weight:800;color:var(--text)}
   #internalList .chat.im-okunmamis .chat-last{color:var(--text);font-weight:600}
@@ -2263,6 +2283,22 @@
       <button class="btn ghost" id="sendFileCancel">İptal</button>
       <button class="btn primary" id="sendFileGo">📤 Gönder</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="posTemizleModal">
+  <div class="modal" style="width:720px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h3 style="margin:0">🧹 POS Temizliği</h3>
+      <span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="document.getElementById('posTemizleModal').classList.remove('show')">✕</span>
+    </div>
+    <p style="color:var(--muted);font-size:13px;margin:0 0 12px">Dosya adında <b>POS / PSO / PS</b> gibi yazım geçen kayıtlar (üretim dışı). İşaretleyip <b>Seçilenleri Sil</b> ile kaldır. POS ile poliçe aynıdır, tek fark adında POS yazması — yani bunlar gerçekten POS'tur.</p>
+    <div class="pos-arac-bar">
+      <label class="pos-tumsec"><input type="checkbox" id="posTumSec" onchange="posTumuSec(this.checked)"> Tümünü seç</label>
+      <span class="pos-sayac" id="posSeciliSayac">0 seçili</span>
+      <button class="btn danger" id="posSilBtn" onclick="posSeciliSil()" disabled>🗑 Seçilenleri Sil</button>
+    </div>
+    <div class="pos-liste" id="posListe"></div>
   </div>
 </div>
 
@@ -4225,53 +4261,75 @@ function fallbackKopya(metin){
   document.body.removeChild(ta);
 }
 
-// ═══ POS TEMİZLİĞİ: yanlışlıkla poliçe sayılmış POS formlarını bul & sil (admin) ═══
+// ═══ POS TEMİZLİĞİ: kutucuklu arayüz — elle kontrol edip seç, sil (admin) ═══
+let _posKayitlar=[];
 async function posTemizleAc(){
   showToast('POS kayıtları taranıyor…');
   try{
     const r=await fetch('/api/pos/liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
     const d=await r.json();
     if(!d.ok){ showToast('⚠️ '+(d.error||'Hata')); return; }
-    if(d.toplam===0){
-      // TEŞHİS: neden bulunamadı? DB'de ne var göster
-      let mesaj='✓ Otomatik tespit POS bulamadı.\n\n';
-      if(d.teshis){
-        mesaj+='📊 TEŞHİS:\n';
-        mesaj+='Veritabanındaki toplam poliçe: '+d.teshis.toplamKayit+'\n\n';
-        if(d.teshis.supheliPos && d.teshis.supheliPos.length){
-          mesaj+='⚠️ POS olabilecek '+d.teshis.supheliPos.length+' şüpheli kayıt bulundu:\n';
-          mesaj+=d.teshis.supheliPos.slice(0,12).map(k=>'  • '+(k.ad||'?')+' — "'+(k.dosya||'').slice(0,50)+'" [branş: '+(k.brans||'?')+']').join('\n');
-          mesaj+='\n\nBunlar dosya adında pos/pso/ps geçiyor ama otomatik tespit yakalamadı. Bu örnekleri bana (geliştiriciye) gönderirsen tespiti düzeltirim.';
-        } else {
-          mesaj+='İlk 10 dosya adı örneği:\n';
-          mesaj+=(d.teshis.ornekDosyalar||[]).slice(0,10).map(f=>'  • '+f.slice(0,55)).join('\n');
-          mesaj+='\n\nHiçbirinde POS yazımı görünmüyor. Belki bu kayıtlar zaten temiz, veya farklı yazılmışlar.';
-        }
-      }
-      alert(mesaj);
-      return;
-    }
-    // kim kaç tane POS yanlış saymış - özet
-    const kisiListe=d.kisiler.map(k=>'  • '+k.ad+': '+k.adet+' adet').join('\n');
-    const ornekListe=(d.ornekler||[]).slice(0,8).map(o=>'  • '+(o.ad||'?')+' — '+(o.dosya||'').slice(0,45)).join('\n');
-    const onay=confirm(
-      '🧹 POS TEMİZLİĞİ\n\n'+
-      'Yanlışlıkla POLİÇE sayılmış '+d.toplam+' adet POS formu bulundu.\n'+
-      '(POS = kredi kartı bosum formu, üretim dışı olmalı)\n\n'+
-      'KİŞİ BAŞI:\n'+kisiListe+'\n\n'+
-      'ÖRNEKLER:\n'+ornekListe+'\n\n'+
-      'Bunları silersem üretim sayıları DÜZELİR (hak yenmez).\n'+
-      'Silmek istiyor musun? (Bu işlem geri alınamaz)'
-    );
-    if(!onay) return;
-    const r2=await fetch('/api/pos/temizle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
-    const d2=await r2.json();
-    if(d2.ok){
-      alert('✓ '+d2.silinen+' adet yanlış POS kaydı silindi.\nÜretim sayıları düzeltildi.');
-      if(typeof performansYukle==='function') performansYukle(); // performans raporunu tazele
-      if(typeof kontrolYukle==='function') kontrolYukle();
-    } else showToast('⚠️ '+(d2.error||'Silinemedi'));
+    if(!d.toplam){ alert('✓ Temiz! Dosya adında POS/PSO geçen kayıt bulunamadı.'); return; }
+    _posKayitlar=d.kayitlar||[];
+    posListeCiz();
+    document.getElementById('posTemizleModal').classList.add('show');
   }catch(e){ showToast('⚠️ Bağlantı hatası'); }
+}
+function posListeCiz(){
+  const kap=document.getElementById('posListe');
+  // kişiye göre grupla (kim kaç POS)
+  const kisiGrup={};
+  _posKayitlar.forEach(k=>{ (kisiGrup[k.ad]=kisiGrup[k.ad]||[]).push(k); });
+  let html='';
+  Object.entries(kisiGrup).sort((a,b)=>b[1].length-a[1].length).forEach(([ad,kayitlar])=>{
+    html+='<div class="pos-kisi-grup"><div class="pos-kisi-baslik">👤 '+esc(ad)+' <span class="pos-kisi-adet">'+kayitlar.length+' POS</span></div>';
+    kayitlar.forEach(k=>{
+      const tarih=k.tarih?new Date(Number(k.tarih)).toLocaleDateString('tr-TR'):'';
+      // dosya adında POS/PSO'yu vurgula
+      const dosyaVurgu=esc(k.dosya).replace(/(pso|pos|ps)/gi,'<mark>$1</mark>');
+      html+='<label class="pos-satir">'+
+        '<input type="checkbox" class="pos-chk" value="'+esc(k.id)+'" onchange="posSecimGuncelle()">'+
+        '<div class="pos-satir-ic"><div class="pos-dosya">'+dosyaVurgu+'</div>'+
+        '<div class="pos-meta">🏪 '+esc(k.grup||'?')+' · '+esc(tarih)+(k.brans?' · branş: '+esc(k.brans):'')+'</div></div>'+
+        '</label>';
+    });
+    html+='</div>';
+  });
+  kap.innerHTML=html;
+  document.getElementById('posTumSec').checked=false;
+  posSecimGuncelle();
+}
+function posTumuSec(hepsi){
+  document.querySelectorAll('#posListe .pos-chk').forEach(c=>c.checked=hepsi);
+  posSecimGuncelle();
+}
+function posSecimGuncelle(){
+  const secili=document.querySelectorAll('#posListe .pos-chk:checked').length;
+  document.getElementById('posSeciliSayac').textContent=secili+' seçili';
+  document.getElementById('posSilBtn').disabled=secili===0;
+  // tümü seçili mi kontrol et
+  const toplam=document.querySelectorAll('#posListe .pos-chk').length;
+  document.getElementById('posTumSec').checked=(secili===toplam && toplam>0);
+}
+async function posSeciliSil(){
+  const idler=Array.from(document.querySelectorAll('#posListe .pos-chk:checked')).map(c=>c.value);
+  if(!idler.length) return;
+  if(!confirm(idler.length+' adet POS kaydını silmek istediğine emin misin?\n\nBu kayıtlar poliçe sayımından çıkarılacak (üretim düzelecek). Geri alınamaz.')) return;
+  const btn=document.getElementById('posSilBtn');
+  btn.disabled=true; btn.textContent='Siliniyor…';
+  try{
+    const r=await fetch('/api/pos/silSecili',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, idler})});
+    const d=await r.json();
+    if(d.ok){
+      showToast('✓ '+d.silinen+' POS kaydı silindi');
+      // silinenleri listeden çıkar
+      _posKayitlar=_posKayitlar.filter(k=>!idler.includes(k.id));
+      if(_posKayitlar.length){ posListeCiz(); }
+      else { document.getElementById('posTemizleModal').classList.remove('show'); alert('✓ Tüm seçili POS kayıtları temizlendi. Üretim sayıları düzeldi.'); }
+      if(typeof performansYukle==='function') performansYukle();
+    } else showToast('⚠️ '+(d.error||'Silinemedi'));
+  }catch(e){ showToast('⚠️ Bağlantı hatası'); }
+  finally{ btn.textContent='🗑 Seçilenleri Sil'; posSecimGuncelle(); }
 }
 
 function satisExcelIndir(){
