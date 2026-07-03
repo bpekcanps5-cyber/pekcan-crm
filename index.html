@@ -1616,6 +1616,9 @@
   .pos-dosya{font-size:13px;font-weight:600;color:var(--text);word-break:break-word;line-height:1.4}
   .pos-dosya mark{background:#fca5a5;color:#7f1d1d;padding:0 3px;border-radius:3px;font-weight:800}
   .pos-meta{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .pos-rozet{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:7px;white-space:nowrap;margin-left:4px}
+  .pos-rozet.kesin{background:rgba(34,197,94,.15);color:#16a34a}
+  .pos-rozet.supheli{background:rgba(245,158,11,.15);color:#d97706;cursor:help}
   /* iç mesaj sol liste: OKUNMAMIŞ = isim beyaz+kalın, son mesaj net; OKUNDU = hafif gri/silik */
   #internalList .chat.im-okunmamis .chat-name{font-weight:800;color:var(--text)}
   #internalList .chat.im-okunmamis .chat-last{color:var(--text);font-weight:600}
@@ -2292,9 +2295,10 @@
       <h3 style="margin:0">🧹 POS Temizliği</h3>
       <span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="document.getElementById('posTemizleModal').classList.remove('show')">✕</span>
     </div>
-    <p style="color:var(--muted);font-size:13px;margin:0 0 12px">Dosya adında <b>POS / PSO / PS</b> gibi yazım geçen kayıtlar (üretim dışı). İşaretleyip <b>Seçilenleri Sil</b> ile kaldır. POS ile poliçe aynıdır, tek fark adında POS yazması — yani bunlar gerçekten POS'tur.</p>
+    <p style="color:var(--muted);font-size:13px;margin:0 0 12px">Dosya adında <b>POS / PSO</b> geçen tüm kayıtlar. <span style="color:#22c55e">✓ POS</span> = kesin POS (üretim dışı). <span style="color:#f59e0b">? kontrol et</span> = sen bak. İşaretleyip <b>Seçilenleri Sil</b>.</p>
     <div class="pos-arac-bar">
       <label class="pos-tumsec"><input type="checkbox" id="posTumSec" onchange="posTumuSec(this.checked)"> Tümünü seç</label>
+      <button class="btn ghost" onclick="posKesinleriSec()" style="font-size:12.5px;padding:6px 12px">✓ Sadece kesin POS'ları seç</button>
       <span class="pos-sayac" id="posSeciliSayac">0 seçili</span>
       <button class="btn danger" id="posSilBtn" onclick="posSeciliSil()" disabled>🗑 Seçilenleri Sil</button>
     </div>
@@ -4266,26 +4270,11 @@ let _posKayitlar=[];
 async function posTemizleAc(){
   showToast('POS kayıtları taranıyor…');
   try{
-    const r=await fetch('/api/pos/liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
+    // GENİŞ liste: dosya adında pos/pso GEÇEN tüm kayıtlar (teşhisteki 150 kayıt)
+    const r=await fetch('/api/pos/genisListe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
     const d=await r.json();
     if(!d.ok){ showToast('⚠️ '+(d.error||'Hata')); return; }
-    if(!d.toplam){
-      let m='✓ Otomatik tespit "POS" bulamadı.\n\n';
-      if(d.teshis){
-        m+='📊 TEŞHİS (kontrol için):\n';
-        m+='• Veritabanındaki toplam poliçe: '+d.teshis.toplamKayit+'\n';
-        m+='• Dosya adında pos/pso harfleri geçen: '+d.teshis.hamGecenSayi+' kayıt\n\n';
-        if(d.teshis.ornekler && d.teshis.ornekler.length){
-          m+='Bu kayıtlar POS içeriyor ama tespit yakalayamadı:\n';
-          m+=d.teshis.ornekler.map(k=>'• '+(k.ad||'?')+' — '+(k.dosya||'').slice(0,55)).join('\n');
-          m+='\n\n⚠️ Bunları görüyorsan ama tespit yakalamıyorsa: bu yeni sürüm henüz YÜKLENMEMİŞ olabilir. Sunucuda güncelleme komutunu çalıştırıp Ctrl+Shift+R yaptın mı?';
-        } else {
-          m+='Dosya adında hiç pos/pso geçen kayıt yok. Belki hepsi zaten temizlenmiş.';
-        }
-      }
-      alert(m);
-      return;
-    }
+    if(!d.toplam){ alert('✓ Temiz! Dosya adında POS/PSO geçen kayıt bulunamadı.'); return; }
     _posKayitlar=d.kayitlar||[];
     posListeCiz();
     document.getElementById('posTemizleModal').classList.add('show');
@@ -4302,10 +4291,14 @@ function posListeCiz(){
     kayitlar.forEach(k=>{
       const tarih=k.tarih?new Date(Number(k.tarih)).toLocaleDateString('tr-TR'):'';
       // dosya adında POS/PSO'yu vurgula
-      const dosyaVurgu=esc(k.dosya).replace(/(pso|pos|ps)/gi,'<mark>$1</mark>');
+      const dosyaVurgu=esc(k.dosya).replace(/(pso|pos)/gi,'<mark>$1</mark>');
+      // otomatik tespit bunu kesin POS mu sayıyor? (bilgi amaçlı rozet)
+      const rozet=k.kesinPos
+        ? '<span class="pos-rozet kesin">✓ POS</span>'
+        : '<span class="pos-rozet supheli" title="Dosya adında pos/pso harfleri geçiyor ama otomatik tespit emin değil — sen kontrol et">? kontrol et</span>';
       html+='<label class="pos-satir">'+
         '<input type="checkbox" class="pos-chk" value="'+esc(k.id)+'" onchange="posSecimGuncelle()">'+
-        '<div class="pos-satir-ic"><div class="pos-dosya">'+dosyaVurgu+'</div>'+
+        '<div class="pos-satir-ic"><div class="pos-dosya">'+dosyaVurgu+' '+rozet+'</div>'+
         '<div class="pos-meta">🏪 '+esc(k.grup||'?')+' · '+esc(tarih)+(k.brans?' · branş: '+esc(k.brans):'')+'</div></div>'+
         '</label>';
     });
@@ -4318,6 +4311,14 @@ function posListeCiz(){
 function posTumuSec(hepsi){
   document.querySelectorAll('#posListe .pos-chk').forEach(c=>c.checked=hepsi);
   posSecimGuncelle();
+}
+// Sadece otomatik tespitin KESİN POS dediği kayıtları işaretle (kesinPos=true olanlar)
+function posKesinleriSec(){
+  const kesinIdler=new Set(_posKayitlar.filter(k=>k.kesinPos).map(k=>String(k.id)));
+  document.querySelectorAll('#posListe .pos-chk').forEach(c=>{ c.checked=kesinIdler.has(String(c.value)); });
+  posSecimGuncelle();
+  const n=kesinIdler.size;
+  showToast(n?('✓ '+n+' kesin POS işaretlendi'):'Kesin POS bulunamadı, elle seç');
 }
 function posSecimGuncelle(){
   const secili=document.querySelectorAll('#posListe .pos-chk:checked').length;

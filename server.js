@@ -672,6 +672,30 @@ app.post('/api/pos/silSecili', express.json(), async (req, res) => {
     res.json(r);
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
+// GENİŞ POS TARAMA: dosya adında pos/pso/ps GEÇEN tüm kayıtları getir (gevşek — teşhisle aynı).
+// posMuFormu bir sebeple kaçırırsa diye "her ihtimale karşı" tam liste. Kullanıcı elle seçer.
+app.post('/api/pos/genisListe', express.json(), async (req, res) => {
+  const y = satisYetki(req.body?.token);
+  if (!y || !y.isAdmin) return res.json({ ok: false, error: 'Yetki yok' });
+  try {
+    const tumu = await db.loadPoliceYuklemeler(null, null, null);
+    // dosya adında pos VEYA pso GEÇEN (ham, sınırsız) — teşhisin bulduğu 150 kayıt bunlar
+    const eslesme = tumu.filter(k => /pos|pso/i.test(k.dosya_adi || ''));
+    // otomatik tespit (posMuFormu) bunu POS say-IYOR mu? işaretle ki kullanıcı ayırt etsin
+    const kayitlar = eslesme.map(k => ({
+      id: k.id, ad: k.kullanici_ad || k.kullanici || '?', dosya: k.dosya_adi || '(ad yok)',
+      grup: k.chat_name || '', brans: k.brans || '', tarih: k.ts,
+      kesinPos: posMuFormu(k.dosya_adi || ''), // true=otomatik de POS diyor, false=sadece harf geçiyor
+    }));
+    const kisiSayaci = {};
+    kayitlar.forEach(k => { kisiSayaci[k.ad] = (kisiSayaci[k.ad] || 0) + 1; });
+    res.json({
+      ok: true, toplam: kayitlar.length,
+      kisiler: Object.entries(kisiSayaci).map(([ad, n]) => ({ ad, adet: n })).sort((a, b) => b.adet - a.adet),
+      kayitlar,
+    });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
 app.post('/api/pos/temizle', express.json(), async (req, res) => {
   const y = satisYetki(req.body?.token);
   if (!y || !y.isAdmin) return res.json({ ok: false, error: 'Yetki yok' });
