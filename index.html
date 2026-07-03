@@ -4269,7 +4269,23 @@ async function posTemizleAc(){
     const r=await fetch('/api/pos/liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
     const d=await r.json();
     if(!d.ok){ showToast('⚠️ '+(d.error||'Hata')); return; }
-    if(!d.toplam){ alert('✓ Temiz! Dosya adında POS/PSO geçen kayıt bulunamadı.'); return; }
+    if(!d.toplam){
+      let m='✓ Otomatik tespit "POS" bulamadı.\n\n';
+      if(d.teshis){
+        m+='📊 TEŞHİS (kontrol için):\n';
+        m+='• Veritabanındaki toplam poliçe: '+d.teshis.toplamKayit+'\n';
+        m+='• Dosya adında pos/pso harfleri geçen: '+d.teshis.hamGecenSayi+' kayıt\n\n';
+        if(d.teshis.ornekler && d.teshis.ornekler.length){
+          m+='Bu kayıtlar POS içeriyor ama tespit yakalayamadı:\n';
+          m+=d.teshis.ornekler.map(k=>'• '+(k.ad||'?')+' — '+(k.dosya||'').slice(0,55)).join('\n');
+          m+='\n\n⚠️ Bunları görüyorsan ama tespit yakalamıyorsa: bu yeni sürüm henüz YÜKLENMEMİŞ olabilir. Sunucuda güncelleme komutunu çalıştırıp Ctrl+Shift+R yaptın mı?';
+        } else {
+          m+='Dosya adında hiç pos/pso geçen kayıt yok. Belki hepsi zaten temizlenmiş.';
+        }
+      }
+      alert(m);
+      return;
+    }
     _posKayitlar=d.kayitlar||[];
     posListeCiz();
     document.getElementById('posTemizleModal').classList.add('show');

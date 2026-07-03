@@ -635,18 +635,28 @@ app.post('/api/pos/liste', express.json(), async (req, res) => {
   if (!y || !y.isAdmin) return res.json({ ok: false, error: 'Yetki yok' });
   try {
     const kayitlar = await db.posBenzeriPoliceler(posMuFormu, req.body?.lineId || null);
-    // özet: kişi başı kaç POS yanlış sayılmış
     const kisiSayaci = {};
     kayitlar.forEach(k => { const ad = k.kullanici_ad || k.kullanici || '?'; kisiSayaci[ad] = (kisiSayaci[ad] || 0) + 1; });
+    // TEŞHİS: hiç bulunamadıysa DB'de gerçekte ne var göster (yükleme mi tespit mi sorunu?)
+    let teshis = null;
+    if (kayitlar.length === 0) {
+      const tumu = await db.loadPoliceYuklemeler(null, null, null);
+      // ham metinde pos/pso/ps harfleri geçen HER kaydı bul (geniş tarama)
+      const hamGecen = tumu.filter(k => /pos|pso|p\W?s/i.test(k.dosya_adi || ''));
+      teshis = {
+        toplamKayit: tumu.length,
+        hamGecenSayi: hamGecen.length,
+        ornekler: hamGecen.slice(0, 15).map(k => ({ ad: k.kullanici_ad || k.kullanici, dosya: k.dosya_adi })),
+      };
+    }
     res.json({
-      ok: true,
-      toplam: kayitlar.length,
+      ok: true, toplam: kayitlar.length,
       kisiler: Object.entries(kisiSayaci).map(([ad, n]) => ({ ad, adet: n })).sort((a, b) => b.adet - a.adet),
-      // TÜM kayıtlar (arayüzde tek tek işaretlenip silinecek) — id dahil
       kayitlar: kayitlar.map(k => ({
         id: k.id, ad: k.kullanici_ad || k.kullanici || '?', dosya: k.dosya_adi || '(ad yok)',
         grup: k.chat_name || '', brans: k.brans || '', tarih: k.ts,
       })),
+      teshis,
     });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
