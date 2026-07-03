@@ -3060,9 +3060,18 @@ const BRANS_LISTESI = ['kısa süreli trafik', 'kasko', 'trafik', 'dask', 'konut
 // (kelime) olup olmadığına bakar. Sadece harf sınırıyla çevrili token'lara bakılır ki
 // gerçek kelimelerin (ör. "kompozit") içindeki harfler yanlışlıkla POS sanılmasın.
 // ============================================================
+// Türkçe küçük harf dönüşümü (GLOBAL — posMuFormu ve diğer fonksiyonlar kullanır).
+// toLowerCase Türkçe İ/I'yı bozar: İ->i, I->ı (noktasız), Ş->ş vb. doğru yapılır.
+function trKucultGlobal(s) {
+  return String(s || '')
+    .replace(/İ/g, 'i').replace(/I/g, 'ı')
+    .replace(/Ş/g, 'ş').replace(/Ğ/g, 'ğ')
+    .replace(/Ü/g, 'ü').replace(/Ö/g, 'ö').replace(/Ç/g, 'ç')
+    .toLowerCase();
+}
 function posMuFormu(dosyaAdi) {
   if (!dosyaAdi) return false;
-  const ad = trKucult(String(dosyaAdi).replace(/\.pdf$/i, ''));
+  const ad = trKucultGlobal(String(dosyaAdi).replace(/\.pdf$/i, ''));
   const s = '[^a-zçğıöşü0-9]'; // harf/rakam olmayan sınır
   // 1) POS/PSO/PS AYRI kelime olarak (en yaygın) — kelime sınırıyla, gerçek poliçeyi elemez.
   //    "SIGORTASI PSO 40" ✓, "34PSO" ✓ (rakam sınır), "(POS)" ✓ ama "POSTA/APOSTOL/DEPOSITO" ✗
