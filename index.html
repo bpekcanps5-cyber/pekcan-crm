@@ -8589,11 +8589,14 @@ const fwdSelected=new Set();
 function startForward(id){
   // Menüyü kapat
   document.querySelectorAll('.msg-actions.open').forEach(m=>m.classList.remove('open'));
-  // TEK mesajı ilet: direkt İlet penceresini aç (seçim moduna sokup kafa karıştırma).
+  // WhatsApp gibi: "İlet" önce bu mesajı SEÇER + seçim modunu başlatır.
+  // Kullanıcı birkaç mesaj daha seçip, üstteki "İlet" butonuyla hepsini birden iletir.
+  _secimModuAcik=true;                 // seçim modu AÇIK -> tüm mesajlarda seçim dairesi görünür
+  if(!selectedMsgs.has(id)) selectedMsgs.add(id);
   const c=chats[activeJid];
-  if(!c){ showToast('Sohbet yok'); return; }
-  fwdMsgIds=[id]; fwdFromJid=activeJid; fwdSelected.clear();
-  acIletmeModali();
+  if(c) renderMessagesDebounced(c);     // daireleri göster + bu mesajı seçili çiz
+  updateSelectionBar();
+  showToast('Seçildi — başka foto/belgelere dokunup ekle, sonra üstteki İlet\'e bas');
 }
 function renderFwdList(q){
   const list=document.getElementById('fwdList');
