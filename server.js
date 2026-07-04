@@ -1895,10 +1895,11 @@ wss.on('connection', (ws) => {
         } catch (e) {
           console.error('⚠️  MESAJ GONDERILEMEDI:', e.message, '| grup:', (msg.jid || '').split('@')[0]);
           // Gonderim zaman asimina ugradiysa baglanti muhtemelen "yari-acik" (olu).
-          // _sonWaAktivite'yi eskit ki canlilik kontrolu (25sn'de bir) HEMEN devreye girip
-          // baglantiyi yenilesin — sonraki mesajlar gitsin.
+          // _sonWaAktivite'yi eskit ki canlilik kontrolu HEMEN devreye girip baglantiyi yenilesin.
           if (_LID === 'ofis' && (e.message || '').includes('zaman asimi')) {
             _sonWaAktivite = Date.now() - (80 * 1000); // 80sn once gibi goster -> kontrol tetiklenir
+            // ANLIK TEST: 25sn'lik periyodu bekleme, hemen kontrol et (mesaj kaybini azalt)
+            setImmediate(() => { if (global._canlilikKontrolTetikle) global._canlilikKontrolTetikle(); });
           }
           // MESAJI yine de ekrana ekle ama HATA durumuyla (durum:-1) -> WhatsApp gibi
           // kirmizi unlem cikar, kullanici gormedigini sanmaz, silip yeniden gonderir.
@@ -3627,11 +3628,20 @@ setInterval(() => {
 // çalışır (rate-limit'e uyar), dolu olanları atlar -> sistemi/WhatsApp'ı yormaz.
 // ============================================================
 let _aciklamaTaramaCalisiyor = false;
+let _aciklamaTaramaBaslangic = 0; // kilit ne zaman alındı (takılma tespiti için)
 async function ofisAciklamaTaramasi() {
-  if (_aciklamaTaramaCalisiyor) return;
+  // KİLİT GÜVENCESİ: tarama bir sebeple takıldıysa (ölü bağlantı vs.) kilit sonsuza kadar
+  // kapalı kalıp bir daha ASLA çekmesin. 3 dakikadan uzun sürmüşse kilidi zorla sıfırla.
+  if (_aciklamaTaramaCalisiyor) {
+    if (Date.now() - _aciklamaTaramaBaslangic > 3 * 60 * 1000) {
+      console.log('⚠️ Açıklama taraması 3dk+ takıldı -> kilit zorla sıfırlanıyor');
+      _aciklamaTaramaCalisiyor = false;
+    } else return;
+  }
   const line = lines.get('ofis');
   if (!line || !line.connected) return;
   _aciklamaTaramaCalisiyor = true;
+  _aciklamaTaramaBaslangic = Date.now();
   try {
     const gruplar = Array.from(chats.values())
       .filter(c => c.isGroup)
@@ -3644,7 +3654,15 @@ async function ofisAciklamaTaramasi() {
       const descEksik = !(c.description && c.description.trim())
         && !(c._descTs && (Date.now() - c._descTs) < 30 * 60 * 1000); // "sorduk, yok": 30dk tekrar sorma
       if (descEksik) {
-        const meta = await getGroupMeta(c.jid, 10 * 60 * 1000);
+        // TIMEOUT: ölü bağlantıda getGroupMeta sonsuza kadar bekleyip taramayı KİLİTLEMESİN.
+        // 6sn'de dönerse döner, dönmezse null -> sonraki gruba geç (tarama akışı durmaz).
+        let meta = null;
+        try {
+          meta = await Promise.race([
+            getGroupMeta(c.jid, 10 * 60 * 1000),
+            new Promise((res) => setTimeout(() => res(null), 6000)),
+          ]);
+        } catch (_) { meta = null; }
         if (meta) {
           let d = false;
           if (meta.subject && meta.subject.trim() && c.name !== meta.subject.trim()) { c.name = meta.subject.trim(); d = true; }
@@ -3687,8 +3705,11 @@ async function ofisAciklamaTaramasi() {
       await new Promise(r => setTimeout(r, 60));
     }
     if (fotoAlinan) console.log(`🔎 FAZ2 bitti: ${fotoAlinan} grup fotoğrafı alındı`);
-  } catch (_) {}
-  _aciklamaTaramaCalisiyor = false;
+  } catch (e) { console.log('⚠️ Açıklama taraması hatası:', e.message); }
+  finally {
+    // KİLİT KESİN AÇILIR — ne olursa olsun (hata, kopma, timeout). Bir daha çekebilsin.
+    _aciklamaTaramaCalisiyor = false;
+  }
 }
 // Bağlantıdan sonra + her 10 dakikada: eksik kalan/yeni grupları doldur
 setInterval(() => { try { ofisAciklamaTaramasi(); } catch (_) {} }, 10 * 60 * 1000);
@@ -4656,45 +4677,43 @@ async function startWA(lineId = 'ofis') {
       // CANLILIK KONTROLU: WhatsApp "yari-acik" kalabilir (baglanti acik gorunur ama
       // veri akmaz). Duzenli kontrol: uzun suredir hic aktivite yoksa, baglantiyi
       // canli tutmak icin hafif bir istek at; yanit gelmezse "olu" say ve panele bildir.
-      if (!global._canlilikTimer) {
-        global._canlilikTimer = setInterval(async () => {
+      // Bu testi FONKSIYONA aldik: hem 25sn'lik periyot hem de mesaj gonderilemeyince ANLIK cagirir.
+      if (!global._canlilikKontrolTetikle) {
+        let _testCalisiyor = false;
+        global._canlilikKontrolTetikle = async (zorla = false) => {
+          if (_testCalisiyor) return;         // ayni anda iki test calismasin
           if (!waConnected || !waSock) return;
           const gecenSure = Date.now() - _sonWaAktivite;
-          // 75 saniyedir hic veri gelmedi -> baglanti GERCEKTEN canli mi diye sunucuya soralim.
-          if (gecenSure > 75 * 1000) {
-            // GERCEK TEST: WhatsApp sunucusundan YANIT bekleyen bir sorgu yap.
-            // sendPresenceUpdate yetmiyor (yanit beklemez, olu baglantida bile "gecer").
-            // onWhatsApp/query sunucudan cevap bekler — cevap gelmezse baglanti OLUDUR.
-            let canli = false;
-            try {
-              const test = await Promise.race([
-                // kendi numaramizi sorgula — sunucudan donus bekler
-                (myNumber ? waSock.onWhatsApp(myNumber) : waSock.query({
-                  tag: 'iq',
-                  attrs: { to: '@s.whatsapp.net', type: 'get', xmlns: 'w:p' },
-                })),
-                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000)),
-              ]);
-              // donus geldiyse (herhangi bir sonuc) baglanti canli
-              if (test !== undefined) canli = true;
-            } catch (e) {
-              canli = false;
-            }
-            if (canli) {
-              _sonWaAktivite = Date.now(); // baglanti gercekten canli
-            } else {
-              // YANIT GELMEDI -> baglanti OLU. Panele bildir + yeniden baglan.
-              console.log('⚠️  WhatsApp sunucusu yanit vermiyor (olu/yari-acik baglanti). Yeniden baglaniliyor...');
-              if (lineId === 'ofis') waConnected = false;
-              line.connected = false;
-              broadcastHat(lineId, { type: 'status', connected: false, oluBaglanti: true });
-              try { waSock.end(new Error('canlilik kontrolu basarisiz')); } catch (_) {}
-              try { waSock.ws?.close?.(); } catch (_) {}
-              // CAKISMA KILITLI: connection.close da tetiklenirse iki soket acilmaz.
-              yenidenBaglanPlanla(lineId, 3000, line);
-            }
+          if (!zorla && gecenSure <= 45 * 1000) return; // zorla degilse 45sn kuralina uy
+          _testCalisiyor = true;
+          let canli = false;
+          try {
+            const test = await Promise.race([
+              (myNumber ? waSock.onWhatsApp(myNumber) : waSock.query({
+                tag: 'iq', attrs: { to: '@s.whatsapp.net', type: 'get', xmlns: 'w:p' },
+              })),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000)),
+            ]);
+            if (test !== undefined) canli = true;
+          } catch (e) { canli = false; }
+          finally { _testCalisiyor = false; }
+          if (canli) {
+            _sonWaAktivite = Date.now(); // baglanti gercekten canli
+          } else {
+            console.log('⚠️  WhatsApp sunucusu yanit vermiyor (olu/yari-acik baglanti). Yeniden baglaniliyor...');
+            if (lineId === 'ofis') waConnected = false;
+            line.connected = false;
+            broadcastHat(lineId, { type: 'status', connected: false, oluBaglanti: true });
+            try { waSock.end(new Error('canlilik kontrolu basarisiz')); } catch (_) {}
+            try { waSock.ws?.close?.(); } catch (_) {}
+            yenidenBaglanPlanla(lineId, 3000, line);
           }
-        }, 25 * 1000); // her 25 saniyede kontrol
+        };
+      }
+      if (!global._canlilikTimer) {
+        global._canlilikTimer = setInterval(() => {
+          if (global._canlilikKontrolTetikle) global._canlilikKontrolTetikle(false);
+        }, 25 * 1000); // her 25 saniyede kontrol (45sn+ aktivite yoksa test eder)
       }
     }
     if (connection === 'close') {
