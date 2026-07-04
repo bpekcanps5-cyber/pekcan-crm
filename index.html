@@ -2771,8 +2771,8 @@ const avatarGradients=[
   'linear-gradient(135deg,#f12711,#f5af19)', // kırmızı-turuncu
 ];
 function gradientFor(n){let s=0;for(const c of (n||'?'))s+=c.charCodeAt(0);return avatarGradients[s%avatarGradients.length];}
-function colorFor(n){let s=0;for(const c of n)s+=c.charCodeAt(0);return avatarColors[s%avatarColors.length];}
-function initials(n){const p=n.trim().split(/\s+/);return((p[0]?.[0]||'')+(p[1]?.[0]||'')).toUpperCase();}
+function colorFor(n){n=String(n==null?'':n);let s=0;for(const c of n)s+=c.charCodeAt(0);return avatarColors[s%avatarColors.length];}
+function initials(n){n=String(n==null?'':n).trim();if(!n)return'?';const p=n.split(/\s+/);return((p[0]?.[0]||'')+(p[1]?.[0]||'')).toUpperCase()||'?';}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 // Toast bildirim (ekran altinda kisa mesaj)
 let toastTimer=null;
@@ -7654,6 +7654,7 @@ function renderMessages(c, searchQ){
     }
   }
   html+=c.messages.map((m,idx)=>{
+   try{
     // Bu foto bir albümün İLK fotosu DEĞİLSE ve albüme aitse -> atla (ilk fotoda hepsi render edildi)
     if(_albumAtla.has(idx)) return '';
     // gun degistiyse tarih ayraci ekle
@@ -7912,6 +7913,11 @@ function renderMessages(c, searchQ){
     // ACİL: mesajda siren/uyarı emojisi varsa kırmızı vurgulu göster
     const acilCls = acilMesajMi(m.text) ? ' acil-mesaj' : '';
     return sep+'<div class="msg '+cls+grpCls+selCls+menCls+failCls+acilCls+(secimModu?' secim-modu':'')+'" data-mid="'+esc(m.id||'')+'">'+secKutu+actions+name+fwd+quote+body+reaction+'<span class="meta">'+editedTag+esc(m.time||'')+tik+'</span></div>';
+   }catch(hata){
+     // BİR MESAJ ÇİZİLEMEDİ -> tüm grubu kilitleme. O mesajı atla, diğerleri çalışsın.
+     console.error('mesaj çizim hatası (atlandı):', hata, m && m.id);
+     return '';
+   }
   }).join('');
   // Render ONCESI: kullanici en altta miydi? (tazeleme sirasinda yukarida okuyorsa
   // ekrani zorla asagi atmayalim — sadece zaten en alttaysa takip et.)
