@@ -2313,6 +2313,24 @@
   </div>
 </div>
 
+<div class="modal-bg" id="odemeSecModal">
+  <div class="modal" style="width:640px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h3 style="margin:0">💳 Ödemeye Ekle</h3>
+      <span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="document.getElementById('odemeSecModal').classList.remove('show')">✕</span>
+    </div>
+    <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px">Bu sohbetteki belgeleri işaretle veya bilgisayardan ekle. Hepsi <b>tek ödeme kaydı</b> olur.</p>
+    <div class="pos-arac-bar" style="margin-bottom:8px">
+      <button class="btn primary" onclick="document.getElementById('odemeSecDosyaInput').click()" style="font-size:12.5px;padding:7px 13px">📁 Bilgisayardan Ekle</button>
+      <input type="file" id="odemeSecDosyaInput" multiple accept="image/*,application/pdf" style="display:none">
+      <span class="pos-sayac" id="odemeSecSayac" style="flex:1">0 belge seçili</span>
+      <button class="btn primary" id="odemeSecKaydetBtn" onclick="odemeSecKaydet()" disabled>✓ Ödeme Oluştur</button>
+    </div>
+    <input type="text" id="odemeSecNot" placeholder="Not (opsiyonel) — müşteri adı, tutar…" style="width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);margin-bottom:10px;box-sizing:border-box">
+    <div class="pos-liste" id="odemeSecListe" style="flex:1"></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="odemeNotModal">
   <div class="modal" style="width:440px;max-width:94vw">
     <h3>Notu Düzenle</h3>
@@ -5728,46 +5746,114 @@ function odemeSayacGuncelle(n){
   const s=document.getElementById('odemeSayac');
   if(s){ s.textContent=n; s.style.display=n>0?'inline-flex':'none'; }
 }
-// Bir mesajın (foto/belge) medyasını "sonradan ödemeler"e ekle (iletme yerine direkt)
-async function odemeyeEkleMesaj(msgId){
+// Ödemeye ekleme: SEÇİM EKRANI aç. Tıklanan belge önceden işaretli gelir; gruptaki diğer
+// belgeler de listede -> birkaç tane daha seçilebilir; bilgisayardan da eklenebilir. TEK kayıt olur.
+let _odemeSecBelgeler=[];   // {url, ad, tip, kaynak:'mesaj'|'dosya', file?} — seçilenler
+let _odemeSecAdaylar=[];    // gruptaki tüm foto/belgeler (işaretlenebilir aday listesi)
+function odemeyeEkleMesaj(msgId){
   document.querySelectorAll('.msg-actions.open').forEach(m=>m.classList.remove('open'));
-  const c=chats[activeJid];
-  if(!c)return;
-  const m=(c.messages||[]).find(x=>x.id===msgId);
-  if(!m || !m.mediaUrl){ showToast('Bu mesajın dosyası yok'); return; }
-  showToast('⏳ Ödemelere ekleniyor…');
-  try{
-    const r=await fetch('/api/odeme/mesajdan',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token:authToken, mediaUrl:m.mediaUrl, kind:m.kind, not:(m.text||'')})});
-    const d=await r.json();
-    if(d.ok) showToast('✓ Ödemelere eklendi');
-    else showToast(d.error||'Eklenemedi');
-  }catch(e){ showToast('Bağlantı hatası'); }
+  odemeSecModalAc(msgId ? [msgId] : []);
 }
-// TOPLU: seçili foto/belgeleri hep birden ödemelere ekle
-async function odemelereTopluEkle(){
+function odemelereTopluEkle(){
+  const secililer=[...selectedMsgs];
+  clearSelection();
+  odemeSecModalAc(secililer);
+}
+// Seçim modalını aç: gruptaki belgeleri aday yap, verilen id'leri önceden işaretle
+function odemeSecModalAc(onIsaretliIdler){
   const c=chats[activeJid];
   if(!c){ showToast('Sohbet yok'); return; }
-  // seçili mesajlardan medyası olanları (foto/belge) topla
-  const secililer=[...selectedMsgs];
-  const gonderilecek=[];
-  secililer.forEach(id=>{
-    const m=(c.messages||[]).find(x=>x.id===id);
-    if(m && m.mediaUrl && (m.kind==='image'||m.kind==='document')) gonderilecek.push(m);
-  });
-  if(!gonderilecek.length){ showToast('Seçili foto/belge yok'); return; }
-  showToast('⏳ '+gonderilecek.length+' dosya ödemelere ekleniyor…');
-  let basari=0;
-  for(const m of gonderilecek){
-    try{
-      const r=await fetch('/api/odeme/mesajdan',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({token:authToken, mediaUrl:m.mediaUrl, kind:m.kind, not:(m.text||'')})});
-      const d=await r.json();
-      if(d.ok) basari++;
-    }catch(e){}
+  // gruptaki TÜM foto/belge mesajlarını aday listesine al (en yeni üstte)
+  _odemeSecAdaylar=(c.messages||[]).filter(m=>m.mediaUrl && (m.kind==='image'||m.kind==='document'))
+    .map(m=>({ id:m.id, url:m.mediaUrl, ad:(m.fileName||m.dosyaAd||(m.kind==='image'?'Fotoğraf':'Belge')), tip:(m.kind==='image'?'image':'pdf'), not:(m.text||'') }))
+    .reverse();
+  if(!_odemeSecAdaylar.length){ showToast('Bu sohbette foto/belge yok'); return; }
+  // önceden işaretlenecekler
+  const onSet=new Set(onIsaretliIdler||[]);
+  _odemeSecBelgeler=_odemeSecAdaylar.filter(a=>onSet.has(a.id)).map(a=>({...a, kaynak:'mesaj'}));
+  document.getElementById('odemeSecNot').value='';
+  // bilgisayardan ekleme input'u
+  const inp=document.getElementById('odemeSecDosyaInput');
+  if(inp && !inp._bagli){ inp._bagli=true;
+    inp.onchange=()=>{
+      [...inp.files].forEach(f=>{
+        if(f.type.startsWith('image/')||f.type==='application/pdf'||/\.(pdf|jpg|jpeg|png|webp|gif)$/i.test(f.name)){
+          _odemeSecBelgeler.push({ ad:f.name, tip:f.type.startsWith('image/')?'image':'pdf', kaynak:'dosya', file:f, id:'dosya_'+Date.now()+'_'+Math.random().toString(36).slice(2,6) });
+        }
+      });
+      inp.value=''; odemeSecListeCiz();
+    };
   }
-  clearSelection();
-  showToast('✓ '+basari+' dosya ödemelere eklendi');
+  odemeSecListeCiz();
+  document.getElementById('odemeSecModal').classList.add('show');
+}
+function odemeSecListeCiz(){
+  const box=document.getElementById('odemeSecListe');
+  const secId=new Set(_odemeSecBelgeler.map(b=>b.id));
+  // aday (gruptaki) belgeler + bilgisayardan eklenenler
+  let html='';
+  // bilgisayardan eklenenler (üstte, her zaman işaretli)
+  const dosyalar=_odemeSecBelgeler.filter(b=>b.kaynak==='dosya');
+  if(dosyalar.length){
+    html+='<div class="pos-kisi-baslik">📁 Bilgisayardan</div>';
+    dosyalar.forEach(b=>{
+      html+='<label class="pos-satir"><input type="checkbox" class="odemesec-chk" checked value="'+esc(b.id)+'" onchange="odemeSecToggle(\''+esc(b.id)+'\')">'+
+        '<div class="pos-satir-ic"><div class="pos-dosya">'+(b.tip==='image'?'🖼️':'📄')+' '+esc(b.ad)+'</div></div></label>';
+    });
+  }
+  // gruptaki belgeler
+  html+='<div class="pos-kisi-baslik">💬 Bu sohbetteki belgeler</div>';
+  _odemeSecAdaylar.forEach(a=>{
+    const isaretli=secId.has(a.id);
+    const mini=a.tip==='image'
+      ? '<img src="'+esc(a.url)+'" style="width:38px;height:38px;border-radius:7px;object-fit:cover;flex-shrink:0">'
+      : '<div style="width:38px;height:38px;border-radius:7px;background:var(--panel);display:flex;align-items:center;justify-content:center;flex-shrink:0">📄</div>';
+    html+='<label class="pos-satir"><input type="checkbox" class="odemesec-chk" '+(isaretli?'checked':'')+' value="'+esc(a.id)+'" onchange="odemeSecToggle(\''+esc(a.id)+'\')">'+
+      mini+'<div class="pos-satir-ic" style="margin-left:8px"><div class="pos-dosya">'+esc(a.ad)+'</div>'+(a.not?'<div class="pos-meta">'+esc(a.not.slice(0,50))+'</div>':'')+'</div></label>';
+  });
+  box.innerHTML=html;
+  odemeSecSayacGuncelle();
+}
+function odemeSecToggle(id){
+  const idx=_odemeSecBelgeler.findIndex(b=>b.id===id);
+  if(idx>=0){ _odemeSecBelgeler.splice(idx,1); }
+  else{
+    const aday=_odemeSecAdaylar.find(a=>a.id===id);
+    if(aday) _odemeSecBelgeler.push({...aday, kaynak:'mesaj'});
+  }
+  odemeSecSayacGuncelle();
+}
+function odemeSecSayacGuncelle(){
+  const n=_odemeSecBelgeler.length;
+  document.getElementById('odemeSecSayac').textContent=n+' belge seçili';
+  document.getElementById('odemeSecKaydetBtn').disabled=n===0;
+}
+// SEÇİLENLERİ TEK ÖDEME olarak kaydet
+async function odemeSecKaydet(){
+  if(!_odemeSecBelgeler.length) return;
+  const notM=document.getElementById('odemeSecNot').value.trim();
+  const btn=document.getElementById('odemeSecKaydetBtn');
+  btn.disabled=true; btn.textContent='Kaydediliyor…';
+  try{
+    const belgeler=[];
+    for(const b of _odemeSecBelgeler){
+      if(b.kaynak==='dosya' && b.file){
+        // bilgisayardan: base64'e çevir
+        const veri=await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(b.file); });
+        belgeler.push({ veri, ad:b.ad, mime:b.file.type||'application/octet-stream' });
+      } else {
+        // gruptan: mevcut /media url'i
+        belgeler.push({ mevcutUrl:b.url, ad:b.ad, tip:b.tip });
+      }
+    }
+    const r=await fetch('/api/odeme/coklu',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, belgeler, not:notM})});
+    const d=await r.json();
+    if(d.ok){
+      document.getElementById('odemeSecModal').classList.remove('show');
+      showToast('✓ '+d.belgeSayisi+' belge tek ödeme olarak eklendi');
+    } else showToast('⚠️ '+(d.error||'Eklenemedi'));
+  }catch(e){ showToast('⚠️ Bağlantı hatası'); }
+  finally{ btn.disabled=false; btn.textContent='✓ Ödeme Oluştur'; odemeSecSayacGuncelle(); }
 }
 
 // ---- KULLANICI YONETIMI (sadece yonetici) ----
