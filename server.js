@@ -2139,6 +2139,7 @@ wss.on('connection', (ws) => {
             return true;
           };
           getGroupMeta(msg.jid, zorla ? 0 : 15 * 1000, SOCK).then((meta) => {
+            if (zorla) console.log(`🔄 Açıklama yenile [${msg.jid.split('@')[0]}]: meta geldi mi=${!!meta}, subject="${meta?.subject || ''}", desc="${(meta?.desc || '').slice(0, 40)}", desc tipi=${typeof meta?.desc}`);
             if (!uygula(meta)) {
               // ilk deneme bos dondu (rate-limit ani olabilir) -> 2sn sonra BIR kez daha
               setTimeout(() => {
