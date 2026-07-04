@@ -1292,6 +1292,7 @@
   .lb-prev{left:24px}
   .lb-next{right:24px}
   .lb-sayac{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;font-size:14px;font-weight:600;padding:6px 16px;border-radius:20px;z-index:105}
+  .lb-tarih{position:fixed;top:56px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.45);color:#e8e8e8;font-size:12.5px;font-weight:500;padding:4px 14px;border-radius:16px;z-index:105;white-space:nowrap}
   @media (max-width:600px){ .lb-nav{width:42px;height:42px} .lb-prev{left:8px} .lb-next{right:8px} }
   .lb-toolbar{display:flex;gap:14px;padding:18px;background:rgba(0,0,0,.5)}
   .lb-toolbar button{background:rgba(255,255,255,.14);border:none;color:#fff;width:46px;height:46px;border-radius:50%;cursor:pointer;display:grid;place-items:center;transition:background .14s}
@@ -2640,6 +2641,7 @@
   <button class="lb-nav lb-prev" id="lbPrev" title="Önceki (←)" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
   <button class="lb-nav lb-next" id="lbNext" title="Sonraki (→)" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
   <div class="lb-sayac" id="lbSayac" style="display:none"></div>
+  <div class="lb-tarih" id="lbTarih" style="display:none"></div>
   <div class="lb-toolbar">
     <button id="lbPin" title="İşaretle (✓) — bu fotoyu yapıldı olarak işaretle" onclick="lbIsaretle()" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/></svg></button>
     <button id="lbReply" title="Yanıtla"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/></svg></button>
@@ -9095,43 +9097,46 @@ function lbApply(){ lbImg.style.transform='translate('+lbX+'px,'+lbY+'px) scale(
 // arasında gezinilir. Tek gönderilmiş foto ise yalnız kendisi gösterilir.
 let _lbGaleri=[];   // {url} listesi (gezilecek fotoğraflar)
 let _lbMesajIdler=[]; // paralel: her fotonun mesaj id'si (yanıt için)
+let _lbTarihler=[]; // paralel: her fotonun tarih/saat metni (üstte gösterilir)
 let _lbIndex=0;     // şu an gösterilen fotoğrafın indexi
+// Fotoğraf tarihi metni: "30 Haziran 2026 · 14:25" gibi
+function lbTarihMetni(ts){
+  if(!ts) return '';
+  const d=new Date(ts);
+  const aylar=['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+  const now=new Date();
+  const g=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+  const b=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const fark=Math.round((b-g)/86400000);
+  const saat=d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
+  let gun;
+  if(fark===0) gun='Bugün';
+  else if(fark===1) gun='Dün';
+  else gun=d.getDate()+' '+aylar[d.getMonth()]+' '+d.getFullYear();
+  return gun+' · '+saat;
+}
 function lbGaleriTopla(tiklananUrl){
-  _lbGaleri=[]; _lbMesajIdler=[];
+  _lbGaleri=[]; _lbMesajIdler=[]; _lbTarihler=[];
   const c = activeJid ? chats[activeJid] : null;
-  if(!c || !c.messages){ _lbGaleri=[tiklananUrl]; _lbMesajIdler=['']; return; }
+  if(!c || !c.messages){ _lbGaleri=[tiklananUrl]; _lbMesajIdler=['']; _lbTarihler=['']; return; }
   const msgs=c.messages;
   const fotoMu=(x)=> x && x.kind==='image' && (x.mediaUrl||x.thumb) && !x.deleted;
-  // tıklanan fotoğrafın mesaj index'ini bul (url eşleşmesi)
-  let tikIdx=-1;
+  // GRUPTAKİ TÜM FOTOĞRAFLARI topla (albümle sınırlı DEĞİL) -> geriye basınca
+  // önceki albümlere/günlere de geçilir. Sıra: en eski -> en yeni (mesaj sırası).
   for(let i=0;i<msgs.length;i++){
-    if(fotoMu(msgs[i]) && (msgs[i].mediaUrl===tiklananUrl || msgs[i].thumb===tiklananUrl)){ tikIdx=i; break; }
+    if(fotoMu(msgs[i])){
+      _lbGaleri.push(msgs[i].mediaUrl||msgs[i].thumb);
+      _lbMesajIdler.push(msgs[i].id||'');
+      _lbTarihler.push(lbTarihMetni(msgs[i].ts));
+    }
   }
-  if(tikIdx<0){ _lbGaleri=[tiklananUrl]; _lbMesajIdler=['']; return; }
-  // bu fotoğrafın ait olduğu ALBÜMÜ bul (arka arkaya, aynı gönderen, 90sn içinde, açıklamasız)
-  // geriye doğru albüm başını bul
-  let bas=tikIdx;
-  while(bas>0 && fotoMu(msgs[bas-1]) && fotoMu(msgs[bas])
-        && msgs[bas-1].fromMe===msgs[bas].fromMe
-        && (msgs[bas-1].sender||'')===(msgs[bas].sender||'')
-        && Math.abs((msgs[bas].ts||0)-(msgs[bas-1].ts||0))<90000
-        && !msgs[bas].caption && !msgs[bas-1].caption){ bas--; }
-  // ileriye doğru albüm sonunu bul + url'leri topla
-  let i=bas;
-  _lbGaleri.push(msgs[i].mediaUrl||msgs[i].thumb); _lbMesajIdler.push(msgs[i].id||'');
-  while(i+1<msgs.length && fotoMu(msgs[i+1]) && fotoMu(msgs[i])
-        && msgs[i+1].fromMe===msgs[i].fromMe
-        && (msgs[i+1].sender||'')===(msgs[i].sender||'')
-        && Math.abs((msgs[i+1].ts||0)-(msgs[i].ts||0))<90000
-        && !msgs[i+1].caption && !msgs[i].caption){
-    i++; _lbGaleri.push(msgs[i].mediaUrl||msgs[i].thumb); _lbMesajIdler.push(msgs[i].id||'');
-  }
+  if(!_lbGaleri.length){ _lbGaleri=[tiklananUrl]; _lbMesajIdler=['']; _lbTarihler=['']; }
 }
 function openLightbox(url){
   // tıklanan fotonun albümünü topla, index'ini bul
   lbGaleriTopla(url);
   _lbIndex = _lbGaleri.indexOf(url);
-  if(_lbIndex<0){ _lbGaleri=[url]; _lbIndex=0; }
+  if(_lbIndex<0){ _lbGaleri=[url]; _lbIndex=0; _lbTarihler=['']; }
   lbGoster();
   lb.classList.add('show');
 }
@@ -9148,6 +9153,13 @@ function lbGoster(){
   if(sayac){
     sayac.style.display=cokFoto?'block':'none';
     sayac.textContent=(_lbIndex+1)+' / '+_lbGaleri.length;
+  }
+  // TARİH: fotoğrafın üstünde hangi güne ait olduğunu göster (karışmasın)
+  const tarihEl=document.getElementById('lbTarih');
+  if(tarihEl){
+    const t=_lbTarihler[_lbIndex]||'';
+    tarihEl.textContent=t;
+    tarihEl.style.display=t?'block':'none';
   }
   lbPinGuncelle(); // 📌 bu fotonun işaret durumunu butona yansıt
 }
