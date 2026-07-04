@@ -8138,29 +8138,49 @@ function gonderSiradakiSil(){
 }
 // Iletme modalini ac + sifirla (hem secili mesajlardan hem tek mesajdan cagrilir)
 function acIletmeModali(){
-  document.getElementById('fwdSearch').value='';
-  const n=(fwdMsgIds&&fwdMsgIds.length)||1;
-  document.getElementById('fwdTitle').textContent = n>1 ? (n+' mesajı ilet') : 'Mesajı ilet';
-  document.getElementById('fwdSubtitle').textContent='Göndermek istediğin sohbetleri seç. Birden fazla seçebilirsin.';
-  // İletilenler arasında foto/belge varsa "Ödemelere Ekle" seçeneğini göster
-  const c=chats[fwdFromJid||activeJid];
-  const belgeVar=c && (fwdMsgIds||[]).some(id=>{ const m=(c.messages||[]).find(x=>x.id===id); return m && m.mediaUrl && (m.kind==='image'||m.kind==='document'); });
-  const ob=document.getElementById('fwdOdemeBtn');
-  if(ob) ob.style.display=belgeVar?'block':'none';
-  renderFwdChips();
-  fwdButonGuncelle();
-  renderFwdList('');
+  // Pencereyi ÖNCE aç (alt render'lar hata verse bile pencere açık kalsın -> "açılmıyor" bitsin)
   document.getElementById('forwardModal').classList.add('show');
-  setTimeout(()=>document.getElementById('fwdSearch').focus(),100);
+  try{
+    document.getElementById('fwdSearch').value='';
+    const n=(fwdMsgIds&&fwdMsgIds.length)||1;
+    document.getElementById('fwdTitle').textContent = n>1 ? (n+' mesajı ilet') : 'Mesajı ilet';
+    document.getElementById('fwdSubtitle').textContent='Göndermek istediğin sohbetleri seç. Birden fazla seçebilirsin.';
+    // İletilenler arasında foto/belge varsa "Ödemelere Ekle" seçeneğini göster
+    const c=chats[fwdFromJid||activeJid];
+    const belgeVar=c && (fwdMsgIds||[]).some(id=>{ const m=(c.messages||[]).find(x=>x.id===id); return m && m.mediaUrl && (m.kind==='image'||m.kind==='document'); });
+    const ob=document.getElementById('fwdOdemeBtn');
+    if(ob) ob.style.display=belgeVar?'block':'none';
+    renderFwdChips();
+    fwdButonGuncelle();
+    renderFwdList('');
+  }catch(e){ console.error('ilet modal render hatası:',e); }
+  setTimeout(()=>{ const s=document.getElementById('fwdSearch'); if(s) s.focus(); },100);
 }
-// İlet penceresinden "Ödemelere Ekle": iletme yerine ödeme seçim ekranını aç
-function fwdOdemeyeEkle(){
+// İlet penceresinden "Ödemelere Ekle": seçim ekranı AÇMADAN, iletilen belgeleri
+// DİREKT tek ödeme kaydı olarak gönder (kullanıcı zaten seçmişti).
+async function fwdOdemeyeEkle(){
   const ids=[...(fwdMsgIds||[])];
   const kaynak=fwdFromJid||activeJid;
+  const c=chats[kaynak];
+  if(!c){ showToast('Sohbet bulunamadı'); return; }
+  // seçili mesajlardan foto/belge olanları topla
+  const belgeler=[];
+  ids.forEach(id=>{
+    const m=(c.messages||[]).find(x=>x.id===id);
+    if(m && m.mediaUrl && (m.kind==='image'||m.kind==='document')){
+      belgeler.push({ mevcutUrl:m.mediaUrl, ad:(m.fileName||m.dosyaAd||(m.kind==='image'?'Fotoğraf':'Belge')), tip:(m.kind==='image'?'image':'pdf') });
+    }
+  });
+  if(!belgeler.length){ showToast('Seçili foto/belge yok'); return; }
   document.getElementById('forwardModal').classList.remove('show');
-  // ödeme seçim modalını, iletilen belgeler önceden işaretli olacak şekilde aç
-  if(kaynak && kaynak!==activeJid){ /* farklı sohbetse yine de o sohbetin mesajları lazım */ }
-  odemeSecModalAc(ids);
+  clearSelection();
+  showToast('⏳ '+belgeler.length+' belge ödemeye ekleniyor…');
+  try{
+    const r=await fetch('/api/odeme/coklu',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, belgeler, not:''})});
+    const d=await r.json();
+    if(d.ok) showToast('✓ '+d.belgeSayisi+' belge tek ödeme olarak eklendi');
+    else showToast('⚠️ '+(d.error||'Eklenemedi'));
+  }catch(e){ showToast('⚠️ Bağlantı hatası'); }
 }
 
 // ---- Grup aciklamasi katla/ac ----
@@ -8567,17 +8587,13 @@ function reaksiyonKaldir(msgId){
 let fwdMsgIds=[], fwdFromJid=null;
 const fwdSelected=new Set();
 function startForward(id){
-  // YENI DAVRANIS: "Ilet" direkt sohbet penceresi acmaz.
-  // Once bu mesaji SECER + secim modunu baslatir. Kullanici baska mesajlara
-  // tiklayip ekler, sonra ustteki "Ilet" butonuyla hepsini birden iletir.
-  if(!selectedMsgs.has(id)) selectedMsgs.add(id);
-  // o mesajin baloncuguna 'selected' sinifi ekle (anlik)
-  const el=document.querySelector('.msg[data-mid="'+(CSS&&CSS.escape?CSS.escape(id):id)+'"]');
-  if(el) el.classList.add('selected');
-  updateSelectionBar();
-  // mesajlari yeniden ciz ki secim kutulari (isaretleri) gorunsun
+  // Menüyü kapat
+  document.querySelectorAll('.msg-actions.open').forEach(m=>m.classList.remove('open'));
+  // TEK mesajı ilet: direkt İlet penceresini aç (seçim moduna sokup kafa karıştırma).
   const c=chats[activeJid];
-  if(c) renderMessagesDebounced(c);
+  if(!c){ showToast('Sohbet yok'); return; }
+  fwdMsgIds=[id]; fwdFromJid=activeJid; fwdSelected.clear();
+  acIletmeModali();
 }
 function renderFwdList(q){
   const list=document.getElementById('fwdList');
