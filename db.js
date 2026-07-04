@@ -1489,6 +1489,41 @@ async function odemeSil(id) {
     return { ok: true };
   } catch (e) { return { ok: false, error: e.message }; }
 }
+// ÇÖP KUTUSU: kaldırılan ödemeyi silmek yerine 'arsiv' durumuna çek (yanlışlıkla kaldırmaya karşı).
+async function odemeArsivle(id) {
+  if (!aktif) return { ok: false };
+  try {
+    await pool.query("UPDATE sonradan_odemeler SET durum='arsiv' WHERE id=$1", [id]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+// Arşivden geri al (tekrar bekleyene döndür)
+async function odemeGeriAl(id) {
+  if (!aktif) return { ok: false };
+  try {
+    await pool.query("UPDATE sonradan_odemeler SET durum='bekliyor' WHERE id=$1", [id]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+// Arşivdeki (çöpteki) ödemeleri listele
+async function odemeArsivListe() {
+  if (!aktif) return [];
+  try {
+    const r = await pool.query(
+      `SELECT id, yukleyen_kullanici, yukleyen_ad, dosya_url, dosya_ad, dosya_tip, not_metni, durum, belgeler,
+              EXTRACT(EPOCH FROM created_at)*1000 AS ts
+       FROM sonradan_odemeler WHERE durum='arsiv' ORDER BY created_at DESC`);
+    return r.rows;
+  } catch (e) {
+    try {
+      const r2 = await pool.query(
+        `SELECT id, yukleyen_kullanici, yukleyen_ad, dosya_url, dosya_ad, dosya_tip, not_metni, durum,
+                EXTRACT(EPOCH FROM created_at)*1000 AS ts
+         FROM sonradan_odemeler WHERE durum='arsiv' ORDER BY created_at DESC`);
+      return r2.rows;
+    } catch (e2) { return []; }
+  }
+}
 async function odemeBul(id) {
   if (!aktif) return null;
   try {
@@ -1552,5 +1587,5 @@ module.exports = {
   setUserLine, getUserLine, loadUserLines, saveLine, loadLines, deleteLineData,
   saveSatis, loadSatislar, loadTumSatislar, updateSatisAdet, setSatisOnay, deleteSatis, gunuKapat, loadKapaliGunler,
   savePoliceYukleme, loadPoliceYuklemeler, posBenzeriPoliceler, posBenzeriSil, policeIdSil, saveAktivite, loadAktiviteler,
-  odemeEkle, odemeleriListele, odemeSil, odemeBul, odemeNotGuncelle,
+  odemeEkle, odemeleriListele, odemeSil, odemeArsivle, odemeGeriAl, odemeArsivListe, odemeBul, odemeNotGuncelle,
 };

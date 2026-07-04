@@ -1550,6 +1550,15 @@
   .odeme-mini:hover{border-color:var(--brand);transform:scale(1.05);transition:all .12s}
   .odeme-kart.cok{align-items:flex-start}
   .odeme-rozet{font-size:11px;background:var(--brand);color:#fff;padding:1px 7px;border-radius:7px;font-weight:700;margin-left:4px}
+  /* ödeme sekmeleri (bekleyen / çöp) */
+  .odeme-tab-grup{display:flex;gap:8px}
+  .odeme-tab{background:var(--panel-2);border:1px solid var(--border);color:var(--muted);padding:8px 14px;border-radius:9px;font-size:13.5px;font-weight:600;cursor:pointer;transition:all .12s}
+  .odeme-tab:hover{color:var(--text)}
+  .odeme-tab.aktif{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .odeme-kart.cop{opacity:.85;border:1px dashed var(--border)}
+  /* İlet penceresi "Ödemelere Ekle" butonu */
+  .fwd-odeme-btn{width:100%;padding:10px;border-radius:10px;border:1.5px solid #22c55e;background:rgba(34,197,94,.1);color:#16a34a;font-size:13.5px;font-weight:700;cursor:pointer;margin-bottom:12px;transition:all .12s}
+  .fwd-odeme-btn:hover{background:#22c55e;color:#fff}
   /* rol değiştirme açılır menüsü */
   .rol-menu{position:fixed;z-index:400;background:var(--panel);border:1px solid var(--border-soft);border-radius:11px;box-shadow:var(--shadow-lg);padding:5px;display:flex;flex-direction:column;gap:2px;min-width:190px}
   .rol-menu button{text-align:left;padding:9px 12px;border:none;background:transparent;color:var(--text);font-size:13px;border-radius:8px;cursor:pointer;white-space:nowrap}
@@ -1937,7 +1946,6 @@
         <span class="sel-count" id="selCount">0 seçildi</span>
         <button onclick="silSelected()" class="sil-btn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>Sil</button>
         <button class="primary" onclick="forwardSelected()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z"/></svg>İlet</button>
-        <button onclick="odemelereTopluEkle()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>Ödemelere ekle</button>
       </div>
       <div class="eski-yuk-not" id="eskiYukNot" style="display:none">⏳ Daha eski mesajlar yükleniyor…</div>
       <button class="alta-in-btn" id="altaInBtn" onclick="enAltaIn()" title="En alta in" style="display:none">
@@ -2140,10 +2148,13 @@
           </div>
         </div>
         <div class="odeme-baslik-satir">
-          <span class="odeme-liste-baslik">Bekleyen ödemeler</span>
-          <span class="odeme-liste-sayi" id="odemeListeSayi"></span>
+          <div class="odeme-tab-grup">
+            <button class="odeme-tab aktif" id="odemeTabBekleyen" onclick="odemeTabDegis('bekleyen')">📥 Bekleyen <span class="odeme-liste-sayi" id="odemeListeSayi"></span></button>
+            <button class="odeme-tab" id="odemeTabCop" onclick="odemeTabDegis('cop')">🗑 Çöp Kutusu <span class="odeme-liste-sayi" id="odemeCopSayi"></span></button>
+          </div>
         </div>
         <div id="odemeListe" class="odeme-liste"></div>
+        <div id="odemeCopListe" class="odeme-liste" style="display:none"></div>
       </div>
     </div>
   </div>
@@ -2609,6 +2620,7 @@
   <div class="modal" style="width:440px;max-width:94vw">
     <h3 id="fwdTitle">İlet</h3>
     <p style="color:var(--muted);font-size:13px;margin-bottom:12px" id="fwdSubtitle">Göndermek istediğin sohbetleri seç.</p>
+    <button class="fwd-odeme-btn" id="fwdOdemeBtn" onclick="fwdOdemeyeEkle()" style="display:none">💳 Bunun yerine Ödemelere Ekle</button>
     <div id="fwdSelectedChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
     <div class="search-wrap" style="margin-bottom:10px">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
@@ -5535,7 +5547,7 @@ async function appLogout(){
 // SONRADAN GELEN ÖDEMELER (panel)
 // Herkes yükler/görür. Muhasebeci+yönetici onaylar (kaldırır). Kendi yüklediğini herkes siler.
 // ════════════════════════════════════════════════════════════
-let _odemeOnaylayabilir=false, _odemeBenUsername='', _sonOdemeListe=[];
+let _odemeOnaylayabilir=false, _odemeBenUsername='', _sonOdemeListe=[], _sonOdemeCopListe=[];
 let _odemeSecilenDosyalar=[]; // yüklenmeyi BEKLEYEN dosyalar (Ekle'ye basınca yüklenir)
 // dosya input + sürükle-bırak bağla (bir kez)
 function odemeKurulum(){
@@ -5737,7 +5749,98 @@ async function odemeOnayla(id){
   try{
     const r=await fetch('/api/odeme/sil',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,id})});
     const d=await r.json();
-    if(d.ok){ showToast(_odemeOnaylayabilir?'✓ Onaylandı ve kaldırıldı':'Kaldırıldı'); odemeListeYukle(); }
+    if(d.ok){
+      // onaylayan yetkili -> arşive attı ama aslında "onaylandı"; normal kaldırma -> çöpe düştü
+      showToast(d.arsivlendi?'🗑 Çöp kutusuna taşındı (geri alınabilir)':(_odemeOnaylayabilir?'✓ Onaylandı':'Kaldırıldı'));
+      odemeListeYukle(); odemeCopSayiGuncelle();
+    }
+    else showToast(d.error||'İşlem başarısız');
+  }catch(e){ showToast('Bağlantı hatası'); }
+}
+// ÖDEME SEKMELERİ: Bekleyen <-> Çöp Kutusu
+function odemeTabDegis(hangi){
+  const bek=document.getElementById('odemeListe');
+  const cop=document.getElementById('odemeCopListe');
+  const tBek=document.getElementById('odemeTabBekleyen');
+  const tCop=document.getElementById('odemeTabCop');
+  if(hangi==='cop'){
+    bek.style.display='none'; cop.style.display='';
+    tBek.classList.remove('aktif'); tCop.classList.add('aktif');
+    odemeCopYukle();
+  } else {
+    cop.style.display='none'; bek.style.display='';
+    tCop.classList.remove('aktif'); tBek.classList.add('aktif');
+    odemeListeYukle();
+  }
+}
+// Çöp kutusu listesini getir + çiz
+async function odemeCopYukle(){
+  const box=document.getElementById('odemeCopListe');
+  if(box) box.innerHTML='<div class="odeme-bos">Yükleniyor…</div>';
+  try{
+    const r=await fetch('/api/odeme/arsivListe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
+    const d=await r.json();
+    if(!d.ok){ if(box) box.innerHTML='<div class="odeme-bos">'+esc(d.error||'Yüklenemedi')+'</div>'; return; }
+    _odemeOnaylayabilir=d.onaylayabilir; _odemeBenUsername=d.benUsername;
+    _sonOdemeCopListe=d.liste||[];
+    odemeCopListeCiz(d.liste||[]);
+    const cs=document.getElementById('odemeCopSayi');
+    if(cs){ cs.textContent=(d.liste||[]).length?('('+(d.liste||[]).length+')'):''; }
+  }catch(e){ if(box) box.innerHTML='<div class="odeme-bos">Bağlantı hatası</div>'; }
+}
+function odemeCopSayiGuncelle(){
+  fetch('/api/odeme/arsivListe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})})
+    .then(r=>r.json()).then(d=>{ const cs=document.getElementById('odemeCopSayi'); if(cs && d.ok){ cs.textContent=(d.liste||[]).length?('('+(d.liste||[]).length+')'):''; } }).catch(()=>{});
+}
+// Çöp kutusu kartları (geri al + kalıcı sil butonlarıyla)
+function odemeCopListeCiz(liste){
+  const box=document.getElementById('odemeCopListe');
+  if(!box) return;
+  if(!liste.length){ box.innerHTML='<div class="odeme-bos">🗑<br>Çöp kutusu boş</div>'; return; }
+  box.innerHTML=liste.map(o=>{
+    const tarih=perfTarihSaat(Number(o.ts)||0);
+    let belgeler=[];
+    try{ belgeler=o.belgeler?(typeof o.belgeler==='string'?JSON.parse(o.belgeler):o.belgeler):[]; }catch(e){}
+    if(!belgeler.length && o.dosya_url) belgeler=[{url:o.dosya_url,ad:o.dosya_ad,tip:o.dosya_tip}];
+    const cokBelge=belgeler.length>1;
+    const belgeMini=(b)=>{
+      if(b.tip==='image') return '<img class="odeme-mini foto" src="'+esc(b.url)+'" onclick="openLightbox(\''+esc(b.url)+'\')">';
+      if(b.tip==='pdf') return '<div class="odeme-mini pdf" onclick="belgeOnizle(\''+esc(b.url)+'\',\'pdf\',\'\',\''+esc((b.ad||'Belge').replace(/'/g,"\\'"))+'\')">📄</div>';
+      return '<div class="odeme-mini dosya">📎</div>';
+    };
+    const onizleme=cokBelge?'<div class="odeme-mini-grup">'+belgeler.map(belgeMini).join('')+'</div>':belgeMini(belgeler[0]||{});
+    const baslik=cokBelge?(belgeler.length+' belge'):esc((belgeler[0]||{}).ad||o.dosya_ad||'Belge');
+    const notHtml=o.not_metni?'<div class="odeme-not-goster">'+esc(o.not_metni)+'</div>':'';
+    return '<div class="odeme-kart cop'+(cokBelge?' cok':'')+'">'+
+      '<div class="odeme-kart-sol">'+onizleme+'</div>'+
+      '<div class="odeme-kart-orta">'+
+        '<div class="odeme-dosya-ad">'+baslik+(cokBelge?' <span class="odeme-rozet">📎 '+belgeler.length+'</span>':'')+'</div>'+
+        notHtml+
+        '<div class="odeme-meta">👤 '+esc(o.yukleyen_ad)+' · 🕐 '+tarih+'</div>'+
+      '</div>'+
+      '<div class="odeme-kart-sag">'+
+        '<button class="odeme-btn onayla" onclick="odemeGeriAl(\''+o.id+'\')">↩️ Geri Al</button>'+
+        '<button class="odeme-btn sil" onclick="odemeKaliciSil(\''+o.id+'\')">🗑 Tamamen Sil</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+// Çöpten geri al
+async function odemeGeriAl(id){
+  try{
+    const r=await fetch('/api/odeme/geriAl',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,id})});
+    const d=await r.json();
+    if(d.ok){ showToast('↩️ Geri alındı, bekleyenlere döndü'); odemeCopYukle(); }
+    else showToast(d.error||'İşlem başarısız');
+  }catch(e){ showToast('Bağlantı hatası'); }
+}
+// Çöpten KALICI sil (tamamen gider)
+async function odemeKaliciSil(id){
+  if(!confirm('Bu ödeme TAMAMEN silinecek, belgeleri de diskten kalkacak.\nGeri alınamaz. Emin misin?')) return;
+  try{
+    const r=await fetch('/api/odeme/sil',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,id,kalici:true})});
+    const d=await r.json();
+    if(d.ok){ showToast('✓ Tamamen silindi'); odemeCopYukle(); }
     else showToast(d.error||'İşlem başarısız');
   }catch(e){ showToast('Bağlantı hatası'); }
 }
@@ -7791,10 +7894,6 @@ function renderMessages(c, searchQ){
       if(m.kind==='image' || m.kind==='document' || m.kind==='video'){
         const isaretliMi = m.isaretli;
         btns+='<button onclick="isaretleToggle(\''+m.id+'\')">'+(isaretliMi?okSvg():tikSvg())+'<span>'+(isaretliMi?'İşareti kaldır':'İşaretle (✓)')+'</span></button>';
-        // ÖDEMELERE EKLE: foto/belge ise sonradan ödemeler listesine gönder
-        if(m.kind==='image' || m.kind==='document'){
-          btns+='<button onclick="odemeyeEkleMesaj(\''+m.id+'\')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg><span>Ödemelere ekle</span></button>';
-        }
       }
       // tetikleyici ▾ + gizli menu
       actions='<div class="msg-menu-wrap"><button class="msg-menu-btn" onclick="toggleMsgMenu(event)" aria-label="Menü"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button><div class="msg-actions">'+btns+'</div></div>';
@@ -8043,11 +8142,25 @@ function acIletmeModali(){
   const n=(fwdMsgIds&&fwdMsgIds.length)||1;
   document.getElementById('fwdTitle').textContent = n>1 ? (n+' mesajı ilet') : 'Mesajı ilet';
   document.getElementById('fwdSubtitle').textContent='Göndermek istediğin sohbetleri seç. Birden fazla seçebilirsin.';
+  // İletilenler arasında foto/belge varsa "Ödemelere Ekle" seçeneğini göster
+  const c=chats[fwdFromJid||activeJid];
+  const belgeVar=c && (fwdMsgIds||[]).some(id=>{ const m=(c.messages||[]).find(x=>x.id===id); return m && m.mediaUrl && (m.kind==='image'||m.kind==='document'); });
+  const ob=document.getElementById('fwdOdemeBtn');
+  if(ob) ob.style.display=belgeVar?'block':'none';
   renderFwdChips();
   fwdButonGuncelle();
   renderFwdList('');
   document.getElementById('forwardModal').classList.add('show');
   setTimeout(()=>document.getElementById('fwdSearch').focus(),100);
+}
+// İlet penceresinden "Ödemelere Ekle": iletme yerine ödeme seçim ekranını aç
+function fwdOdemeyeEkle(){
+  const ids=[...(fwdMsgIds||[])];
+  const kaynak=fwdFromJid||activeJid;
+  document.getElementById('forwardModal').classList.remove('show');
+  // ödeme seçim modalını, iletilen belgeler önceden işaretli olacak şekilde aç
+  if(kaynak && kaynak!==activeJid){ /* farklı sohbetse yine de o sohbetin mesajları lazım */ }
+  odemeSecModalAc(ids);
 }
 
 // ---- Grup aciklamasi katla/ac ----

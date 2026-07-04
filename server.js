@@ -442,19 +442,50 @@ app.post('/api/odeme/sil', express.json(), async (req, res) => {
   const bilgi = oturumBilgi(req.body?.token);
   if (!bilgi) return res.json({ ok: false, error: 'Giriş gerekli' });
   const id = req.body?.id;
+  const kalici = !!req.body?.kalici; // true ise çöpten TAMAMEN sil
   const kayit = await db.odemeBul(id);
   if (!kayit) return res.json({ ok: false, error: 'Kayıt bulunamadı' });
-  // YETKİ: muhasebeci/yönetici her şeyi siler/onaylar; normal kullanıcı SADECE kendi yüklediğini siler
   const yetkili = odemeOnaylayabilir(req.body?.token) || (kayit.yukleyen_kullanici === bilgi.username);
   if (!yetkili) return res.json({ ok: false, error: 'Bunu kaldırma yetkiniz yok' });
-  // dosyayı diskten de sil (yer kaplamasın)
-  try {
-    if (kayit.dosya_url) {
-      const dosyaYolu = path.join(MEDIA_DIR, kayit.dosya_url.replace('/media/', ''));
-      if (fs.existsSync(dosyaYolu)) fs.unlinkSync(dosyaYolu);
-    }
-  } catch (e) {}
-  await db.odemeSil(id);
+
+  // KALICI SİL (çöp kutusundan): dosyaları diskten de sil, kaydı tamamen kaldır
+  if (kalici || kayit.durum === 'arsiv') {
+    try {
+      // tüm belgeleri (çoklu) diskten sil
+      let belgeler = [];
+      try { belgeler = kayit.belgeler ? (typeof kayit.belgeler === 'string' ? JSON.parse(kayit.belgeler) : kayit.belgeler) : []; } catch (_) {}
+      if (!belgeler.length && kayit.dosya_url) belgeler = [{ url: kayit.dosya_url }];
+      for (const b of belgeler) {
+        if (b.url) { const yol = path.join(MEDIA_DIR, b.url.replace('/media/', '').split('?')[0]); if (fs.existsSync(yol)) fs.unlinkSync(yol); }
+      }
+    } catch (e) {}
+    await db.odemeSil(id);
+    broadcastHat('ofis', { type: 'odemeGuncellendi' });
+    return res.json({ ok: true, kalici: true });
+  }
+
+  // NORMAL "kaldır": TAMAMEN silme, ÇÖP KUTUSUNA at (yanlışlıkla kaldırmaya karşı koruma).
+  // Dosyalar diskte kalır (geri alınabilsin). Çöpten silinince tamamen gider.
+  await db.odemeArsivle(id);
+  broadcastHat('ofis', { type: 'odemeGuncellendi' });
+  res.json({ ok: true, arsivlendi: true });
+});
+// Çöp kutusundaki (arşiv) ödemeleri listele
+app.post('/api/odeme/arsivListe', express.json(), async (req, res) => {
+  const bilgi = oturumBilgi(req.body?.token);
+  if (!bilgi) return res.json({ ok: false, error: 'Giriş gerekli' });
+  const liste = await db.odemeArsivListe();
+  res.json({ ok: true, liste, onaylayabilir: odemeOnaylayabilir(req.body?.token), benUsername: bilgi.username });
+});
+// Çöpten geri al (tekrar bekleyene döndür)
+app.post('/api/odeme/geriAl', express.json(), async (req, res) => {
+  const bilgi = oturumBilgi(req.body?.token);
+  if (!bilgi) return res.json({ ok: false, error: 'Giriş gerekli' });
+  const kayit = await db.odemeBul(req.body?.id);
+  if (!kayit) return res.json({ ok: false, error: 'Kayıt bulunamadı' });
+  const yetkili = odemeOnaylayabilir(req.body?.token) || (kayit.yukleyen_kullanici === bilgi.username);
+  if (!yetkili) return res.json({ ok: false, error: 'Yetkiniz yok' });
+  await db.odemeGeriAl(req.body?.id);
   broadcastHat('ofis', { type: 'odemeGuncellendi' });
   res.json({ ok: true });
 });
