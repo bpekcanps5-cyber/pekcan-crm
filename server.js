@@ -297,6 +297,52 @@ function oturumBilgi(token) {
 // - Silme: kendi yüklediğini herkes silebilir; muhasebeci/yönetici hepsini silebilir
 // - Onaylama (kaldırma): sadece muhasebeci/yönetici
 // ════════════════════════════════════════════════════════════
+// ÇOKLU BELGE tek ödeme: panelden birden fazla dosya (base64 dizisi) tek kayıtta toplanır.
+app.post('/api/odeme/coklu', express.json({ limit: '128mb' }), async (req, res) => {
+  const bilgi = oturumBilgi(req.body?.token);
+  if (!bilgi) return res.json({ ok: false, error: 'Giriş gerekli' });
+  try {
+    const gelenler = Array.isArray(req.body?.belgeler) ? req.body.belgeler : [];
+    const notMetni = req.body?.not || '';
+    if (!gelenler.length) return res.json({ ok: false, error: 'Belge yok' });
+    const belgeler = [];
+    for (const b of gelenler) {
+      // b: { veri (base64 veya /media/... url), ad, mime, mevcutUrl? }
+      if (b.mevcutUrl && String(b.mevcutUrl).startsWith('/media/')) {
+        // Mesajdan gelen: zaten /media'da olan dosyanın kopyasını al
+        const kaynak = path.join(MEDIA_DIR, b.mevcutUrl.replace('/media/', '').split('?')[0]);
+        if (!fs.existsSync(kaynak)) continue;
+        const ext = (kaynak.split('.').pop() || 'bin').slice(0, 8);
+        const yeniAd = `odeme_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        fs.copyFileSync(kaynak, path.join(MEDIA_DIR, yeniAd));
+        belgeler.push({ url: '/media/' + yeniAd, ad: b.ad || ('Belge.' + ext), tip: b.tip || (ext === 'pdf' ? 'pdf' : 'image') });
+      } else if (b.veri) {
+        // Bilgisayardan yüklenen: base64 çöz, kaydet
+        const orijinalAd = b.ad || 'dosya';
+        const mime = b.mime || 'application/octet-stream';
+        let ext = 'bin';
+        if (orijinalAd.includes('.')) ext = orijinalAd.split('.').pop().slice(0, 8);
+        else if (mime.startsWith('image/')) ext = mime.split('/')[1] || 'jpg';
+        else if (mime === 'application/pdf') ext = 'pdf';
+        const buf = Buffer.from(String(b.veri).split(',').pop(), 'base64');
+        if (!buf.length) continue;
+        const fileName = `odeme_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        fs.writeFileSync(path.join(MEDIA_DIR, fileName), buf);
+        belgeler.push({ url: '/media/' + fileName, ad: orijinalAd, tip: mime.startsWith('image/') ? 'image' : (mime === 'application/pdf' ? 'pdf' : 'dosya') });
+      }
+    }
+    if (!belgeler.length) return res.json({ ok: false, error: 'Belgeler kaydedilemedi' });
+    const id = 'odm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const r = await db.odemeEkle({
+      id, yukleyenKullanici: bilgi.username, yukleyenAd: bilgi.ad,
+      belgeler, not: notMetni,
+    });
+    if (!r.ok) return res.json({ ok: false, error: r.error || 'Kaydedilemedi' });
+    broadcastHat('ofis', { type: 'odemeGuncellendi' });
+    res.json({ ok: true, belgeSayisi: belgeler.length, tekBelge: r.tekBelge });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
 // Ödeme dosyası yükle (panelden seçerek veya sürükleyerek). Dosya /media'ya kaydedilir.
 app.post('/api/odeme/yukle', express.raw({ type: '*/*', limit: '64mb' }), async (req, res) => {
   const token = req.query.token;

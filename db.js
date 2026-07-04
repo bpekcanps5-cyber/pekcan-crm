@@ -1433,27 +1433,54 @@ async function saveAktivite(a) {
 // ════════════════════════════════════════════════════════════
 async function odemeEkle(o) {
   if (!aktif) return { ok: false, error: 'DB kapalı' };
+  // belgeler: [{url, ad, tip}] dizisi. İlk belge eski dosya_url/dosya_ad/dosya_tip alanlarına
+  // da yazılır (geriye dönük uyumluluk + eski kayıtlarla aynı gösterim).
+  const belgeler = Array.isArray(o.belgeler) && o.belgeler.length ? o.belgeler
+    : (o.dosyaUrl ? [{ url: o.dosyaUrl, ad: o.dosyaAd || '', tip: o.dosyaTip || 'dosya' }] : []);
+  const ilk = belgeler[0] || { url: '', ad: '', tip: 'dosya' };
   try {
+    // Önce belgeler(jsonb) kolonuyla dene
     const r = await pool.query(
-      `INSERT INTO sonradan_odemeler (id, yukleyen_kullanici, yukleyen_ad, dosya_url, dosya_ad, dosya_tip, not_metni, durum, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'bekliyor', now())
+      `INSERT INTO sonradan_odemeler (id, yukleyen_kullanici, yukleyen_ad, dosya_url, dosya_ad, dosya_tip, not_metni, durum, belgeler, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'bekliyor',$8, now())
        RETURNING *`,
-      [o.id, o.yukleyenKullanici || '', o.yukleyenAd || '', o.dosyaUrl || '', o.dosyaAd || '', o.dosyaTip || '', o.not || '']
+      [o.id, o.yukleyenKullanici || '', o.yukleyenAd || '', ilk.url, ilk.ad, ilk.tip, o.not || '', JSON.stringify(belgeler)]
     );
     return { ok: true, kayit: r.rows[0] };
   } catch (e) {
+    // belgeler kolonu yoksa (42703) eski şemayla kaydet (ilk belge) — veri kaybolmasın
+    if ((e.message || '').includes('belgeler') || e.code === '42703') {
+      try {
+        const r2 = await pool.query(
+          `INSERT INTO sonradan_odemeler (id, yukleyen_kullanici, yukleyen_ad, dosya_url, dosya_ad, dosya_tip, not_metni, durum, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'bekliyor', now())
+           RETURNING *`,
+          [o.id, o.yukleyenKullanici || '', o.yukleyenAd || '', ilk.url, ilk.ad, ilk.tip, o.not || '']
+        );
+        return { ok: true, kayit: r2.rows[0], tekBelge: true };
+      } catch (e2) { return { ok: false, error: e2.message }; }
+    }
     return { ok: false, error: e.message };
   }
 }
 async function odemeleriListele() {
   if (!aktif) return [];
   try {
+    // belgeler(jsonb) dahil çek; yoksa 42703 -> eski kolonlarla
     const r = await pool.query(
-      `SELECT id, yukleyen_kullanici, yukleyen_ad, dosya_url, dosya_ad, dosya_tip, not_metni, durum,
+      `SELECT id, yukleyen_kullanici, yukleyen_ad, dosya_url, dosya_ad, dosya_tip, not_metni, durum, belgeler,
               EXTRACT(EPOCH FROM created_at)*1000 AS ts
        FROM sonradan_odemeler WHERE durum='bekliyor' ORDER BY created_at DESC`);
     return r.rows;
-  } catch (e) { return []; }
+  } catch (e) {
+    try {
+      const r2 = await pool.query(
+        `SELECT id, yukleyen_kullanici, yukleyen_ad, dosya_url, dosya_ad, dosya_tip, not_metni, durum,
+                EXTRACT(EPOCH FROM created_at)*1000 AS ts
+         FROM sonradan_odemeler WHERE durum='bekliyor' ORDER BY created_at DESC`);
+      return r2.rows;
+    } catch (e2) { return []; }
+  }
 }
 async function odemeSil(id) {
   if (!aktif) return { ok: false };

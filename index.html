@@ -1543,6 +1543,13 @@
   .odeme-sec-kaldir{background:none;border:none;color:#dc2626;cursor:pointer;font-size:14px;flex-shrink:0;padding:2px 4px}
   .odeme-kart-sag{display:flex;flex-direction:column;gap:6px}
   @media (max-width:600px){ .odeme-kart{flex-wrap:wrap} .odeme-kart-sag{width:100%} .odeme-btn{width:100%} }
+  /* çoklu belge: yan yana küçük önizlemeler */
+  .odeme-mini-grup{display:flex;gap:5px;flex-wrap:wrap;max-width:160px}
+  .odeme-mini{width:44px;height:44px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;background:var(--panel);border:1px solid var(--border);overflow:hidden;text-decoration:none}
+  .odeme-mini.foto{object-fit:cover}
+  .odeme-mini:hover{border-color:var(--brand);transform:scale(1.05);transition:all .12s}
+  .odeme-kart.cok{align-items:flex-start}
+  .odeme-rozet{font-size:11px;background:var(--brand);color:#fff;padding:1px 7px;border-radius:7px;font-weight:700;margin-left:4px}
   /* rol değiştirme açılır menüsü */
   .rol-menu{position:fixed;z-index:400;background:var(--panel);border:1px solid var(--border-soft);border-radius:11px;box-shadow:var(--shadow-lg);padding:5px;display:flex;flex-direction:column;gap:2px;min-width:190px}
   .rol-menu button{text-align:left;padding:9px 12px;border:none;background:transparent;color:var(--text);font-size:13px;border-radius:8px;cursor:pointer;white-space:nowrap}
@@ -5510,7 +5517,7 @@ async function appLogout(){
 // SONRADAN GELEN ÖDEMELER (panel)
 // Herkes yükler/görür. Muhasebeci+yönetici onaylar (kaldırır). Kendi yüklediğini herkes siler.
 // ════════════════════════════════════════════════════════════
-let _odemeOnaylayabilir=false, _odemeBenUsername='';
+let _odemeOnaylayabilir=false, _odemeBenUsername='', _sonOdemeListe=[];
 let _odemeSecilenDosyalar=[]; // yüklenmeyi BEKLEYEN dosyalar (Ekle'ye basınca yüklenir)
 // dosya input + sürükle-bırak bağla (bir kez)
 function odemeKurulum(){
@@ -5575,30 +5582,35 @@ async function odemeSecilenleriYukle(){
   const ekleBtn=document.getElementById('odemeEkleBtn');
   if(ekleBtn){ ekleBtn.disabled=true; ekleBtn.textContent='Yükleniyor…'; }
   durum.style.color='var(--muted)';
-  let basari=0;
   const toplam=_odemeSecilenDosyalar.length;
-  for(let i=0;i<_odemeSecilenDosyalar.length;i++){
-    const file=_odemeSecilenDosyalar[i];
-    durum.textContent='⏳ '+(i+1)+'/'+toplam+' yükleniyor…';
-    try{
-      const url='/api/odeme/yukle?token='+encodeURIComponent(authToken)+
-        '&ad='+encodeURIComponent(file.name)+
-        '&mime='+encodeURIComponent(file.type||'application/octet-stream')+
-        '&not='+encodeURIComponent(notM||'');
-      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
-      const d=await r.json();
-      if(d.ok) basari++;
-    }catch(e){}
-  }
+  durum.textContent='⏳ '+toplam+' belge hazırlanıyor…';
+  try{
+    // TÜM dosyaları base64'e çevir -> TEK istekte gönder -> TEK ödeme kaydı olsun
+    const belgeler=[];
+    for(let i=0;i<_odemeSecilenDosyalar.length;i++){
+      const file=_odemeSecilenDosyalar[i];
+      durum.textContent='⏳ '+(i+1)+'/'+toplam+' hazırlanıyor…';
+      const veri=await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(file); });
+      belgeler.push({ veri, ad:file.name, mime:file.type||'application/octet-stream' });
+    }
+    durum.textContent='⏳ Kaydediliyor…';
+    const r=await fetch('/api/odeme/coklu',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, belgeler, not:notM})});
+    const d=await r.json();
+    if(d.ok){
+      durum.style.color='var(--brand)';
+      durum.textContent='✓ '+d.belgeSayisi+' belge tek ödeme olarak eklendi';
+    } else {
+      durum.style.color='#ef4444';
+      durum.textContent='⚠️ '+(d.error||'Eklenemedi');
+    }
+  }catch(e){ durum.style.color='#ef4444'; durum.textContent='⚠️ Hata: '+e.message; }
   // temizle
   _odemeSecilenDosyalar=[];
   document.getElementById('odemeNot').value='';
   odemeSecilenleriCiz();
   if(ekleBtn){ ekleBtn.disabled=false; ekleBtn.textContent='✓ Ekle'; }
-  durum.style.color='var(--brand)';
-  durum.textContent='✓ '+basari+' dosya eklendi';
   odemeListeYukle();
-  setTimeout(()=>{ durum.textContent=''; },2500);
+  setTimeout(()=>{ durum.textContent=''; },3000);
 }
 // ödeme listesini getir + çiz
 async function odemeListeYukle(){
@@ -5609,6 +5621,7 @@ async function odemeListeYukle(){
     const d=await r.json();
     if(!d.ok){ if(box) box.innerHTML='<div class="odeme-bos">'+esc(d.error||'Yüklenemedi')+'</div>'; return; }
     _odemeOnaylayabilir=d.onaylayabilir; _odemeBenUsername=d.benUsername;
+    _sonOdemeListe=d.liste||[]; // çoklu indirme için sakla
     odemeListeCiz(d.liste||[]);
     // menüdeki sayaç
     odemeSayacGuncelle((d.liste||[]).length);
@@ -5622,43 +5635,63 @@ function odemeListeCiz(liste){
   if(!liste.length){ box.innerHTML='<div class="odeme-bos">📭<br>Bekleyen ödeme yok</div>'; return; }
   box.innerHTML=liste.map(o=>{
     const tarih=perfTarihSaat(Number(o.ts)||0);
-    // önizleme: foto/PDF'e BAS -> önizleme aç (gruplardaki gibi). İndirme ayrı buton.
-    let onizleme;
-    if(o.dosya_tip==='image'){
-      onizleme='<img class="odeme-foto" src="'+esc(o.dosya_url)+'" onclick="openLightbox(\''+esc(o.dosya_url)+'\')" title="Önizle">';
-    } else if(o.dosya_tip==='pdf'){
-      // PDF -> lightbox iframe'de önizle (gruplardaki gibi)
-      onizleme='<div class="odeme-dosya-ik" onclick="belgeOnizle(\''+esc(o.dosya_url)+'\',\'pdf\',\'\',\''+esc(o.dosya_ad).replace(/'/g,"\\'")+'\')" title="Önizle">📄</div>';
-    } else {
-      const ik='📎';
-      onizleme='<a class="odeme-dosya-ik" href="'+esc(o.dosya_url)+(o.dosya_url.includes('?')?'&':'?')+'name='+encodeURIComponent(o.dosya_ad)+'" download="'+esc(o.dosya_ad)+'" target="_blank" title="İndir">'+ik+'</a>';
-    }
+    // BELGELER: yeni kayıtlarda 'belgeler' JSON dizisi; eski kayıtlarda tek dosya_url.
+    let belgeler=[];
+    try{ belgeler = o.belgeler ? (typeof o.belgeler==='string'?JSON.parse(o.belgeler):o.belgeler) : []; }catch(e){ belgeler=[]; }
+    if(!belgeler.length && o.dosya_url) belgeler=[{url:o.dosya_url, ad:o.dosya_ad, tip:o.dosya_tip}];
+    const cokBelge = belgeler.length>1;
+    // her belge için küçük önizleme (foto=thumbnail, pdf=📄, diğer=📎)
+    const belgeMini=(b)=>{
+      const ad=(b.ad||'Belge').replace(/'/g,"\\'");
+      if(b.tip==='image') return '<img class="odeme-mini foto" src="'+esc(b.url)+'" onclick="openLightbox(\''+esc(b.url)+'\')" title="'+esc(b.ad||'')+'">';
+      if(b.tip==='pdf') return '<div class="odeme-mini pdf" onclick="belgeOnizle(\''+esc(b.url)+'\',\'pdf\',\'\',\''+esc(ad)+'\')" title="'+esc(b.ad||'')+'">📄</div>';
+      return '<a class="odeme-mini dosya" href="'+esc(b.url)+(b.url.includes('?')?'&':'?')+'name='+encodeURIComponent(b.ad||'belge')+'" download="'+esc(b.ad||'belge')+'" target="_blank" title="'+esc(b.ad||'')+'">📎</a>';
+    };
+    const onizleme = cokBelge
+      ? '<div class="odeme-mini-grup">'+belgeler.map(belgeMini).join('')+'</div>'
+      : belgeMini(belgeler[0]||{url:'',ad:'',tip:'dosya'});
     // YETKİ: onaylayabilir (muhasebeci/yönetici) VEYA kendi yüklediği
     const benimMi = o.yukleyen_kullanici===_odemeBenUsername;
     let butonlar='';
-    // İndir (herkes) — dosyayı gerçek adıyla indirir
-    butonlar+='<a class="odeme-btn indir" href="'+esc(o.dosya_url)+(o.dosya_url.includes('?')?'&':'?')+'name='+encodeURIComponent(o.dosya_ad)+'" download="'+esc(o.dosya_ad)+'">⬇ İndir</a>';
-    // Düzenle (not): kendi yüklediği VEYA onaylayabilen
+    // İndir: çok belgeyse hepsini ayrı ayrı indir linki, tekse tek
+    if(cokBelge){
+      butonlar+='<button class="odeme-btn indir" onclick="odemeHepsiniIndir(\''+o.id+'\')">⬇ Tümünü İndir ('+belgeler.length+')</button>';
+    } else {
+      const b0=belgeler[0]||{url:'',ad:'belge'};
+      butonlar+='<a class="odeme-btn indir" href="'+esc(b0.url)+(b0.url.includes('?')?'&':'?')+'name='+encodeURIComponent(b0.ad||'belge')+'" download="'+esc(b0.ad||'belge')+'">⬇ İndir</a>';
+    }
     if(benimMi || _odemeOnaylayabilir){
       butonlar+='<button class="odeme-btn duzenle" onclick="odemeNotDuzenle(\''+o.id+'\',\''+esc(o.not_metni||'').replace(/'/g,"\\'").replace(/\n/g,' ')+'\')">✏️ Düzenle</button>';
     }
-    // Onayla/Kaldır
     if(_odemeOnaylayabilir){
       butonlar+='<button class="odeme-btn onayla" onclick="odemeOnayla(\''+o.id+'\')">✓ Onayla & Kaldır</button>';
     } else if(benimMi){
       butonlar+='<button class="odeme-btn sil" onclick="odemeOnayla(\''+o.id+'\')">🗑 Kaldır</button>';
     }
     const notHtml = o.not_metni ? '<div class="odeme-not-goster">'+esc(o.not_metni)+'</div>' : '';
-    return '<div class="odeme-kart">'+
+    const baslik = cokBelge ? (belgeler.length+' belge') : esc((belgeler[0]||{}).ad||o.dosya_ad||'Belge');
+    return '<div class="odeme-kart'+(cokBelge?' cok':'')+'">'+
       '<div class="odeme-kart-sol">'+onizleme+'</div>'+
       '<div class="odeme-kart-orta">'+
-        '<div class="odeme-dosya-ad">'+esc(o.dosya_ad)+'</div>'+
+        '<div class="odeme-dosya-ad">'+baslik+(cokBelge?' <span class="odeme-rozet">📎 '+belgeler.length+'</span>':'')+'</div>'+
         notHtml+
         '<div class="odeme-meta">👤 '+esc(o.yukleyen_ad)+' · 🕐 '+tarih+'</div>'+
       '</div>'+
       '<div class="odeme-kart-sag">'+butonlar+'</div>'+
     '</div>';
   }).join('');
+}
+// çoklu belgeyi tek tek indir (her birini yeni sekmede tetikle)
+function odemeHepsiniIndir(id){
+  const o=(_sonOdemeListe||[]).find(x=>x.id===id); if(!o) return;
+  let belgeler=[];
+  try{ belgeler=o.belgeler?(typeof o.belgeler==='string'?JSON.parse(o.belgeler):o.belgeler):[]; }catch(e){}
+  if(!belgeler.length && o.dosya_url) belgeler=[{url:o.dosya_url,ad:o.dosya_ad}];
+  belgeler.forEach((b,i)=>{ setTimeout(()=>{
+    const a=document.createElement('a');
+    a.href=b.url+(b.url.includes('?')?'&':'?')+'name='+encodeURIComponent(b.ad||'belge');
+    a.download=b.ad||'belge'; document.body.appendChild(a); a.click(); a.remove();
+  }, i*400); }); // araya gecikme: tarayıcı çoklu indirmeyi engellemesin
 }
 // not düzenle (kendi yüklediğini veya yetkiliyse)
 function odemeNotDuzenle(id, eskiNot){
@@ -9537,16 +9570,22 @@ document.addEventListener('keydown',(e)=>{
 // ---- Surukle-birak (coklu dosya dahil) ----
 const conv=document.getElementById('conv'), dropOverlay=document.getElementById('dropOverlay');
 let dragCounter=0;
+// SADECE sohbet sekmelerinde dosya sürükleme aktif olsun. Kontrol/Ödemeler sekmesindeyken
+// conv alanına (arkada duran son grup) dosya SÜRÜKLENMESİN -> ödeme dosyası yanlışlıkla
+// son açık gruba mesaj olarak GİTMESİN. (Bug: ödemeye yükleyince mesaj gruba gidiyordu.)
+function _dropAktifMi(){ return _mainTab==='chats' || _mainTab==='internal'; }
 conv.addEventListener('dragenter',e=>{
+  if(!_dropAktifMi()) return; // sohbet dışı sekmede sürüklemeyi yok say
   e.preventDefault();
   // iç mesaj modunda: ekip arkadaşı seçiliyse overlay göster (dosya iç mesaja gidecek)
   if(_mainTab==='internal'){ if(_internalOther){ dragCounter++; dropOverlay.classList.add('show'); } return; }
   if(!activeJid)return;
   dragCounter++; dropOverlay.classList.add('show');
 });
-conv.addEventListener('dragover',e=>{ e.preventDefault(); });
-conv.addEventListener('dragleave',e=>{ e.preventDefault(); dragCounter--; if(dragCounter<=0){dragCounter=0;dropOverlay.classList.remove('show');} });
+conv.addEventListener('dragover',e=>{ if(!_dropAktifMi()) return; e.preventDefault(); });
+conv.addEventListener('dragleave',e=>{ if(!_dropAktifMi()) return; e.preventDefault(); dragCounter--; if(dragCounter<=0){dragCounter=0;dropOverlay.classList.remove('show');} });
 conv.addEventListener('drop',e=>{
+  if(!_dropAktifMi()) return; // KONTROL/ÖDEMELER sekmesinde: dosyayı gruba GÖNDERME
   e.preventDefault(); dragCounter=0; dropOverlay.classList.remove('show');
   const files=[...(e.dataTransfer?.files||[])];
   if(!files.length) return;
