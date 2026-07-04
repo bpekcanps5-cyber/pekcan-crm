@@ -2139,7 +2139,6 @@ wss.on('connection', (ws) => {
             return true;
           };
           getGroupMeta(msg.jid, zorla ? 0 : 15 * 1000, SOCK).then((meta) => {
-            if (zorla) console.log(`🔄 Açıklama yenile [${msg.jid.split('@')[0]}]: meta geldi mi=${!!meta}, subject="${meta?.subject || ''}", desc="${(meta?.desc || '').slice(0, 40)}", desc tipi=${typeof meta?.desc}`);
             if (!uygula(meta)) {
               // ilk deneme bos dondu (rate-limit ani olabilir) -> 2sn sonra BIR kez daha
               setTimeout(() => {
@@ -3377,6 +3376,17 @@ function metaQueuePush(jid, resolve, sock = null) {
   metaQueue.push({ jid, resolve, sock });
   metaQueueRun();
 }
+// groupFetchAllParticipating önbelleği (60sn) — açıklama tamamlama için, her seferinde
+// tüm grupları çekmesin. Soket başına ayrı önbellek (ortak/pazarlama hatları için).
+const _tumGruplarCache = new Map(); // sock -> { veri, ts }
+async function tumGruplarDetay(sock) {
+  const onb = _tumGruplarCache.get(sock);
+  if (onb && (Date.now() - onb.ts) < 60 * 1000) return onb.veri;
+  const veri = await sock.groupFetchAllParticipating();
+  _tumGruplarCache.set(sock, { veri, ts: Date.now() });
+  return veri;
+}
+
 async function metaQueueRun() {
   if (metaBusy) return;
   metaBusy = true;
@@ -3394,7 +3404,22 @@ async function metaQueueRun() {
       try {
         // sock verildiyse O HATTIN soketiyle sorgula (ortak gruplarda ikisi de calisir,
         // ayri gruplarda dogru hat calisir); verilmediyse ofis (waSock).
-        result = await (sock || waSock).groupMetadata(jid);
+        const s = sock || waSock;
+        result = await s.groupMetadata(jid);
+        // ÖNEMLİ: groupMetadata bazı gruplarda 'desc' (açıklama) alanını DÖNDÜRMEZ (undefined).
+        // Bu durumda groupFetchAllParticipating'den o grubun açıklamasını TAMAMLA.
+        // (Log'da "desc tipi=undefined" görülüyordu -> açıklama var ama bu çağrı vermiyordu.)
+        if (result && (result.desc === undefined || result.desc === null)) {
+          try {
+            // groupFetchAllParticipating pahalı (tüm grupları çeker) -> 60sn önbelleğe al,
+            // aynı tur içindeki tüm eksik-desc gruplar aynı sonucu paylaşsın.
+            const detay = await tumGruplarDetay(s);
+            const g = detay && detay[jid];
+            if (g && g.desc !== undefined && g.desc !== null) {
+              result.desc = g.desc; // açıklamayı tamamladık
+            }
+          } catch (_) { /* tamamlanamadı, olsun */ }
+        }
         if (result?.subject && result.subject.trim()) groupMetaCache.set(jid, { meta: result, ts: Date.now() });
       } catch (e) {
         if ((e.message || '').includes('rate-overlimit') || (e.message || '').includes('429')) {
