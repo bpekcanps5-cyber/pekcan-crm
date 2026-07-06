@@ -1331,6 +1331,10 @@ app.post('/upload', express.raw({ type: '*/*', limit: '64mb' }), async (req, res
       replyTo: medyaReplyTo, // panelde yanıt önizlemesi (null olabilir, sorun değil)
       durum: 2, // gonderildi (tek tik)
     }, {}, upLineId);
+    // İLETİM DENETÇİSİ: dosya/foto da yarı-açık bağlantıda kaybolabilir. Takibe al.
+    // (Dosyayı otomatik yeniden gönderemeyiz -veri base64 elde yok- ama onay gelmezse
+    //  panelde kırmızı uyarı çıkar; kullanıcı görür, tekrar yükler. Sessiz kayıp olmaz.)
+    iletimDenetleBaslat(upLineId, jid, sent.key.id, { text: '', yazan: (req.query.username || agent || null) });
 
     // ---- PERFORMANS RAPORU: yüklenen PDF poliçe mi? Öyleyse kaydet. ----
     // SADECE panelden SÜRÜKLENİP yüklenen PDF'ler (bu rota = gerçek yükleme, iletme DEĞİL).
@@ -1969,6 +1973,14 @@ wss.on('connection', (ws) => {
             // Bu kullanicilar panele girince "Bahsedilmeler"de gorur.
             teamMentions: Array.isArray(msg.teamMentions) ? msg.teamMentions : undefined,
           }, _LID);
+          // ═══ İLETİM DENETÇİSİ ═══ (panele düşüp WhatsApp'a gitmeyen mesaj sorunu)
+          // sendMessage key döndürdü ama bu, karşıya İLETİLDİĞİ anlamına GELMEZ (yarı-açık
+          // bağlantıda key döner ama mesaj gitmez). Bu mesajı takibe al: 45sn içinde
+          // "iletildi" (çift tik, durum>=3) gelmezse -> ULAŞMADI say, panele uyar + otomatik yeniden dene.
+          iletimDenetleBaslat(_LID, msg.jid, sent.key.id, {
+            text: msg.text, agent: msg.agent, teamMentions: msg.teamMentions,
+            yazan: ws._username || null, // BU mesajı yazan kişi -> uyarı SADECE ona gider
+          });
         } catch (e) {
           console.error('⚠️  MESAJ GONDERILEMEDI:', e.message, '| grup:', (msg.jid || '').split('@')[0]);
           // Gonderim zaman asimina ugradiysa baglanti muhtemelen "yari-acik" (olu).
@@ -3596,10 +3608,116 @@ function retryGroupName(jid) {
   setTimeout(dene, gecikmeler[0]);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// İLETİM DENETÇİSİ — "panele düşüp WhatsApp'a gitmeyen mesaj" sorununun çözümü
+// ────────────────────────────────────────────────────────────────────────────
+// PROBLEM: SOCK.sendMessage() bir 'key' döndürür ama bu KARŞIYA İLETİLDİĞİ anlamına
+//   GELMEZ. Bağlantı "yarı-açık" (ölü ama açık görünen) ise Baileys mesajı kabul edip
+//   key döndürür, sistem "gitti" sanır (tek tik), AMA mesaj WhatsApp sunucusuna hiç
+//   ulaşmaz. Karşı taraf hiç görmez. Çift tik (iletildi makbuzu) de hiç gelmez.
+// ÇÖZÜM: Her gönderilen mesajı takibe al. 45sn içinde "iletildi" makbuzu (durum>=3)
+//   gelmezse -> ULAŞMADI kabul et: bağlantıyı tazele + mesajı OTOMATİK yeniden gönder;
+//   o da olmazsa panele kırmızı uyarı. Böylece hiçbir mesaj sessizce kaybolmaz.
+// ════════════════════════════════════════════════════════════════════════════
+const _iletimBekleyen = new Map(); // msgId -> { lineId, jid, timer, veri, deneme }
+const ILETIM_SURE = 45 * 1000;
+const ILETIM_MAX_DENEME = 2;
+
+function iletimDenetleBaslat(lineId, jid, msgId, veri, deneme = 0) {
+  if (!msgId) return;
+  const eski = _iletimBekleyen.get(msgId);
+  if (eski && eski.timer) clearTimeout(eski.timer);
+  const timer = setTimeout(() => iletimZamanAsimi(msgId), ILETIM_SURE);
+  _iletimBekleyen.set(msgId, { lineId, jid, timer, veri, deneme });
+}
+
+function iletimDenetleTamam(msgId) {
+  const kayit = _iletimBekleyen.get(msgId);
+  if (kayit) {
+    if (kayit.timer) clearTimeout(kayit.timer);
+    _iletimBekleyen.delete(msgId);
+  }
+}
+
+async function iletimZamanAsimi(msgId) {
+  const kayit = _iletimBekleyen.get(msgId);
+  if (!kayit) return;
+  _iletimBekleyen.delete(msgId);
+  const { lineId, jid, veri, deneme } = kayit;
+  const C = hatChats(lineId);
+  const chat = C ? C.get(jid) : null;
+  const m = chat ? chat.messages.find(x => x.id === msgId) : null;
+  if (m && (m.durum || 0) >= 3) return; // bu arada iletildi -> sorun yok
+
+  console.log(`⚠️  İLETİM ONAYI GELMEDİ (${ILETIM_SURE / 1000}sn): grup=${(jid || '').split('@')[0]}, deneme=${deneme} -> aksiyon.`);
+
+  // 1) Bağlantıyı şüpheli say -> hemen canlılık testi (ölüyse yeniden bağlan)
+  if (lineId === 'ofis') {
+    _sonWaAktivite = Date.now() - (80 * 1000);
+    if (global._canlilikKontrolTetikle) { try { global._canlilikKontrolTetikle(true); } catch (_) {} }
+  }
+
+  // 2) Otomatik yeniden gönder (limit dahilinde)
+  if (deneme < ILETIM_MAX_DENEME && veri && veri.text) {
+    setTimeout(async () => {
+      const l = lines.get(lineId);
+      if (!l || !l.sock || !l.connected) { iletimBasarisizBildir(lineId, jid, msgId, veri); return; }
+      try {
+        const content = { text: veri.text };
+        const mentionJids = (veri.text.match(/@(\d{10,15})/g) || []).map(t => t.slice(1) + '@s.whatsapp.net');
+        if (mentionJids.length) content.mentions = mentionJids;
+        const sent = await Promise.race([
+          l.sock.sendMessage(jid, content),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('yeniden gonderim zaman asimi')), 12000)),
+        ]);
+        if (!sent || !sent.key) throw new Error('yeniden gonderim onaylanmadi');
+        console.log(`   ↻ Mesaj otomatik yeniden gönderildi (deneme ${deneme + 1}): ${(jid || '').split('@')[0]}`);
+        if (m) {
+          m.id = sent.key.id; m.key = sent.key; m.raw = sent; m.durum = 2; m.gonderilemedi = false;
+          broadcastHat(lineId, { type: 'msgYenidenGonderildi', jid, eskiId: msgId, yeniId: sent.key.id });
+        }
+        iletimDenetleBaslat(lineId, jid, sent.key.id, veri, deneme + 1);
+      } catch (e) {
+        console.log(`   ✗ Otomatik yeniden gönderim başarısız: ${e.message}`);
+        iletimBasarisizBildir(lineId, jid, msgId, veri);
+      }
+    }, 4000);
+  } else {
+    iletimBasarisizBildir(lineId, jid, msgId, veri);
+  }
+}
+
+function iletimBasarisizBildir(lineId, jid, msgId, veri) {
+  const C = hatChats(lineId);
+  const chat = C ? C.get(jid) : null;
+  const m = chat ? chat.messages.find(x => x.id === msgId) : null;
+  if (m) { m.durum = -1; m.gonderilemedi = true; }
+  const grupAd = (chat && chat.name) || 'bir grup';
+  const metin = (veri && veri.text) || '';
+  // 1) GRUPTA kırmızı ünlem: o gruba bakan HERKES görür (mesaj kırmızı olur)
+  broadcastHat(lineId, { type: 'msgStatus', jid, id: msgId, durum: -1 });
+  // 2) KİŞİYE ÖZEL bildirim: mesajı YAZAN kişiye, hangi grupta/sayfada olursa olsun.
+  //    Panelde kırmızı bildirim çıkar; açıklama yazar; basınca o gruba gider.
+  const yazan = veri && veri.yazan;
+  const bildirim = {
+    type: 'iletimUyari', jid, id: msgId, grupAd, text: metin,
+    mesaj: '⚠️ Bu mesaj karşıya İLETİLEMEDİ (onay gelmedi). Kontrol edip tekrar gönderin.',
+  };
+  if (yazan) {
+    // sadece yazan kişinin açık panellerine gönder
+    let ulasti = false;
+    wss.clients.forEach((c) => {
+      if (c.readyState === 1 && c._username === yazan) { try { c.send(JSON.stringify(bildirim)); ulasti = true; } catch (_) {} }
+    });
+    // yazan kişi o an çevrimdışıysa (panel kapalı): grup kırmızı zaten kaldı, girince görür.
+    if (!ulasti) console.log(`   (iletim uyarısı: yazan '${yazan}' çevrimdışı -> grupta kırmızı kaldı, girince görecek)`);
+  } else {
+    // yazan bilinmiyorsa (eski/dosya) -> hatta bağlı herkese göster (güvenli taraf)
+    broadcastHat(lineId, bildirim);
+  }
+}
+
 // Grup metadata'sini onbellekten al (yoksa KUYRUK uzerinden cek). Rate-overlimit'i onler.
-// ONBELLEK SURESI: 5dk -> 30dk. Grup adi/aciklamasi cok seyrek degisir; 5 dakikada bir
-// yeniden cekmek sokete gereksiz yuk biniyordu (mesaj gonderimini de yavaslatan etkenlerden).
-// Aciklama gercekten degisirse zaten groups.update event'i gelir ve onbellegi tazeler.
 async function getGroupMeta(jid, maxYas = 30 * 60 * 1000, sock = null) {
   const cached = groupMetaCache.get(jid);
   // sadece GERCEK adi olan onbellegi kullan (sayi/bos onbellek tekrar denensin)
@@ -5135,6 +5253,8 @@ async function startWA(lineId = 'ofis') {
         m.durum = yeniDurum;
         broadcastHat(lineId, { type: 'msgStatus', jid, id, durum: yeniDurum });
       }
+      // İLETİM DENETÇİSİ: iletildi onayı geldi (durum>=3) -> bu mesaj ULAŞTI, takipten çıkar.
+      if (yeniDurum >= 3) iletimDenetleTamam(id);
     }
   });
 
