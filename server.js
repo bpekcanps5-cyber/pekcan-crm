@@ -2169,8 +2169,19 @@ wss.on('connection', (ws) => {
       else if (msg.type === 'markRead') {
         const chat = C.get(msg.jid);
         if (chat) {
+          const oncekiUnread = chat.unread || 0;
           chat.unread = 0;
           chat.hasMention = false; // ÖNEMLI: bahsedilme isareti de kalksin, yoksa geri gelir
+          // KİM AÇTI TAKİBİ: okunmamış mesaj VARKEN açan kişiyi kaydet (ekip takibi).
+          // "Bu grupla en son kim ilgilendi" belli olsun. Sadece gerçekten okunmamış varken
+          // açıldıysa güncelle (boşuna her tıklamada değişmesin).
+          if (oncekiUnread > 0) {
+            const acanAd = ws._displayName || ws._username || 'Biri';
+            chat.sonAcan = acanAd;
+            chat.sonAcanTs = Date.now();
+            // herkese yay: bu grubu en son kim açtı
+            broadcastHat(_LID, { type: 'okunduBilgi', jid: msg.jid, sonAcan: acanAd, sonAcanTs: chat.sonAcanTs });
+          }
           // WhatsApp'a okundu bilgisi gonder (baglantI varsa; yoksa sorun degil, isaret zaten kalkti)
           if (SOCK && CONNECTED) {
             try {
@@ -2181,7 +2192,7 @@ wss.on('connection', (ws) => {
           // DB'ye de yaz ki sunucu restart olsa bile isaret geri gelmesin
           if (db.isReady()) db.saveChat(chat, _LID).catch(() => {});
           // HAFIF: sadece okundu/bahsedilme durumunu gonder (60 mesaj degil)
-          broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { unread: 0, hasMention: false } });
+          broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { unread: 0, hasMention: false, sonAcan: chat.sonAcan || '', sonAcanTs: chat.sonAcanTs || 0 } });
         }
       }
       // EKSIK TESPIT EDILINCE: panel tam sohbeti ister (msgAppend'de mesaj kactiysa)

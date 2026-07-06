@@ -785,6 +785,7 @@
   .pin-icon svg{width:13px;height:13px;display:block}
   .chat-time{font-size:11.5px;color:var(--faint);flex-shrink:0;margin-left:6px;font-weight:500}
   .chat-time.unread-time{color:var(--unread);font-weight:700}
+  .chat-acan{font-size:10.5px;color:var(--muted);margin-top:2px;opacity:.85;display:flex;align-items:center;gap:3px}
   .chat-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px}
   .chat-preview{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
   /* ACİL: siren/uyarı emojili mesaj -> sol önizlemede kırmızı + kalın */
@@ -804,6 +805,10 @@
 
   .ctx-menu{position:fixed;background:var(--panel);border:1px solid var(--border);border-radius:15px;box-shadow:var(--shadow-lg);padding:8px;z-index:200;min-width:190px;display:none}
   .ctx-menu.show{display:block}
+  .ctx-bilgi{font-size:12px;color:var(--text);padding:7px 12px;margin:-2px -2px 6px;background:rgba(34,197,94,.1);border-radius:10px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:2px}
+  .ctx-bilgi b{color:#16a34a}
+  .ctx-bilgi-saat{font-size:10.5px;color:var(--muted);font-weight:500}
+  .ctx-bilgi-bos{background:var(--panel-2);color:var(--muted)}
   .ctx-item{padding:11px 14px;font-size:13.5px;cursor:pointer;border-radius:10px;display:flex;align-items:center;gap:12px;font-weight:500}
   .ctx-item:hover{background:var(--panel-2)}
   .ctx-item svg{width:17px;height:17px;color:var(--muted)}
@@ -3163,6 +3168,11 @@ function connect(){
     else if(d.type==='msgAppend'){ handleMsgAppend(d); }
     // ===== HAFIF: var olan bir mesaj guncellendi (medya indi, cozuldu, tik vs.) =====
     else if(d.type==='msgUpdate'){ handleMsgUpdate(d); }
+    else if(d.type==='okunduBilgi'){
+      // Bir grubu ekipten biri açtı (okunmamışı sıfırladı) -> "kim açtı" bilgisini kaydet + göster
+      const c=chats[d.jid];
+      if(c){ c.sonAcan=d.sonAcan||''; c.sonAcanTs=d.sonAcanTs||Date.now(); renderList(); ctxAcanBilgiGuncelle(d.jid); if(d.jid===activeJid && document.getElementById('infoPanel').classList.contains('show')) openInfo(); }
+    }
     // ===== Eksik tespit edilince sunucu tam sohbeti gonderir =====
     else if(d.type==='chatSync'){
       // tam sohbet geldi (eksik vardi) -> oldugu gibi yerlestir
@@ -6706,6 +6716,12 @@ function chatRow(c){
     }
     sub='<div class="chat-tags"><span class="atama-etiket'+(banaEtiketli(c)?' bana':'')+'">'+atamaIc+'<span class="atama-isim">'+esc(atananYazi)+'</span></span></div>';
   }
+  // EN SON KİM AÇTI: bir grubu ekipten biri açıp okunmamışı sıfırladıysa göster (ekip takibi).
+  // "Bu grupla en son kim ilgilendi" belli olur. Okunmamış YOKKEN ve son 12 saat içinde açılmışsa.
+  let acanSub='';
+  if(c.isGroup && c.sonAcan && !c.unread && c.sonAcanTs && (Date.now()-c.sonAcanTs)<12*60*60*1000){
+    acanSub='<div class="chat-acan" title="Bu grubu en son açan kişi">👁 '+esc(c.sonAcan)+'</div>';
+  }
   return `<div class="chat ${c.jid===activeJid?'active':''}" onclick="openChat('${c.jid}')" oncontextmenu="openCtxMenu(event,'${c.jid}');return false;">
     ${avatarHtml(c)}
     <div class="chat-main">
@@ -6713,7 +6729,7 @@ function chatRow(c){
         <span class="chat-time ${c.unread?'unread-time':''}">${esc(c.lastTime||'')}</span></div>
       <div class="chat-bottom"><span class="chat-preview${(c.messages&&c.messages.length&&acilMesajMi(c.messages[c.messages.length-1].text))?' acil':''}">${esc(previewText(c))}</span>
         ${c.unread?'<span class="badge">'+c.unread+'</span>':''}</div>
-      ${sub}
+      ${sub}${acanSub}
     </div>
     <button class="chat-menu-btn" onclick="event.stopPropagation();openCtxMenu(event,'${c.jid}')">${dotsSvg()}</button>
   </div>`;
@@ -6757,9 +6773,20 @@ function mesajSonucAc(jid, msgId){
   setTimeout(()=>jumpToMsg(msgId), 450);
 }
 
+let _ctxAcikJid=null; // sağ tık menüsü açık olan grubun jid'i (anlık kim-açtı güncellemesi için)
 function openCtxMenu(e,jid){
+  _ctxAcikJid=jid; // hangi grubun menüsü açık (anlık güncelleme için)
   const isPin=pinned.has(jid), isArch=archived.has(jid);
-  let html=`
+  const c=chats[jid];
+  let html='';
+  // EN SON KİM AÇTI: grupta biri okunmamışı sıfırladıysa, kim ve ne zaman açtığını göster.
+  if(c && c.isGroup && c.sonAcan){
+    const saat=c.sonAcanTs?lbTarihMetni(c.sonAcanTs):'';
+    html+='<div class="ctx-bilgi" id="ctxAcanBilgi">👁 <b>'+esc(c.sonAcan)+'</b> açtı'+(saat?'<span class="ctx-bilgi-saat">'+esc(saat)+'</span>':'')+'</div>';
+  } else if(c && c.isGroup){
+    html+='<div class="ctx-bilgi ctx-bilgi-bos" id="ctxAcanBilgi">👁 Henüz kimse açmadı</div>';
+  }
+  html+=`
     <div class="ctx-item" onclick="togglePin('${jid}')">${pinSvg()}${isPin?'Sabitlemeyi kaldir':'Sabitle'}</div>
     <div class="ctx-item" onclick="toggleArchive('${jid}')">${archiveSvg()}${isArch?'Arsivden cikar':'Arsivle'}</div>
     <div class="ctx-item ctx-favori" onclick="toggleFavori('${jid}')">⭐ ${favoriler.has(jid)?'Favorilerden çıkar':'Favorilere ekle'}</div>`;
@@ -6774,6 +6801,21 @@ function openCtxMenu(e,jid){
   ctxMenu.style.left=Math.min(e.clientX,window.innerWidth-185)+'px';
   ctxMenu.style.top=e.clientY+'px';
   ctxMenu.classList.add('show');
+}
+// Sağ tık menüsü açıkken "kim açtı" bilgisini ANLIK güncelle (yeni mesaj gelip başkası açarsa)
+function ctxAcanBilgiGuncelle(jid){
+  if(_ctxAcikJid!==jid) return; // bu grubun menüsü açık değilse dokunma
+  if(!ctxMenu.classList.contains('show')) return;
+  const el=document.getElementById('ctxAcanBilgi'); if(!el) return;
+  const c=chats[jid]; if(!c) return;
+  if(c.sonAcan){
+    const saat=c.sonAcanTs?lbTarihMetni(c.sonAcanTs):'';
+    el.className='ctx-bilgi';
+    el.innerHTML='👁 <b>'+esc(c.sonAcan)+'</b> açtı'+(saat?'<span class="ctx-bilgi-saat">'+esc(saat)+'</span>':'');
+  } else {
+    el.className='ctx-bilgi ctx-bilgi-bos';
+    el.textContent='👁 Henüz kimse açmadı';
+  }
 }
 // YÖNETİCİ: bir gruptaki TÜM "buradayım" işaretlerini kaldır (herkesinkini)
 function buradayimYoneticiKaldir(jid){
@@ -8329,6 +8371,8 @@ function handleMsgUpdate(d){
     if(o.memberCount!==undefined) c.memberCount=o.memberCount;
     if(o.avatar) c.avatar=o.avatar;
     if(o.members!==undefined) c.members=o.members;
+    if(o.sonAcan!==undefined && o.sonAcan) c.sonAcan=o.sonAcan;
+    if(o.sonAcanTs!==undefined && o.sonAcanTs) c.sonAcanTs=o.sonAcanTs;
     // açık sohbetse başlığı + bilgi panelini + açıklama BANDINI tazele (anında görünsün)
     if(d.jid===activeJid){ updateConvHeader(c, d.jid); grupBandiGuncelle(c); if(document.getElementById('infoPanel').classList.contains('show')) openInfo(); }
     renderList(); updateTitle();
