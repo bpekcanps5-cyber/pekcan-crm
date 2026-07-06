@@ -2220,26 +2220,43 @@ wss.on('connection', (ws) => {
               broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { name: c.name, description: c.isGroup ? (c.description || '') : '', memberCount: c.memberCount || 0, avatar: c.avatar || null } });
               if (db.isReady()) db.saveChat(c, _LID).catch(() => {});
             }
-            // zorla istekte: sonucu isteyen panele HER DURUMDA bildir (degismese/bos olsa bile)
             if (zorla) {
               try { ws.send(JSON.stringify({ type: 'aciklamaTazeleSonuc', jid: msg.jid, name: c.name, description: c.description || '', memberCount: c.memberCount || 0 })); } catch (_) {}
             }
             return true;
           };
-          getGroupMeta(msg.jid, zorla ? 0 : 15 * 1000, SOCK).then((meta) => {
-            if (!uygula(meta)) {
-              // ilk deneme bos dondu (rate-limit ani olabilir) -> 2sn sonra BIR kez daha
-              setTimeout(() => {
-                getGroupMeta(msg.jid, 0, SOCK).then((m2) => {
-                  if (!uygula(m2) && zorla) {
-                    // ikinci de bos: yine cevap ver ki panel beklemede kalmasin
-                    const c = C.get(msg.jid);
-                    try { ws.send(JSON.stringify({ type: 'aciklamaTazeleSonuc', jid: msg.jid, name: c ? c.name : '', description: (c && c.description) || '', memberCount: (c && c.memberCount) || 0 })); } catch (_) {}
+          // ZORLA (🔄 Yenile): EN AGRESİF çekim — hem groupMetadata hem TAZE groupFetchAllParticipating
+          // doğrudan çağrılır, önbellek atlanır, desc kesin tamamlanır. "Çekmiyordu" sorunu için.
+          if (zorla) {
+            (async () => {
+              const s = SOCK;
+              let meta = null;
+              try { meta = await Promise.race([s.groupMetadata(msg.jid), new Promise((res) => setTimeout(() => res(null), 8000))]); } catch (_) {}
+              // desc boş/yoksa TAZE toplu çağrıdan tamamla (60sn önbelleği ATLA -> zorla=true)
+              if (!meta || meta.desc === undefined || meta.desc === null) {
+                try {
+                  const detay = await Promise.race([tumGruplarDetay(s, true), new Promise((res) => setTimeout(() => res(null), 8000))]);
+                  const g = detay && detay[msg.jid];
+                  if (g) {
+                    if (!meta) meta = g;
+                    else if (g.desc !== undefined && g.desc !== null) meta.desc = g.desc;
                   }
-                }).catch(() => {});
-              }, 2000);
-            }
-          }).catch(() => {});
+                } catch (_) {}
+              }
+              if (meta && meta.subject) groupMetaCache.set(msg.jid, { meta, ts: Date.now() });
+              // sonucu uygula (uygula zaten zorla'da panele bildirir); meta hâlâ boşsa yine bildir
+              if (!uygula(meta)) {
+                const c = C.get(msg.jid);
+                try { ws.send(JSON.stringify({ type: 'aciklamaTazeleSonuc', jid: msg.jid, name: c ? c.name : '', description: (c && c.description) || '', memberCount: (c && c.memberCount) || 0 })); } catch (_) {}
+              }
+            })().catch(() => {});
+          } else {
+            getGroupMeta(msg.jid, 15 * 1000, SOCK).then((meta) => {
+              if (!uygula(meta)) {
+                setTimeout(() => { getGroupMeta(msg.jid, 0, SOCK).then(uygula).catch(() => {}); }, 2000);
+              }
+            }).catch(() => {});
+          }
           // FOTO eksikse arka planda cek (kullanici: "fotoyu da ceksin")
           if (chat.avatar === undefined || chat.avatar === null) {
             getAvatar(msg.jid, false, SOCK).then((av) => {
@@ -3467,9 +3484,9 @@ function metaQueuePush(jid, resolve, sock = null) {
 // groupFetchAllParticipating önbelleği (60sn) — açıklama tamamlama için, her seferinde
 // tüm grupları çekmesin. Soket başına ayrı önbellek (ortak/pazarlama hatları için).
 const _tumGruplarCache = new Map(); // sock -> { veri, ts }
-async function tumGruplarDetay(sock) {
+async function tumGruplarDetay(sock, zorla = false) {
   const onb = _tumGruplarCache.get(sock);
-  if (onb && (Date.now() - onb.ts) < 60 * 1000) return onb.veri;
+  if (!zorla && onb && (Date.now() - onb.ts) < 60 * 1000) return onb.veri;
   const veri = await sock.groupFetchAllParticipating();
   _tumGruplarCache.set(sock, { veri, ts: Date.now() });
   return veri;
@@ -3682,6 +3699,82 @@ async function siraliKaydet(chatlar) {
 // Bağlanınca + HER 4 DAKİKADA çalışır -> açıklamalar en geç 4dk içinde herkeste güncel;
 // gruba girince zaten anlık tazeleme (aciklamaTazele) da var.
 // ============================================================
+// ════════════════════════════════════════════════════════════════════════════
+// AÇIKLAMA MOTORU (KÖK ÇÖZÜM — "1-2 saat sonra durma" sorunu için)
+// ────────────────────────────────────────────────────────────────────────────
+// SORUN: Önceki sistemler "açıklama bir kez dolunca bir daha bakma" mantığındaydı;
+//        başta çekiyor, sonra duruyordu. Ayrıca groupFetchAllParticipating çoğu
+//        grupta 'desc' (açıklama) döndürmüyor -> açıklamalar hiç dolmuyordu.
+// ÇÖZÜM: SÜREKLİ DÖNEN bir imleç. Her tur listedeki gruplardan bir PARÇA alır,
+//        her biri için tek-grup groupMetadata çağırır (desc GÜVENİLİR gelir),
+//        değişmişse yayar + DB'ye yazar. Liste bitince başa döner. HİÇ DURMAZ.
+//        Dolu açıklamaları da periyodik tazeler -> açıklama değişirse yakalar.
+//        Rate-limit'e nazik: küçük parçalar + aralarında bekleme. Kilit YOK
+//        (imleç ile ilerler, takılma/kilitlenme imkansız).
+// ════════════════════════════════════════════════════════════════════════════
+const _aciklamaImlec = new Map();  // lineId -> son işlenen grup index'i
+let _aciklamaMotorCalisiyor = false;
+
+async function aciklamaMotorTur() {
+  if (_aciklamaMotorCalisiyor) return; // aynı anda iki tur çalışmasın (ama kilit takılmaz, her 20sn tetiklenir)
+  _aciklamaMotorCalisiyor = true;
+  try {
+    for (const [lineId, line] of lines) {
+      if (!line || !line.connected || !line.sock) continue;
+      const C = hatChats(lineId);
+      if (!C || !C.size) continue;
+      // bu hattın gruplarını sırala (en son konuşulan önce -> aktif gruplar daha sık tazelenir)
+      const gruplar = Array.from(C.values())
+        .filter(c => c.isGroup)
+        .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+      if (!gruplar.length) continue;
+      // imleçten devam et (kaldığı yerden) — her tur sadece bir PARÇA işle
+      let idx = _aciklamaImlec.get(lineId) || 0;
+      if (idx >= gruplar.length) idx = 0; // liste bitti -> başa dön (sonsuz döngü)
+      const PARCA = 15; // her turda 15 grup (20sn'de bir -> dakikada ~45 grup, ilk dolum hızlı)
+      const degisenler = [];
+      for (let k = 0; k < PARCA && idx < gruplar.length; k++, idx++) {
+        const c = gruplar[idx];
+        if (!line.connected) break;
+        let meta = null;
+        try {
+          // tek-grup sorgusu: desc GÜVENİLİR gelir. Kendi hattının soketiyle (ortak/ayrı gruplar).
+          meta = await Promise.race([
+            getGroupMeta(c.jid, 0, line.sock), // maxYas=0 -> her zaman taze çek (açıklama değişmişse yakala)
+            new Promise((res) => setTimeout(() => res(null), 6000)),
+          ]);
+        } catch (_) { meta = null; }
+        if (meta) {
+          let d = false;
+          if (meta.subject && meta.subject.trim() && c.name !== meta.subject.trim()) { c.name = meta.subject.trim(); d = true; }
+          if (meta.desc !== undefined) {
+            const yeni = (meta.desc || '').trim();
+            if ((c.description || '') !== yeni) { c.description = yeni; d = true; }
+          }
+          const uye = meta.participants ? meta.participants.length : 0;
+          if (uye && c.memberCount !== uye) { c.memberCount = uye; d = true; }
+          if (d) {
+            degisenler.push({ jid: c.jid, name: c.name, description: c.description || '', memberCount: c.memberCount || 0 });
+            if (db.isReady()) db.saveChat(c, lineId).catch(() => {});
+          }
+        }
+        await new Promise(r => setTimeout(r, 100)); // gruplar arası nazik bekleme (rate-limit'e saygı)
+      }
+      _aciklamaImlec.set(lineId, idx); // imleci kaydet (sonraki tur buradan devam)
+      // değişenleri panellere yay
+      if (degisenler.length) {
+        broadcastHat(lineId, { type: 'ozetToplu', liste: degisenler });
+      }
+    }
+  } catch (e) { console.log('⚠️ Açıklama motoru hatası:', e.message); }
+  finally { _aciklamaMotorCalisiyor = false; }
+}
+// HER 20 SANİYEDE bir tur -> imleç sürekli ilerler, tüm gruplar sırayla tazelenir, HİÇ DURMAZ.
+// (2000 grup varsa ~14 dakikada tüm liste bir kez taranır, sonra baştan; açıklama
+//  değişiklikleri en geç bir tur içinde yakalanır. Dolu açıklamalar da tazelenir.)
+setInterval(() => { aciklamaMotorTur().catch(() => {}); }, 20 * 1000);
+
+// ── ESKİ toplu senkron: SADECE ad + üye sayısı için (hızlı, açıklama motoru ayrı hallediyor) ──
 async function topluAciklamaSenkron(lineId) {
   const line = lines.get(lineId);
   const sock = line ? line.sock : null;
@@ -3693,18 +3786,14 @@ async function topluAciklamaSenkron(lineId) {
   const degisenler = [];
   let i = 0;
   const isle = () => {
-    // 200'erlik parçalarla işle -> event loop bloke olmaz (takılma yaşanmaz)
     const parca = girisler.slice(i, i + 200);
     for (const [jid, meta] of parca) {
       if (!jid.endsWith('@g.us')) continue;
-      if (!C.has(jid)) continue; // listede olmayan grubu EKLEME
+      if (!C.has(jid)) continue;
       const c = C.get(jid);
       let d = false;
       const ad = (meta.subject && meta.subject.trim()) ? meta.subject.trim() : null;
       if (ad && c.name !== ad) { c.name = ad; d = true; }
-      // ACIKLAMA: toplu sorguda desc alani COGU grupta HIC GELMEZ (undefined).
-      // undefined = "bilinmiyor" -> mevcut aciklamaya DOKUNMA (silme hatasi buydu!).
-      // Alan geldiyse ('' dahil) gercek durumdur -> uygula.
       if (meta.desc !== undefined) {
         const yeniDesc = (meta.desc || '').trim();
         if ((c.description || '') !== yeniDesc) { c.description = yeniDesc; d = true; }
@@ -3715,9 +3804,7 @@ async function topluAciklamaSenkron(lineId) {
     }
     i += 200;
     if (i < girisler.length) { setImmediate(isle); return; }
-    // bitti: değişenleri PARÇALI yayınla + DB'ye arka planda kaydet
     if (degisenler.length) {
-      console.log(`📝 Açıklama senkronu [${lineId}]: ${degisenler.length} grup güncellendi (ad/açıklama/üye)`);
       for (let j = 0; j < degisenler.length; j += 100) {
         broadcastHat(lineId, { type: 'ozetToplu', liste: degisenler.slice(j, j + 100) });
       }
@@ -3728,10 +3815,10 @@ async function topluAciklamaSenkron(lineId) {
   };
   isle();
 }
-// HER 4 DAKİKADA: bağlı tüm hatlarda senkron (ofis + pazarlama hepsi)
+// ad/üye senkronu: bağlanınca bir kez + her 5dk (açıklama motoru ayrı, 20sn'de dönüyor)
 setInterval(() => {
   try { for (const [lid, line] of lines) { if (line && line.connected) topluAciklamaSenkron(lid); } } catch (_) {}
-}, 4 * 60 * 1000);
+}, 5 * 60 * 1000);
 
 // ============================================================
 // OFİS AÇIKLAMA + FOTO TARAMASI ("hepsini anında çekmeli"nin motoru)
@@ -3742,15 +3829,13 @@ setInterval(() => {
 // çalışır (rate-limit'e uyar), dolu olanları atlar -> sistemi/WhatsApp'ı yormaz.
 // ============================================================
 let _aciklamaTaramaCalisiyor = false;
-let _aciklamaTaramaBaslangic = 0; // kilit ne zaman alındı (takılma tespiti için)
+let _aciklamaTaramaBaslangic = 0;
+// NOT: Açıklama artık yeni "aciklamaMotorTur" tarafından sürekli tazeleniyor.
+// Bu fonksiyon SADECE grup FOTOĞRAFLARINI dolduruyor (foto ayrı bir iş, motor sadece metin).
 async function ofisAciklamaTaramasi() {
-  // KİLİT GÜVENCESİ: tarama bir sebeple takıldıysa (ölü bağlantı vs.) kilit sonsuza kadar
-  // kapalı kalıp bir daha ASLA çekmesin. 3 dakikadan uzun sürmüşse kilidi zorla sıfırla.
   if (_aciklamaTaramaCalisiyor) {
-    if (Date.now() - _aciklamaTaramaBaslangic > 3 * 60 * 1000) {
-      console.log('⚠️ Açıklama taraması 3dk+ takıldı -> kilit zorla sıfırlanıyor');
-      _aciklamaTaramaCalisiyor = false;
-    } else return;
+    if (Date.now() - _aciklamaTaramaBaslangic > 3 * 60 * 1000) { _aciklamaTaramaCalisiyor = false; }
+    else return;
   }
   const line = lines.get('ofis');
   if (!line || !line.connected) return;
@@ -3759,57 +3844,18 @@ async function ofisAciklamaTaramasi() {
   try {
     const gruplar = Array.from(chats.values())
       .filter(c => c.isGroup)
-      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)); // aktif gruplar ÖNCE dolsun
-    // ══ FAZ 1: SADECE AÇIKLAMA (hızlı tur — foto BEKLETMEZ, önce hepsi dolsun) ══
-    let doldurulan = 0, islenen = 0;
-    for (const c of gruplar) {
-      if (!line.connected) break;
-      islenen++;
-      const descEksik = !(c.description && c.description.trim())
-        && !(c._descTs && (Date.now() - c._descTs) < 30 * 60 * 1000); // "sorduk, yok": 30dk tekrar sorma
-      if (descEksik) {
-        // TIMEOUT: ölü bağlantıda getGroupMeta sonsuza kadar bekleyip taramayı KİLİTLEMESİN.
-        // 6sn'de dönerse döner, dönmezse null -> sonraki gruba geç (tarama akışı durmaz).
-        let meta = null;
-        try {
-          meta = await Promise.race([
-            getGroupMeta(c.jid, 10 * 60 * 1000),
-            new Promise((res) => setTimeout(() => res(null), 6000)),
-          ]);
-        } catch (_) { meta = null; }
-        if (meta) {
-          let d = false;
-          if (meta.subject && meta.subject.trim() && c.name !== meta.subject.trim()) { c.name = meta.subject.trim(); d = true; }
-          if (meta.desc !== undefined) {
-            const yeni = (meta.desc || '').trim();
-            if ((c.description || '') !== yeni) { c.description = yeni; d = true; if (yeni) doldurulan++; }
-            c._descTs = Date.now();
-          }
-          if (meta.participants && meta.participants.length && c.memberCount !== meta.participants.length) { c.memberCount = meta.participants.length; d = true; }
-          if (d) {
-            broadcastHat('ofis', { type: 'msgUpdate', jid: c.jid, ozet: { name: c.name, description: c.description || '', memberCount: c.memberCount || 0, avatar: c.avatar || null } });
-            if (db.isReady()) db.saveChat(c, 'ofis').catch(() => {});
-          }
-        }
-        await new Promise(r => setTimeout(r, 70)); // nazik tempo (kuyruk rate-limit'i ayrıca fren)
-      }
-      // CANLI İLERLEME (pm2 log'da izlenir): her 100 grupta bir satır
-      if (islenen % 100 === 0) console.log(`🔎 Açıklama taraması: ${islenen}/${gruplar.length} grup gezildi, ${doldurulan} açıklama dolduruldu…`);
-    }
-    console.log(`🔎 FAZ1 bitti: ${gruplar.length} grup gezildi, ${doldurulan} açıklama dolduruldu (kalıcı kaydedildi)`);
-    // ══ FAZ 2: GRUP FOTOĞRAFLARI (açıklamalar bittikten SONRA — kısa zaman aşımı) ══
+      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+    // GRUP FOTOĞRAFLARI (eksik olanları doldur — açıklama motoru ayrı çalışıyor)
     let fotoAlinan = 0;
     for (const c of gruplar) {
       if (!line.connected) break;
       if (!(c.avatar === undefined || c.avatar === null)) continue; // '' = "sorduk, yok"
       try {
-        // 2.5sn dış zaman aşımı: yavaş cevaplar taramayı KİLİTLEMESİN.
-        // Zaman aşımında damga KOYMA (belki foto var ama yavaştı) -> sonraki turda tekrar dener.
         const av = await Promise.race([
           getAvatar(c.jid),
           new Promise((_, rej) => setTimeout(() => rej(new Error('yavas')), 2500)),
         ]);
-        c.avatar = av || ''; // null = gerçekten yok -> '' damgala (tekrar sorma)
+        c.avatar = av || '';
         if (av) {
           fotoAlinan++;
           broadcastHat('ofis', { type: 'msgUpdate', jid: c.jid, ozet: { name: c.name, description: c.description || '', memberCount: c.memberCount || 0, avatar: av } });
@@ -3818,15 +3864,12 @@ async function ofisAciklamaTaramasi() {
       } catch (_) { /* zaman aşımı: damgasız bırak, sonraki tur dener */ }
       await new Promise(r => setTimeout(r, 60));
     }
-    if (fotoAlinan) console.log(`🔎 FAZ2 bitti: ${fotoAlinan} grup fotoğrafı alındı`);
-  } catch (e) { console.log('⚠️ Açıklama taraması hatası:', e.message); }
-  finally {
-    // KİLİT KESİN AÇILIR — ne olursa olsun (hata, kopma, timeout). Bir daha çekebilsin.
-    _aciklamaTaramaCalisiyor = false;
-  }
+    if (fotoAlinan) console.log(`🔎 Grup fotoğrafı taraması: ${fotoAlinan} yeni foto alındı`);
+  } catch (e) { console.log('⚠️ Foto taraması hatası:', e.message); }
+  finally { _aciklamaTaramaCalisiyor = false; }
 }
-// Bağlantıdan sonra + her 10 dakikada: eksik kalan/yeni grupları doldur
-setInterval(() => { try { ofisAciklamaTaramasi(); } catch (_) {} }, 10 * 60 * 1000);
+// Grup fotoğrafları: bağlanınca + her 15 dakikada eksikleri doldur
+setInterval(() => { try { ofisAciklamaTaramasi(); } catch (_) {} }, 15 * 60 * 1000);
 
 async function fetchAllGroups() {
   // Bu fonksiyon SADECE ofis hatti icindir. Global waSock yerine ofis hattinin
@@ -4751,6 +4794,9 @@ async function startWA(lineId = 'ofis') {
         setTimeout(() => fetchAllGroups(), 30000);
         // ACIKLAMA+FOTO TARAMASI: adlar geldikten sonra eksik aciklama/fotolari tek tek doldur
         setTimeout(() => ofisAciklamaTaramasi(), 45000);
+        // AÇIKLAMA MOTORU: bağlanınca imleci sıfırla + hemen başlat (ilk dolum hızlı başlasın)
+        _aciklamaImlec.set('ofis', 0);
+        setTimeout(() => { aciklamaMotorTur().catch(() => {}); }, 8000);
         setTimeout(() => fetchAllGroups(), 75000);
       } else {
         // ---- PAZARLAMA HATTI ----
