@@ -86,6 +86,9 @@ function createLine(lineId, label, ownerUser) {
     chats: new Map(),      // bu hattin sohbetleri (jid -> chat)
     authDir: path.join(AUTH_BASE, lineId), // bu hattin oturum klasoru
     starting: false,       // baglanma islemi suruyor mu (cift baslatmayi onler)
+    sonAktivite: 0,        // HAT BAZLI: bu hattan en son ne zaman veri geldi (kalp atisi kontrolu)
+    kalpTestCalisiyor: false, // ayni anda iki kalp testi calismasin
+    kalpBasarisiz: 0,      // ust uste kac kalp atisi basarisiz (2 olursa yeniden baglan)
   };
 }
 
@@ -3609,8 +3612,74 @@ function retryGroupName(jid) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// İLETİM DENETÇİSİ — "panele düşüp WhatsApp'a gitmeyen mesaj" sorununun çözümü
+// KALP ATIŞI (HEARTBEAT) SİSTEMİ — "mesaj gitmiyor/gelmiyor" sorununun kök çözümü
 // ────────────────────────────────────────────────────────────────────────────
+// PROBLEM: WhatsApp bağlantısı "yarı-açık" kalabiliyor: soket açık görünüyor ama
+//   gerçekte ölü. Bu durumda HEM giden mesaj gitmiyor HEM gelen mesaj gelmiyor,
+//   üstelik sistem "bağlıyım" sandığı için kimse fark etmiyor. Eski kontrol SADECE
+//   ofis hattına bakıyordu (tek global _sonWaAktivite) -> pazarlama hatları hiç
+//   denetlenmiyordu, oradaki kayıplar tamamen görünmezdi.
+// ÇÖZÜM: HER hat için (ofis + tüm pazarlama), sürekli çalışan agresif kalp atışı.
+//   Her 15 saniyede: o hattan son 30sn'de veri gelmediyse WhatsApp sunucusuna
+//   YANIT BEKLEYEN bir sorgu at. Yanıt gelmezse "kalpBasarisiz" say; 2 kez üst üste
+//   başarısız olursa bağlantı ÖLÜDÜR -> kapat + yeniden bağlan. Böylece yarı-açık
+//   bağlantı en geç ~30-45 saniyede yakalanıp yenilenir, kayıp penceresi minimuma iner.
+// ════════════════════════════════════════════════════════════════════════════
+const KALP_PERIYOT = 15 * 1000;   // her 15 saniyede kalp atışı turu
+const KALP_SESSIZLIK = 30 * 1000; // 30sn veri yoksa test et
+const KALP_TIMEOUT = 10 * 1000;   // sorgu yanıtı için bekleme
+const KALP_MAX_BASARISIZ = 2;     // üst üste bu kadar başarısız -> yeniden bağlan
+
+async function kalpAtisiTuru() {
+  for (const [lineId, line] of lines) {
+    if (!line || !line.sock || !line.connected) continue;
+    // ayni hatta iki test ust uste calismasin
+    if (line.kalpTestCalisiyor) continue;
+    const gecen = Date.now() - (line.sonAktivite || 0);
+    if (gecen < KALP_SESSIZLIK) continue; // yakinda veri geldi -> saglikli, test gereksiz
+    line.kalpTestCalisiyor = true;
+    (async () => {
+      let canli = false;
+      try {
+        const sock = line.sock;
+        const num = line.myNumber;
+        // YANIT BEKLEYEN sorgu: onWhatsApp (kendi numaramizi sorar) sunucudan donus bekler.
+        // sendPresenceUpdate yetmez (yanit beklemez, olu baglantida bile "gecer").
+        const test = await Promise.race([
+          (num ? sock.onWhatsApp(num) : sock.query({ tag: 'iq', attrs: { to: '@s.whatsapp.net', type: 'get', xmlns: 'w:p' } })),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('kalp-timeout')), KALP_TIMEOUT)),
+        ]);
+        if (test !== undefined) canli = true;
+      } catch (e) { canli = false; }
+      finally { line.kalpTestCalisiyor = false; }
+
+      if (canli) {
+        line.sonAktivite = Date.now();
+        line.kalpBasarisiz = 0; // sağlıklı -> sayaç sıfır
+      } else {
+        line.kalpBasarisiz = (line.kalpBasarisiz || 0) + 1;
+        console.log(`💓 Kalp atışı başarısız [${lineId}] (${line.kalpBasarisiz}/${KALP_MAX_BASARISIZ}) — bağlantı yanıt vermiyor`);
+        if (line.kalpBasarisiz >= KALP_MAX_BASARISIZ) {
+          // ÖLÜ BAĞLANTI: kapat + yeniden bağlan (bu hatta)
+          console.log(`⚠️  [${lineId}] bağlantı ÖLÜ (yarı-açık) -> kapatılıp yeniden bağlanıyor. Mesaj kaybı önleniyor.`);
+          line.connected = false;
+          line.kalpBasarisiz = 0;
+          if (lineId === 'ofis') waConnected = false;
+          broadcastHat(lineId, { type: 'status', connected: false, oluBaglanti: true });
+          try { line.sock.end(new Error('kalp atisi basarisiz')); } catch (_) {}
+          try { line.sock.ws?.close?.(); } catch (_) {}
+          yenidenBaglanPlanla(lineId, 2500, line);
+        }
+      }
+    })().catch(() => { line.kalpTestCalisiyor = false; });
+  }
+}
+// TÜM hatlar için her 15 saniyede kalp atışı — ofis + pazarlama hepsi denetlenir, HİÇ DURMAZ
+if (!global._kalpAtisiTimer) {
+  global._kalpAtisiTimer = setInterval(() => { kalpAtisiTuru().catch(() => {}); }, KALP_PERIYOT);
+}
+
+
 // PROBLEM: SOCK.sendMessage() bir 'key' döndürür ama bu KARŞIYA İLETİLDİĞİ anlamına
 //   GELMEZ. Bağlantı "yarı-açık" (ölü ama açık görünen) ise Baileys mesajı kabul edip
 //   key döndürür, sistem "gitti" sanır (tek tik), AMA mesaj WhatsApp sunucusuna hiç
@@ -4881,6 +4950,9 @@ async function startWA(lineId = 'ofis') {
       const buNumara = sock.user?.id ? sock.user.id.split(':')[0].split('@')[0] : null;
       const buLID = sock.user?.lid ? sock.user.lid.split(':')[0].split('@')[0] : null;
       line.myNumber = buNumara; line.myLID = buLID; line.myName = myName;
+      line.sonAktivite = Date.now(); // HAT BAZLI kalp atışı: yeni bağlandı, taze
+      line.kalpBasarisiz = 0;
+      line.kalpTestCalisiyor = false;
       // Global'ler (myNumber, waConnected, lastQR) SADECE ofis hatti icin guncellensin —
       // pazarlama hatti baglaninca ofisin global durumunu EZMESIN.
       if (lineId === 'ofis') {
@@ -4952,46 +5024,17 @@ async function startWA(lineId = 'ofis') {
           if (ol && ol.connected) fetchAllGroups();
         }, 10 * 60 * 1000); // 10 dakika
       }
-      // CANLILIK KONTROLU: WhatsApp "yari-acik" kalabilir (baglanti acik gorunur ama
-      // veri akmaz). Duzenli kontrol: uzun suredir hic aktivite yoksa, baglantiyi
-      // canli tutmak icin hafif bir istek at; yanit gelmezse "olu" say ve panele bildir.
-      // Bu testi FONKSIYONA aldik: hem 25sn'lik periyot hem de mesaj gonderilemeyince ANLIK cagirir.
+      // CANLILIK: Artık merkezi "kalp atışı" sistemi TÜM hatları (ofis+pazarlama) denetliyor
+      // (yukarıda tanımlı global._kalpAtisiTimer). Eski ofis-only kontrol kaldırıldı — çakışma olmasın.
+      // Sadece geriye uyumluluk: mesaj gönderilemeyince ANLIK tetikleme için fonksiyonu koruyoruz.
       if (!global._canlilikKontrolTetikle) {
-        let _testCalisiyor = false;
         global._canlilikKontrolTetikle = async (zorla = false) => {
-          if (_testCalisiyor) return;         // ayni anda iki test calismasin
-          if (!waConnected || !waSock) return;
-          const gecenSure = Date.now() - _sonWaAktivite;
-          if (!zorla && gecenSure <= 45 * 1000) return; // zorla degilse 45sn kuralina uy
-          _testCalisiyor = true;
-          let canli = false;
-          try {
-            const test = await Promise.race([
-              (myNumber ? waSock.onWhatsApp(myNumber) : waSock.query({
-                tag: 'iq', attrs: { to: '@s.whatsapp.net', type: 'get', xmlns: 'w:p' },
-              })),
-              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000)),
-            ]);
-            if (test !== undefined) canli = true;
-          } catch (e) { canli = false; }
-          finally { _testCalisiyor = false; }
-          if (canli) {
-            _sonWaAktivite = Date.now(); // baglanti gercekten canli
-          } else {
-            console.log('⚠️  WhatsApp sunucusu yanit vermiyor (olu/yari-acik baglanti). Yeniden baglaniliyor...');
-            if (lineId === 'ofis') waConnected = false;
-            line.connected = false;
-            broadcastHat(lineId, { type: 'status', connected: false, oluBaglanti: true });
-            try { waSock.end(new Error('canlilik kontrolu basarisiz')); } catch (_) {}
-            try { waSock.ws?.close?.(); } catch (_) {}
-            yenidenBaglanPlanla(lineId, 3000, line);
-          }
+          // ofis hattını hemen test et (kalp atışı periyodunu beklemeden)
+          const ol = lines.get('ofis');
+          if (ol) { ol.sonAktivite = 0; } // sessiz say -> sonraki kalp turu (max 15sn) hemen test eder
+          // acil durumda hemen bir tur çalıştır
+          if (zorla) { try { await kalpAtisiTuru(); } catch (_) {} }
         };
-      }
-      if (!global._canlilikTimer) {
-        global._canlilikTimer = setInterval(() => {
-          if (global._canlilikKontrolTetikle) global._canlilikKontrolTetikle(false);
-        }, 25 * 1000); // her 25 saniyede kontrol (45sn+ aktivite yoksa test eder)
       }
     }
     if (connection === 'close') {
@@ -5158,6 +5201,7 @@ async function startWA(lineId = 'ofis') {
   // Karsi taraf bir mesaji silince / duzenleyince yakala
   sock.ev.on('messages.update', (updates) => {
     _sonWaAktivite = Date.now(); // WhatsApp aktivitesi
+    if (line) { line.sonAktivite = Date.now(); line.kalpBasarisiz = 0; }
     const CC = hatChats(lineId); // bu hattin sohbetleri
     for (const u of updates) {
       const jid = u.key?.remoteJid;
@@ -5234,6 +5278,7 @@ async function startWA(lineId = 'ofis') {
 
   // MESAJ ALINDI BILGISI (receipt): iletildi/okundu durumunu daha guvenilir verir (ozellikle grup).
   sock.ev.on('message-receipt.update', (updates) => {
+    if (line) { line.sonAktivite = Date.now(); line.kalpBasarisiz = 0; } // makbuz geldi -> hat canli
     const CC = hatChats(lineId); // bu hattin sohbetleri
     for (const u of updates) {
       const jid = u.key?.remoteJid;
@@ -5400,7 +5445,8 @@ async function startWA(lineId = 'ofis') {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    _sonWaAktivite = Date.now(); // WhatsApp'tan veri geldi -> baglanti canli
+    _sonWaAktivite = Date.now(); // WhatsApp'tan veri geldi -> baglanti canli (ofis global)
+    if (line) { line.sonAktivite = Date.now(); line.kalpBasarisiz = 0; } // HAT BAZLI: bu hat canli
     // 'notify' yeni mesaj, 'append' senkronizasyon/ilk mesaj - ikisini de al
     if (type !== 'notify' && type !== 'append') return;
     // HAT KISAYOLLARI: bu event hangi hatta ait? (closure'daki lineId/line).
