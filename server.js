@@ -112,6 +112,11 @@ const chats = new Map();   // GECICI: artik her hattin kendi chats'i var; bu bos
 let waSock = null;         // GECICI kopru
 let waConnected = false;   // GECICI kopru
 let _sonWaAktivite = 0;    // WhatsApp'tan en son ne zaman veri/olay geldi (canlilik kontrolu icin)
+// MESAJ ÖNCELİĞİ: en son ne zaman mesaj gönderildi/alındı. Ağır arka plan işleri
+// (açıklama motoru, avatar taraması, grup senkronu) mesaj trafiği varken duraklar ki
+// soket tıkanmasın -> mesajlar gecikmesin/kaybolmasın (özellikle yoğun ofis hattında).
+let _sonMesajTrafigi = 0;
+function mesajTrafigiVar() { return (Date.now() - _sonMesajTrafigi) < 10 * 1000; } // son 10sn
 let myNumber = null;
 let myLID = null;
 let lastQR = null;
@@ -1947,6 +1952,7 @@ wss.on('connection', (ws) => {
         const mentionJids = (msg.text.match(/@(\d{10,15})/g) || []).map(t => t.slice(1) + '@s.whatsapp.net');
         if (mentionJids.length) content.mentions = mentionJids;
         // GONDERIMI try-catch ile SAR: basarisiz olursa panele "gonderilemedi" bildir.
+        _sonMesajTrafigi = Date.now(); // MESAJ ÖNCELİĞİ: ağır arka plan işleri kısa süre duraklasın
         try {
           let sent;
           // TIMEOUT 30->12sn: baglanti "yari-acik" (olu) ise kullanici 30sn beklemesin;
@@ -1966,6 +1972,9 @@ wss.on('connection', (ws) => {
             sent = await Promise.race([SOCK.sendMessage(msg.jid, content), timeoutP()]);
           }
           if (!sent || !sent.key) throw new Error('WhatsApp gonderimi onaylamadi');
+          // TEŞHİS: gönderim ne kadar sürdü? (yavaşlama/tıkanma tespiti için)
+          const gonderimSure = Date.now() - _sonMesajTrafigi;
+          if (gonderimSure > 5000) console.log(`   ⏱️  YAVAŞ gönderim: ${(gonderimSure/1000).toFixed(1)}sn (grup: ${(msg.jid||'').split('@')[0]}) — soket yoğun olabilir`);
           addMessage(msg.jid, {
             id: sent.key.id, key: sent.key,
             raw: sent, // GONDERIM SONUCU: kendi mesajimizi sonradan YANITLAYINCA alinti icin gerekli
@@ -3625,9 +3634,9 @@ function retryGroupName(jid) {
 //   başarısız olursa bağlantı ÖLÜDÜR -> kapat + yeniden bağlan. Böylece yarı-açık
 //   bağlantı en geç ~30-45 saniyede yakalanıp yenilenir, kayıp penceresi minimuma iner.
 // ════════════════════════════════════════════════════════════════════════════
-const KALP_PERIYOT = 15 * 1000;   // her 15 saniyede kalp atışı turu
-const KALP_SESSIZLIK = 30 * 1000; // 30sn veri yoksa test et
-const KALP_TIMEOUT = 10 * 1000;   // sorgu yanıtı için bekleme
+const KALP_PERIYOT = 12 * 1000;   // her 12 saniyede kalp atışı turu (15->12: daha sık kontrol)
+const KALP_SESSIZLIK = 20 * 1000; // 20sn veri yoksa test et (30->20: daha erken yakala)
+const KALP_TIMEOUT = 8 * 1000;    // sorgu yanıtı için bekleme (10->8: ölü bağlantıyı hızlı tespit)
 const KALP_MAX_BASARISIZ = 2;     // üst üste bu kadar başarısız -> yeniden bağlan
 
 async function kalpAtisiTuru() {
@@ -3851,7 +3860,36 @@ async function mesajiAktifCek(jid) {
   } catch (e) { /* desteklenmiyorsa veya hata olursa sessizce gec */ }
 }
 
-// Gruplari SIRALI ve NAZIK Supabase'e yazar (DB'yi bogmamak icin).
+// KAÇAN MESAJ TELAFİSİ: bağlantı yeniden kurulunca, en son konuşulan aktif grupların
+// son mesajlarını proaktif çek. Bağlantı ölüyken (yarı-açık) gelen ve WhatsApp'ın otomatik
+// göndermediği mesajları (foto/belge dahil) telafi eder. Nazik: sadece en aktif 30 grup,
+// aralarında bekleme ile (soketi boğmadan).
+async function kacanMesajTelafi(sock) {
+  if (!sock) return;
+  try {
+    // en son konuşulan gruplar önce (kopukluk sırasında oralarda mesaj gelmiş olabilir)
+    const aktifler = Array.from(chats.values())
+      .filter(c => c.isGroup && c.lastTs)
+      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0))
+      .slice(0, 30); // en aktif 30 grup (hepsini çekmek soketi boğar)
+    if (!aktifler.length) return;
+    console.log(`🔄 Kaçan mesaj telafisi: ${aktifler.length} aktif grup kontrol ediliyor (kopukluk sırasında düşen mesajlar için)...`);
+    let denendi = 0;
+    for (const c of aktifler) {
+      if (mesajTrafigiVar()) { await new Promise(r => setTimeout(r, 2000)); } // canlı trafik varsa bekle
+      const sonMesaj = c.messages && c.messages.length ? c.messages[c.messages.length - 1] : null;
+      if (!sonMesaj || !sonMesaj.key) continue;
+      try {
+        if (typeof sock.fetchMessageHistory === 'function') {
+          await sock.fetchMessageHistory(3, sonMesaj.key, sonMesaj.ts ? Math.floor(sonMesaj.ts / 1000) : undefined);
+          denendi++;
+        }
+      } catch (_) {}
+      await new Promise(r => setTimeout(r, 400)); // gruplar arası nazik bekleme
+    }
+    console.log(`   ✓ Telafi tamam: ${denendi} grubun son mesajları yeniden istendi (kaçanlar messages.upsert'ten düşecek)`);
+  } catch (e) { console.log('⚠️ Kaçan mesaj telafisi hatası:', e.message); }
+}
 // Ayni anda binlerce sorgu yerine, kucuk partiler halinde aralarinda bekleyerek yazar.
 let _siraliKaydetCalisiyor = false;
 let _siraliKuyruk = [];
@@ -3904,6 +3942,9 @@ let _aciklamaMotorCalisiyor = false;
 
 async function aciklamaMotorTur() {
   if (_aciklamaMotorCalisiyor) return; // aynı anda iki tur çalışmasın (ama kilit takılmaz, her 20sn tetiklenir)
+  // MESAJ ÖNCELİĞİ: şu an mesaj trafiği varsa bu turu ATLA. Açıklama çekimi soketi meşgul
+  // edip mesajları geciktirmesin. Trafik durunca (10sn) motor kaldığı yerden devam eder.
+  if (mesajTrafigiVar()) return;
   _aciklamaMotorCalisiyor = true;
   try {
     for (const [lineId, line] of lines) {
@@ -3923,6 +3964,7 @@ async function aciklamaMotorTur() {
       for (let k = 0; k < PARCA && idx < gruplar.length; k++, idx++) {
         const c = gruplar[idx];
         if (!line.connected) break;
+        if (mesajTrafigiVar()) break; // mesaj geldi/gidiyor -> turu kes, mesaja öncelik ver
         let meta = null;
         try {
           // tek-grup sorgusu: desc GÜVENİLİR gelir. Kendi hattının soketiyle (ortak/ayrı gruplar).
@@ -4036,6 +4078,7 @@ async function ofisAciklamaTaramasi() {
     let fotoAlinan = 0;
     for (const c of gruplar) {
       if (!line.connected) break;
+      if (mesajTrafigiVar()) break; // mesaj trafiği var -> foto taramasını kes, mesaja öncelik
       if (!(c.avatar === undefined || c.avatar === null)) continue; // '' = "sorduk, yok"
       try {
         const av = await Promise.race([
@@ -4968,6 +5011,14 @@ async function startWA(lineId = 'ofis') {
       console.log(`\n✅ WhatsApp baglandi (hat: ${lineId})! Panel: http://localhost:${PORT}\n`);
       console.log(`   👤 numaram: ${buNumara}${buLID ? ' | LID: ' + buLID : ''}`);
       broadcastHat(lineId, { type: 'status', connected: true, myJid, myName });
+      // ═══ KAÇAN MESAJ TELAFİSİ ═══ (bağlantı ölüyken gelen mesajlar kaybolmasın)
+      // Bağlantı yarı-açık/ölü olduğu sürede WhatsApp bazı mesajları iletemez. Yeniden
+      // bağlanınca bunları otomatik göndermeyebilir. Bu yüzden: bağlandıktan 6sn sonra,
+      // EN SON konuşulan grupların son mesajlarını proaktif çek (fetchMessageHistory).
+      // Böylece kopukluk sırasında düşen foto/mesajlar telafi edilir.
+      if (lineId === 'ofis') {
+        setTimeout(() => { kacanMesajTelafi(sock).catch(() => {}); }, 6000);
+      }
       if (lineId === 'ofis') {
         // ---- OFIS HATTI (mevcut davranis, degismedi) ----
         // GUVENCE: bellek bossa DB'den sohbetleri geri yukle.
@@ -5447,6 +5498,7 @@ async function startWA(lineId = 'ofis') {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     _sonWaAktivite = Date.now(); // WhatsApp'tan veri geldi -> baglanti canli (ofis global)
     if (line) { line.sonAktivite = Date.now(); line.kalpBasarisiz = 0; } // HAT BAZLI: bu hat canli
+    if (type === 'notify') _sonMesajTrafigi = Date.now(); // MESAJ ÖNCELİĞİ: gelen mesaj da trafik
     // 'notify' yeni mesaj, 'append' senkronizasyon/ilk mesaj - ikisini de al
     if (type !== 'notify' && type !== 'append') return;
     // HAT KISAYOLLARI: bu event hangi hatta ait? (closure'daki lineId/line).
