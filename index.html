@@ -1447,15 +1447,15 @@
   .iub-metin{font-size:13px;line-height:1.35;min-width:0}
   .iub-metin small{opacity:.85;font-size:11px}
   .iub-mesajmetin{font-style:italic;opacity:.9;font-size:11.5px}
-  /* toplu gönderim sayacı (kaç PDF gitti canlı takip) */
-  .toplu-sayac{position:fixed;bottom:28px;right:28px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px 18px;box-shadow:var(--shadow-lg);z-index:400;min-width:240px;transform:translateY(140px);opacity:0;transition:all .3s cubic-bezier(.2,.8,.2,1)}
+  /* toplu gönderim sayacı — KÜÇÜK, sol altta (mesaj kutusunu kapatmaz) */
+  .toplu-sayac{position:fixed;bottom:80px;left:24px;background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:8px 12px;box-shadow:var(--shadow-lg);z-index:400;min-width:150px;max-width:200px;transform:translateY(120px);opacity:0;transition:all .3s cubic-bezier(.2,.8,.2,1)}
   .toplu-sayac.show{transform:translateY(0);opacity:1}
-  .ts-baslik{font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px}
-  .ts-sayi{font-size:13.5px;color:var(--muted);margin-bottom:8px}
-  .ts-buyuk{font-size:22px;font-weight:800;color:var(--brand)}
-  .ts-hata{color:#dc2626;font-weight:600;font-size:12px}
-  .ts-bar{height:7px;background:var(--panel-2);border-radius:4px;overflow:hidden}
-  .ts-bar-ic{height:100%;background:linear-gradient(90deg,var(--brand),#22c55e);border-radius:4px;transition:width .3s ease}
+  .ts-baslik{font-size:11px;font-weight:700;color:var(--text);margin-bottom:3px}
+  .ts-sayi{font-size:11.5px;color:var(--muted);margin-bottom:5px}
+  .ts-buyuk{font-size:16px;font-weight:800;color:var(--brand)}
+  .ts-hata{color:#dc2626;font-weight:600;font-size:10.5px}
+  .ts-bar{height:5px;background:var(--panel-2);border-radius:3px;overflow:hidden}
+  .ts-bar-ic{height:100%;background:linear-gradient(90deg,var(--brand),#22c55e);border-radius:3px;transition:width .3s ease}
   .iub-kapat{background:rgba(255,255,255,.2);border:none;color:#fff;width:26px;height:26px;border-radius:8px;cursor:pointer;font-size:14px;flex-shrink:0}
   .iub-kapat:hover{background:rgba(255,255,255,.35)}
   /* ── TAKİP UYARI KARTLARI (sağ altta, yöneticiye) ── */
@@ -2829,12 +2829,12 @@ function topluSayacGoster(gonderilen, toplam, basarisiz){
   // işlem bittiyse 10sn sonra gizle; devam ediyorsa açık kalsın
   clearTimeout(window._topluSayacTimer);
   if(bitti){
-    window._topluSayacTimer=setTimeout(()=>{ if(kutu) kutu.classList.remove('show'); }, 10000);
+    window._topluSayacTimer=setTimeout(()=>{ if(kutu) kutu.classList.remove('show'); }, 5000);
   }
 }
 function topluSayacGizle(){
   const kutu=document.getElementById('topluSayac');
-  if(kutu) setTimeout(()=>kutu.classList.remove('show'), 10000);
+  if(kutu) setTimeout(()=>kutu.classList.remove('show'), 5000);
 }
 // İLETİM UYARISI: bir mesaj karşıya iletilemediğinde üstte KALICI kırmızı bant.
 // Kullanıcı görene kadar durur, tıklayınca o gruba gider, X ile kapatılır.
@@ -8854,6 +8854,11 @@ function gonderSiradakiForward(){
       if(_fwdSiraBasarisiz>0) showToast('⚠️ '+_fwdSiraGonderilen+'/'+_fwdSiraToplam+' iletildi, '+_fwdSiraBasarisiz+' başarısız');
       else showToast('✓ '+_fwdSiraN+' sohbete '+_fwdSiraToplam+' dosya iletildi');
     } else showToast('✓ '+_fwdSiraN+' sohbete iletildi');
+    // İLETTİĞİN GRUBA GİT: iletme bitince ilk hedefi aç ki gittiğini gör (çoklu iletmede de).
+    const _ilkHedef=(_fwdSiraHedefler && _fwdSiraHedefler.length)?_fwdSiraHedefler[0]:null;
+    if(_ilkHedef && chats[_ilkHedef]){
+      setTimeout(()=>{ if(chats[_ilkHedef]) openChat(_ilkHedef); }, 300);
+    }
     _fwdAktifMid=null;
     return;
   }
