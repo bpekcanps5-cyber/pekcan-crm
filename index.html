@@ -1447,6 +1447,15 @@
   .iub-metin{font-size:13px;line-height:1.35;min-width:0}
   .iub-metin small{opacity:.85;font-size:11px}
   .iub-mesajmetin{font-style:italic;opacity:.9;font-size:11.5px}
+  /* toplu gönderim sayacı (kaç PDF gitti canlı takip) */
+  .toplu-sayac{position:fixed;bottom:28px;right:28px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px 18px;box-shadow:var(--shadow-lg);z-index:400;min-width:240px;transform:translateY(140px);opacity:0;transition:all .3s cubic-bezier(.2,.8,.2,1)}
+  .toplu-sayac.show{transform:translateY(0);opacity:1}
+  .ts-baslik{font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px}
+  .ts-sayi{font-size:13.5px;color:var(--muted);margin-bottom:8px}
+  .ts-buyuk{font-size:22px;font-weight:800;color:var(--brand)}
+  .ts-hata{color:#dc2626;font-weight:600;font-size:12px}
+  .ts-bar{height:7px;background:var(--panel-2);border-radius:4px;overflow:hidden}
+  .ts-bar-ic{height:100%;background:linear-gradient(90deg,var(--brand),#22c55e);border-radius:4px;transition:width .3s ease}
   .iub-kapat{background:rgba(255,255,255,.2);border:none;color:#fff;width:26px;height:26px;border-radius:8px;cursor:pointer;font-size:14px;flex-shrink:0}
   .iub-kapat:hover{background:rgba(255,255,255,.35)}
   /* ── TAKİP UYARI KARTLARI (sağ altta, yöneticiye) ── */
@@ -2799,6 +2808,34 @@ function showToast(msg){
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>t.classList.remove('show'),2200);
 }
+// ═══ TOPLU GÖNDERİM SAYACI ═══ (kaç PDF/dosya gitti canlı takip)
+// Toplu iletme/sürükleme sırasında her dosya gidince "3/30 gönderildi" diye günceller.
+// Ekranda KALICI durur (işlem bitince 10sn sonra kaybolur). Başarısız olanları da gösterir.
+function topluSayacGoster(gonderilen, toplam, basarisiz){
+  let kutu=document.getElementById('topluSayac');
+  if(!kutu){
+    kutu=document.createElement('div');
+    kutu.id='topluSayac';
+    kutu.className='toplu-sayac';
+    document.body.appendChild(kutu);
+  }
+  const bitti=(gonderilen+(basarisiz||0))>=toplam;
+  const yuzde=Math.round((gonderilen/toplam)*100);
+  kutu.innerHTML=
+    '<div class="ts-baslik">'+(bitti?'✓ Gönderim tamamlandı':'📤 Gönderiliyor…')+'</div>'+
+    '<div class="ts-sayi"><span class="ts-buyuk">'+gonderilen+'</span> / '+toplam+' gönderildi'+(basarisiz?' <span class="ts-hata">('+basarisiz+' başarısız)</span>':'')+'</div>'+
+    '<div class="ts-bar"><div class="ts-bar-ic" style="width:'+yuzde+'%"></div></div>';
+  kutu.classList.add('show');
+  // işlem bittiyse 10sn sonra gizle; devam ediyorsa açık kalsın
+  clearTimeout(window._topluSayacTimer);
+  if(bitti){
+    window._topluSayacTimer=setTimeout(()=>{ if(kutu) kutu.classList.remove('show'); }, 10000);
+  }
+}
+function topluSayacGizle(){
+  const kutu=document.getElementById('topluSayac');
+  if(kutu) setTimeout(()=>kutu.classList.remove('show'), 10000);
+}
 // İLETİM UYARISI: bir mesaj karşıya iletilemediğinde üstte KALICI kırmızı bant.
 // Kullanıcı görene kadar durur, tıklayınca o gruba gider, X ile kapatılır.
 function iletimUyariBandiGoster(jid, grupAd, metin){
@@ -3358,27 +3395,16 @@ function connect(){
     else if(d.type==='typing'){ handleTyping(d); }
     else if(d.type==='openChat'){ setTimeout(()=>{ if(chats[d.jid]) openChat(d.jid); }, 250); }
     else if(d.type==='forwardResult'){
-      // İletilen sohbeti AC ki kullanici mesajin gittigini aninda gorsun.
-      if(d.ok && d.acilacakJid && chats[d.acilacakJid]){
+      // İletilen sohbeti AC ki kullanici mesajin gittigini aninda gorsun (sadece TEK iletmede).
+      if(d.ok && d.acilacakJid && chats[d.acilacakJid] && _fwdSiraToplam<=1){
         setTimeout(()=>{ if(chats[d.acilacakJid]) openChat(d.acilacakJid); }, 300);
       }
-      // SIRALI ILETME: bir mesaj bitti -> sıradakini gönder (PDF cakismasini onler).
-      // _fwdSiraToplam>1 ise coklu sira var demektir; her adim toast'i sira fonksiyonu basar.
-      if(typeof _fwdSira!=='undefined' && (_fwdSira.length || _fwdSiraToplam>1)){
-        _fwdSiraKalan=Math.max(0,_fwdSiraKalan-1);
-        // hala gonderilecek mesaj varsa ilerlemeyi goster + sonrakini gonder
-        if(_fwdSira.length){
-          const gonderilen=_fwdSiraToplam-_fwdSira.length+1;
-          showToast('İletiliyor… ('+gonderilen+'/'+_fwdSiraToplam+')');
-          gonderSiradakiForward();
-        } else {
-          // son mesaj da bitti
-          gonderSiradakiForward(); // bitis toast'ini basar
-          _fwdSiraToplam=0;
-        }
-      } else {
-        // TEK mesaj iletildi (eski davranis): tek toast
-        showToast(d.ok?('✓ '+d.count+' sohbete iletildi'):'İletilemedi');
+      // HIZLI SIRALI İLETME: bu dosyanın sonucunu işle, sonrakine geç (yeni sistem).
+      if(typeof _fwdAktifMid!=='undefined' && _fwdAktifMid){
+        forwardSonuc(!!d.ok, _fwdAktifMid);
+      } else if(_fwdSiraToplam<=1){
+        // TEK mesaj iletildi
+        showToast(d.ok?('✓ '+(d.count||1)+' sohbete iletildi'):'İletilemedi');
       }
     }
     else if(d.type==='syncStatus'){ handleSyncStatus(d); }
@@ -8797,42 +8823,72 @@ document.getElementById('fwdCancel').onclick=()=>document.getElementById('forwar
 document.getElementById('forwardModal').addEventListener('click',e=>{ if(e.target.id==='forwardModal') document.getElementById('forwardModal').classList.remove('show'); });
 document.getElementById('fwdGo').onclick=()=>{
   if(!fwdSelected.size){ showToast('En az bir sohbet seç'); return; }
-  // SIRALI ILETME: mesajlari AYNI ANDA gondermek (ozellikle 2 PDF/medya) WhatsApp'ta
-  // cakismaya yol aciyordu -> biri sessizce dusuyordu ("bazen gitmiyor"). Cozum: her
-  // mesaji SIRAYLA gonder; biri bitince (forwardResult gelince) sonrakine gec. Boylece
-  // iki PDF de saglam gider. Tek mesajda davranis aynidir (aninda gider).
   const hedefler=[...fwdSelected];
-  const sira=[...fwdMsgIds];          // gonderilecek mesajlar (sirayla)
+  const sira=[...fwdMsgIds];          // gönderilecek mesajlar (PDF'ler)
   const n=hedefler.length;
   document.getElementById('forwardModal').classList.remove('show');
   clearSelection();
-  _fwdSiraToplam=sira.length;
-  _fwdSiraKalan=sira.length;
-  if(sira.length>1) showToast('İletiliyor… (1/'+sira.length+')');
-  // sirayi baslat: ilk mesaji gonder, gerisi forwardResult geldikce gidecek
-  _fwdSira=sira;
+  // HIZLI + GÜVENİLİR SIRALI İLETME:
+  // - Mesajlar art arda HIZLI gönderilir (WhatsApp gibi), her biri için forwardResult beklenir
+  //   ama uzun beklemeden — cevap gelince HEMEN sonraki gider (ortalama <1sn/dosya).
+  // - Canlı sayaç: her dosya gidince "3/30" güncellenir.
+  // - Başarısız olan dosyalar SONA eklenir, en fazla 2 kez tekrar denenir (düşmesin).
+  _fwdSira=[...sira];
   _fwdSiraHedefler=hedefler;
   _fwdSiraN=n;
+  _fwdSiraToplam=sira.length;
+  _fwdSiraGonderilen=0;
+  _fwdSiraBasarisiz=0;
+  _fwdDeneme={};                       // mesaj id -> kaç kez denendi
+  if(sira.length>1) topluSayacGoster(0, sira.length, 0);
   gonderSiradakiForward();
 };
-// Sirali iletme durumu (ayni anda tek mesaj gonderilir, cakisma olmaz)
-let _fwdSira=[], _fwdSiraHedefler=[], _fwdSiraN=0, _fwdSiraToplam=0, _fwdSiraKalan=0;
-let _fwdSonGonderim=0;
+// Hızlı sıralı iletme durumu
+let _fwdSira=[], _fwdSiraHedefler=[], _fwdSiraN=0, _fwdSiraToplam=0, _fwdSiraGonderilen=0, _fwdSiraBasarisiz=0;
+let _fwdSonGonderim=0, _fwdDeneme={}, _fwdAktifMid=null;
 function gonderSiradakiForward(){
   if(!_fwdSira.length){
     // hepsi bitti
-    if(_fwdSiraToplam>1) showToast('✓ '+_fwdSiraN+' sohbete iletildi ('+_fwdSiraToplam+' mesaj)');
-    else showToast('✓ '+_fwdSiraN+' sohbete iletildi');
+    if(_fwdSiraToplam>1){
+      topluSayacGoster(_fwdSiraGonderilen, _fwdSiraToplam, _fwdSiraBasarisiz);
+      if(_fwdSiraBasarisiz>0) showToast('⚠️ '+_fwdSiraGonderilen+'/'+_fwdSiraToplam+' iletildi, '+_fwdSiraBasarisiz+' başarısız');
+      else showToast('✓ '+_fwdSiraN+' sohbete '+_fwdSiraToplam+' dosya iletildi');
+    } else showToast('✓ '+_fwdSiraN+' sohbete iletildi');
+    _fwdAktifMid=null;
     return;
   }
   const mid=_fwdSira.shift();
+  _fwdAktifMid=mid;
   _fwdSonGonderim=Date.now();
+  _fwdDeneme[mid]=(_fwdDeneme[mid]||0)+1;
   ws.send(JSON.stringify({type:'forward', fromJid:fwdFromJid, msgId:mid, targets:[..._fwdSiraHedefler], agent:benimAdim()}));
-  // GUVENLIK: forwardResult bir sebeple gelmezse (baglanti) sira takilmasin —
-  // 90sn icinde cevap gelmezse otomatik sonrakine gec.
+  // GÜVENLİK: cevap 20sn gelmezse (takıldı) -> başarısız say + sonrakine geç (hızlı devam).
+  const buMid=mid;
   setTimeout(()=>{
-    if(_fwdSira.length && (Date.now()-_fwdSonGonderim)>=89000) gonderSiradakiForward();
-  }, 90000);
+    if(_fwdAktifMid===buMid && (Date.now()-_fwdSonGonderim)>=19500){
+      // cevap gelmedi: tekrar dene (max 2) veya başarısız say
+      forwardSonuc(false, buMid);
+    }
+  }, 20000);
+}
+// forwardResult VEYA timeout geldiğinde çağrılır: sonucu işle, sonrakine geç
+function forwardSonuc(basarili, mid){
+  if(_fwdAktifMid!==mid) return; // eski/tekrar cevap -> yok say
+  _fwdAktifMid=null;
+  if(basarili){
+    _fwdSiraGonderilen++;
+  } else {
+    // başarısız: 2 denemeden az ise SONA ekle (tekrar denensin), değilse başarısız say
+    if((_fwdDeneme[mid]||0) < 2){
+      _fwdSira.push(mid); // sona ekle, tekrar denenecek
+    } else {
+      _fwdSiraBasarisiz++;
+    }
+  }
+  // sayacı güncelle (canlı: 3/30)
+  if(_fwdSiraToplam>1) topluSayacGoster(_fwdSiraGonderilen, _fwdSiraToplam, _fwdSiraBasarisiz);
+  // HIZLI: kısa bekleme sonrası sonrakine geç (150ms — WhatsApp gibi akıcı ama boğmadan)
+  setTimeout(gonderSiradakiForward, 150);
 }
 
 // ---- Rail filtreleri (sol kenar) ----
@@ -9665,22 +9721,47 @@ async function doSendFiles(){
   // Yaniti basta sabitle + ilk dosyaya uygula, sonra yanit kutusunu temizle.
   const yanitId = (replyTarget && replyTarget.id) ? replyTarget.id : null;
   clearReply(); // yanit kutusunu kapat (dosya gonderildikten sonra durmamali)
-  for(let i=0;i<files.length;i++){
-    const file=files[i];
-    // aciklama sadece ilk dosyaya eklensin (WhatsApp da boyle yapar)
+  // CANLI SAYAÇ: birden fazla dosya varsa "3/30 gönderildi" göster
+  const toplam=files.length;
+  let gonderilen=0, basarisiz=0;
+  if(toplam>1) topluSayacGoster(0, toplam, 0);
+  // her dosyayı sırayla gönder (await -> boğulmaz), başarısızı 1 kez daha dene
+  const gonder=async(file, i, ikinciDeneme)=>{
     const q=new URLSearchParams({jid:hedefJid, name:file.name, mime:file.type||'application/octet-stream', agent:benimAdim()});
     if(authToken) q.set('token', authToken);
     if(caption && i===0) q.set('caption', caption);
-    if(yanitId && i===0) q.set('replyId', yanitId); // yanit SADECE ilk dosyaya
-    const boyutMB=(file.size/1048576).toFixed(1);
-    showToast('📎 '+file.name+(hedefAd?(' → '+hedefAd):'')+' gönderiliyor… ('+boyutMB+' MB)');
+    if(yanitId && i===0) q.set('replyId', yanitId);
     try{
       const r=await fetch('/upload?'+q.toString(), {method:'POST', headers:{'Content-Type':'application/octet-stream'}, body:file});
       let j;
       try{ j=await r.json(); }catch(e){ j={ok:false, error:'sunucu yanıtı okunamadı'}; }
-      if(!r.ok || !j.ok){ showToast('⚠️ '+file.name+' gönderilemedi: '+(j.error||('hata '+r.status))); }
-      else { showToast('✓ '+file.name+(hedefAd?(' → '+hedefAd):'')+' gönderildi'); }
-    }catch(err){ showToast('⚠️ Yükleme hatası: '+err.message); }
+      if(!r.ok || !j.ok){
+        if(!ikinciDeneme){ await new Promise(res=>setTimeout(res,300)); return gonder(file, i, true); } // 1 kez daha dene
+        return false;
+      }
+      return true;
+    }catch(err){
+      if(!ikinciDeneme){ await new Promise(res=>setTimeout(res,300)); return gonder(file, i, true); }
+      return false;
+    }
+  };
+  for(let i=0;i<files.length;i++){
+    const file=files[i];
+    const boyutMB=(file.size/1048576).toFixed(1);
+    if(toplam===1) showToast('📎 '+file.name+(hedefAd?(' → '+hedefAd):'')+' gönderiliyor… ('+boyutMB+' MB)');
+    const ok=await gonder(file, i, false);
+    if(ok){ gonderilen++; } else { basarisiz++; }
+    // canlı sayaç güncelle
+    if(toplam>1) topluSayacGoster(gonderilen, toplam, basarisiz);
+    else if(ok) showToast('✓ '+file.name+(hedefAd?(' → '+hedefAd):'')+' gönderildi');
+    else showToast('⚠️ '+file.name+' gönderilemedi');
+    // HIZLI ama boğmadan: dosyalar arası kısa nefes (150ms)
+    if(i<files.length-1) await new Promise(res=>setTimeout(res,150));
+  }
+  // özet
+  if(toplam>1){
+    if(basarisiz>0) showToast('⚠️ '+gonderilen+'/'+toplam+' gönderildi, '+basarisiz+' başarısız');
+    else showToast('✓ '+toplam+' dosya gönderildi'+(hedefAd?(' → '+hedefAd):''));
   }
 }
 document.getElementById('sendFileCancel').onclick=()=>{ _pendingFiles=[]; document.getElementById('sendFileModal').classList.remove('show'); };

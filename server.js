@@ -2054,6 +2054,8 @@ wss.on('connection', (ws) => {
       else if (msg.type === 'delete' && SOCK && CONNECTED) {
         const chat = C.get(msg.jid);
         const orig = chat?.messages.find(x => x.id === msg.id);
+        // TEŞHİS: silme neden başarısız? mesaj bulundu mu, key var mı, fromMe mi?
+        console.log(`🗑️  SİLME isteği: id=${(msg.id||'').slice(0,16)} | mesaj bulundu=${!!orig} | key var=${!!orig?.key} | fromMe=${orig?.fromMe} | kind=${orig?.kind} | metin uzunluğu=${(orig?.text||'').length}`);
         if (orig?.key) {
           // Normal durum: WhatsApp'tan sil (key var)
           try {
