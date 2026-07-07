@@ -7702,6 +7702,15 @@ function tikHtml(durum){
   return '<span class="tik bekliyor" title="Gönderiliyor">🕐</span>';
 }
 function renderMessages(c, searchQ){
+  // KORUMA: Bir mesaj menüsü açıkken (kullanıcı Sil/İlet/Seç'e basmak üzereyken) listeyi
+  // yeniden çizersek menü+butonlar yok olur -> ilk tıklama boşa gider. Bu yüzden menü açıksa
+  // çizimi ERTELE (menü kapanınca yapılır). searchQ ile arama çizimi hariç (o kullanıcı isteği).
+  if(!searchQ && document.querySelector('.msg-actions.open')){
+    _rmChat=c;
+    clearTimeout(_rmTimer);
+    _rmTimer=setTimeout(()=>{ if(_rmChat && !document.querySelector('.msg-actions.open')) renderMessages(_rmChat); }, 400);
+    return;
+  }
   const box=document.getElementById('messages');
   // Sohbet YENI acildiysa (jid degistiyse) her zaman en alta in — WhatsApp gibi.
   const sohbetDegisti = (box._sonJid !== (c && c.jid));
@@ -8001,9 +8010,10 @@ function renderMessages(c, searchQ){
       }
       // tetikleyici ▾ + gizli menu
       // ÖNEMLİ: menünün kendisine tıklama (butonlar dahil) global "dış tıklama kapatıcısına"
-      // ULAŞMASIN diye onclick'te stopPropagation. Yoksa aynı tıklama hem butonu çalıştırıp
-      // hem menüyü kapatmaya çalışıyor -> yarış oluşup buton bazen hiç çalışmıyordu (Sil bug'ı).
-      actions='<div class="msg-menu-wrap"><button class="msg-menu-btn" onclick="toggleMsgMenu(event)" aria-label="Menü"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button><div class="msg-actions" onclick="event.stopPropagation()">'+btns+'</div></div>';
+      // ULAŞMASIN diye onclick'te stopPropagation. AYRICA herhangi bir butona basılınca menüyü
+      // KAPAT (setTimeout ile buton işlemi çalıştıktan sonra) -> render ertelemesi takılmaz,
+      // menü açık kalmaz. Bu ikisi "ilk denemede çalışmıyor" bug'ının kökünü çözer.
+      actions='<div class="msg-menu-wrap"><button class="msg-menu-btn" onclick="toggleMsgMenu(event)" aria-label="Menü"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button><div class="msg-actions" onclick="event.stopPropagation();var _mn=this;setTimeout(function(){_mn.classList.remove(\'open\');_mn.classList.remove(\'yukari\');},0)">'+btns+'</div></div>';
     }
     const selCls = selectedMsgs.has(m.id) ? ' selected' : '';
     const menCls = m.mentionsMe ? ' mentions-me' : '';
@@ -8078,7 +8088,19 @@ function renderMessagesDebounced(c){
   _rmChat=c;
   clearTimeout(_rmTimer);
   // Sure DUSURULDU (60->20ms): acik sohbette mesaj daha anlik gorunsun.
-  _rmTimer=setTimeout(()=>{ if(_rmChat) renderMessages(_rmChat); }, 20);
+  _rmTimer=setTimeout(()=>{
+    if(!_rmChat) return;
+    // KRİTİK: Bir mesaj menüsü AÇIKSA listeyi yeniden çizme! Çizersek menü+butonlar
+    // DOM'dan silinir, kullanıcının bastığı buton yok olur -> "ilk denemede çalışmıyor"
+    // bug'ının kökü buydu. Menü açıkken erteले, kapanınca çiz. (Seçim modu hariç — orada
+    // zaten çizim gerekli ama menü tekil açık değil.)
+    if(document.querySelector('.msg-actions.open')){
+      // menü açık -> 400ms sonra tekrar dene (menü kapanınca çizilecek)
+      _rmTimer=setTimeout(()=>{ if(_rmChat && !document.querySelector('.msg-actions.open')) renderMessages(_rmChat); }, 400);
+      return;
+    }
+    renderMessages(_rmChat);
+  }, 20);
 }
 const selectedMsgs=new Set();
 // ── SONSUZ SCROLL: en yukarı yaklaşınca daha eski mesajları getir ──
