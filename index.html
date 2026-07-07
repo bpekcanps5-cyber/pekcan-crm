@@ -6454,11 +6454,20 @@ function startWhatsApp(){
 // ---- Onay modali (genel) ----
 let _confirmAction=null;
 function askConfirm(title, text, okLabel, onOk){
-  document.getElementById('cfTitle').textContent=title;
-  document.getElementById('cfText').textContent=text;
-  document.getElementById('cfOk').textContent=okLabel||'Evet';
-  _confirmAction=onOk;
-  document.getElementById('confirmModal').classList.add('show');
+  // Onay penceresi açılmadan önce: açık mesaj menülerini kapat (temiz başlangıç).
+  try{ document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); }); }catch(_){}
+  try{
+    document.getElementById('cfTitle').textContent=title;
+    document.getElementById('cfText').textContent=text;
+    document.getElementById('cfOk').textContent=okLabel||'Evet';
+    _confirmAction=onOk;
+    document.getElementById('confirmModal').classList.add('show');
+  }catch(e){
+    // Modal bir sebeple açılamazsa (beklenmedik hata): sessizce kilitlemek yerine
+    // doğrudan işlemi sor (fallback) — kullanıcı işlemsiz kalmasın.
+    console.error('askConfirm hatası:',e);
+    if(onOk && confirm((title||'Onay')+'\n\n'+(text||'Emin misin?'))){ try{ onOk(); }catch(_){} }
+  }
 }
 document.getElementById('cfCancel').onclick=()=>document.getElementById('confirmModal').classList.remove('show');
 document.getElementById('cfOk').onclick=()=>{
@@ -7991,7 +8000,10 @@ function renderMessages(c, searchQ){
         btns+='<button onclick="isaretleToggle(\''+m.id+'\')">'+(isaretliMi?okSvg():tikSvg())+'<span>'+(isaretliMi?'İşareti kaldır':'İşaretle (✓)')+'</span></button>';
       }
       // tetikleyici ▾ + gizli menu
-      actions='<div class="msg-menu-wrap"><button class="msg-menu-btn" onclick="toggleMsgMenu(event)" aria-label="Menü"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button><div class="msg-actions">'+btns+'</div></div>';
+      // ÖNEMLİ: menünün kendisine tıklama (butonlar dahil) global "dış tıklama kapatıcısına"
+      // ULAŞMASIN diye onclick'te stopPropagation. Yoksa aynı tıklama hem butonu çalıştırıp
+      // hem menüyü kapatmaya çalışıyor -> yarış oluşup buton bazen hiç çalışmıyordu (Sil bug'ı).
+      actions='<div class="msg-menu-wrap"><button class="msg-menu-btn" onclick="toggleMsgMenu(event)" aria-label="Menü"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button><div class="msg-actions" onclick="event.stopPropagation()">'+btns+'</div></div>';
     }
     const selCls = selectedMsgs.has(m.id) ? ' selected' : '';
     const menCls = m.mentionsMe ? ' mentions-me' : '';
@@ -8503,6 +8515,26 @@ function toggleMsgMenu(ev){
 }
 // baska yere tiklayinca menuyu kapat
 document.addEventListener('click',()=>{ document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); }); });
+
+// ═══ MODAL KİLİTLENME GÜVENLİĞİ ═══ (ekran asla kilitli kalmasın)
+// Bir modal (onay penceresi, ilet, ödeme vb.) bir sebeple açık kalırsa görünmez katman
+// tüm ekranı kilitler, hiçbir tuşa basılamaz. Bunu ÖNLE: modal ARKAPLANINA tıklama VEYA
+// ESC tuşu, açık olan modal-bg'leri KAPATIR. Böylece kilitlenme imkansız.
+document.addEventListener('click',(e)=>{
+  // doğrudan modal arkaplanına (içteki .modal'a değil) tıklandıysa kapat
+  if(e.target.classList && e.target.classList.contains('modal-bg') && e.target.classList.contains('show')){
+    e.target.classList.remove('show');
+    if(e.target.id==='confirmModal') _confirmAction=null; // bekleyen onay iptal
+  }
+});
+document.addEventListener('keydown',(e)=>{
+  if(e.key==='Escape'){
+    let kapandi=false;
+    document.querySelectorAll('.modal-bg.show').forEach(m=>{ m.classList.remove('show'); kapandi=true; });
+    document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); });
+    if(kapandi) _confirmAction=null;
+  }
+});
 
 function startReply(id){
   const c=chats[activeJid]; if(!c)return;
