@@ -371,16 +371,14 @@
   .chat-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px;border:2px solid var(--panel)}
   .chat-list::-webkit-scrollbar-thumb:hover{background:var(--faint)}
   /* Ana sekme gecisi: Sohbetler | Ic Mesajlar | Kontrol — YENİ NESİL */
-  .main-tabs{display:flex;gap:5px;padding:8px 10px;background:var(--panel-2);border-bottom:1px solid var(--border);position:relative}
-  .main-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 8px;background:transparent;border:none;border-radius:11px;cursor:pointer;color:var(--muted);font-size:13.5px;font-weight:650;letter-spacing:-.2px;transition:color .18s cubic-bezier(.4,0,.2,1),background .18s cubic-bezier(.4,0,.2,1),transform .12s ease;position:relative;overflow:hidden}
+  .main-tabs{display:flex;gap:4px;padding:6px;margin:8px 10px 0;background:var(--panel-2);border:1px solid var(--border);border-radius:14px;position:relative}
+  .main-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 8px;background:transparent;border:none;border-radius:10px;cursor:pointer;color:var(--muted);font-size:13.5px;font-weight:650;letter-spacing:-.2px;transition:color .18s cubic-bezier(.4,0,.2,1),background .18s cubic-bezier(.4,0,.2,1),transform .12s ease;position:relative;overflow:hidden}
   .main-tab svg{width:19px;height:19px;transition:transform .22s cubic-bezier(.34,1.56,.64,1);flex-shrink:0}
-  .main-tab:hover:not(.active){color:var(--text);background:rgba(0,0,0,.04)}
+  .main-tab:hover:not(.active){color:var(--text);background:rgba(0,0,0,.05)}
   .main-tab:hover:not(.active) svg{transform:scale(1.12)}
   .main-tab:active{transform:scale(.96)}
-  .main-tab.active{color:#fff;background:linear-gradient(135deg,var(--brand),color-mix(in srgb,var(--brand) 78%,#000));font-weight:700}
+  .main-tab.active{color:#fff;background:linear-gradient(135deg,var(--brand),color-mix(in srgb,var(--brand) 80%,#000));font-weight:700}
   .main-tab.active svg{transform:scale(1.05)}
-  /* aktif sekmede parlak üst kenar vurgusu */
-  .main-tab.active::after{content:'';position:absolute;top:0;left:24%;right:24%;height:2px;background:rgba(255,255,255,.5);border-radius:0 0 3px 3px}
   /* badge (okunmamış sayısı) sekme üstünde */
   .main-tab .tab-badge{position:static;min-width:18px;height:18px;padding:0 5px;background:#ef4444;color:#fff;font-size:10.5px;font-weight:800;border-radius:9px;display:inline-flex;align-items:center;justify-content:center}
   .main-tab.active .tab-badge{background:rgba(255,255,255,.28)}
@@ -3977,31 +3975,56 @@ function perfDetayAc(i){
 }
 
 // POLİÇE SAYISI DÜZELTME (yönetici): bir grubun poliçe sayısını elle düzelt (117 -> 110)
-async function policeSayiDuzelt(kisiIdx, grupIdx){
+function policeSayiDuzelt(kisiIdx, grupIdx){
   const k=_perfListe[kisiIdx]; if(!k||!k.gruplar||!k.gruplar[grupIdx]) return;
   const g=k.gruplar[grupIdx];
   if(!g.polIdler||!g.polIdler.length){ showToast('Poliçe bulunamadı'); return; }
   const mevcut=g.police;
-  const cevap=prompt(
-    '“'+k.ad+'” · “'+g.ad+'” grubu\n\n'+
-    'Şu an: '+mevcut+' poliçe\n\n'+
-    'Yeni sayıyı yaz (sadece azaltılabilir, örn. '+Math.max(0,mevcut-1)+'):',
-    String(mevcut));
-  if(cevap===null) return; // vazgeçti
-  const hedef=parseInt(cevap.trim(),10);
+  // özel modal göster (tarayıcı prompt'u yerine)
+  const eski=document.getElementById('polDuzeltModal'); if(eski) eski.remove();
+  const m=document.createElement('div');
+  m.id='polDuzeltModal';
+  m.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(5,10,18,.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;animation:pdFade .2s ease';
+  m.innerHTML=''+
+    '<div style="background:linear-gradient(150deg,#0e1622,#152030);border:1px solid rgba(34,211,238,.3);border-radius:20px;padding:24px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5)">'+
+      '<div style="font-size:17px;font-weight:800;color:#fff;margin-bottom:6px">Poliçe sayısını düzelt</div>'+
+      '<div style="font-size:13px;color:#94a8bd;line-height:1.5;margin-bottom:4px">'+esc(k.ad)+' · '+esc(g.ad)+'</div>'+
+      '<div style="font-size:13px;color:#94a8bd;margin-bottom:16px">Şu an: <b style="color:#22d3ee">'+mevcut+' poliçe</b></div>'+
+      '<label style="font-size:12px;color:#94a8bd;font-weight:600;display:block;margin-bottom:7px">Yeni sayı (sadece azaltılabilir)</label>'+
+      '<input id="polDuzeltInput" type="number" min="0" max="'+mevcut+'" value="'+mevcut+'" '+
+        'style="width:100%;padding:12px 14px;border-radius:11px;border:1px solid rgba(34,211,238,.3);background:rgba(0,0,0,.3);color:#fff;font-size:18px;font-weight:800;text-align:center;outline:none;box-sizing:border-box;-moz-appearance:textfield" '+
+        'onfocus="this.style.borderColor=\'#22d3ee\';this.select()">'+
+      '<div style="display:flex;gap:10px;margin-top:20px">'+
+        '<button onclick="document.getElementById(\'polDuzeltModal\').remove()" '+
+          'style="flex:1;padding:12px;border-radius:11px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#94a8bd;font-size:14px;font-weight:650;cursor:pointer">Vazgeç</button>'+
+        '<button onclick="polDuzeltOnayla('+kisiIdx+','+grupIdx+')" '+
+          'style="flex:1;padding:12px;border-radius:11px;border:none;background:linear-gradient(135deg,#22d3ee,#0891b2);color:#04222b;font-size:14px;font-weight:800;cursor:pointer">Düzelt</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(m);
+  if(!document.getElementById('pdFadeStil')){
+    const st=document.createElement('style'); st.id='pdFadeStil';
+    st.textContent='@keyframes pdFade{from{opacity:0}to{opacity:1}}#polDuzeltInput::-webkit-outer-spin-button,#polDuzeltInput::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}';
+    document.head.appendChild(st);
+  }
+  setTimeout(()=>{ const inp=document.getElementById('polDuzeltInput'); if(inp){ inp.focus(); inp.select(); } }, 100);
+}
+// Poliçe düzeltmeyi onayla (özel modaldan)
+async function polDuzeltOnayla(kisiIdx, grupIdx){
+  const k=_perfListe[kisiIdx]; if(!k||!k.gruplar||!k.gruplar[grupIdx]) return;
+  const g=k.gruplar[grupIdx];
+  const mevcut=g.police;
+  const inp=document.getElementById('polDuzeltInput');
+  const hedef=inp?parseInt(inp.value,10):NaN;
   if(isNaN(hedef)||hedef<0){ showToast('Geçersiz sayı'); return; }
-  if(hedef===mevcut){ showToast('Sayı aynı, değişiklik yok'); return; }
-  if(hedef>mevcut){ showToast('⚠️ Sayı sadece azaltılabilir ('+mevcut+'\u2019dan küçük yaz)'); return; }
-  const onay=await askConfirm(
-    'Poliçe sayısı '+mevcut+' → '+hedef+' olarak düzeltilecek.\n\n'+
-    (mevcut-hedef)+' poliçe kaydı silinecek. Genel toplam da güncellenecek.\n\nEmin misin?',
-    'Düzelt ('+mevcut+' → '+hedef+')','Vazgeç');
-  if(!onay) return;
+  if(hedef===mevcut){ showToast('Sayı aynı, değişiklik yok'); const md=document.getElementById('polDuzeltModal'); if(md) md.remove(); return; }
+  if(hedef>mevcut){ showToast('⚠️ Sadece azaltılabilir'); return; }
+  const md=document.getElementById('polDuzeltModal'); if(md) md.remove();
   try{
     const r=await fetch('/api/police/duzelt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, idler:g.polIdler, hedef:hedef})});
     const d=await r.json();
     if(d.ok){
-      showToast('✓ Sayı düzeltildi: '+mevcut+' → '+(d.yeniSayi??hedef)+', rapor güncelleniyor…');
+      showToast('✓ Sayı düzeltildi: '+mevcut+' → '+(d.yeniSayi??hedef));
       performansYukle(); // raporu tazele (grup + genel toplam)
     } else showToast('⚠️ '+(d.error||'Düzeltilemedi'));
   }catch(e){ showToast('⚠️ Bağlantı hatası'); }
