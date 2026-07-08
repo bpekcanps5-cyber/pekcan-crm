@@ -10575,7 +10575,7 @@ function handleNewChatResult(d){
       <div class="stan-skor-kutu"><div class="sk-buyuk" id="sliSira">1</div><div class="sk-etiket">Sıra</div></div>
     </div>
     <canvas id="sliCanvas" width="380" height="420"></canvas>
-    <div class="stan-bilgi" id="sliDurum"><b>Fare / parmak</b> ile yönlendir · yem topla, botları geç</div>
+    <div class="stan-bilgi" id="sliDurum"><b>Fare / parmak</b> ile yönlendir · <b>basılı tut</b> = hızlan · yem topla, botları geç</div>
     <button class="stan-geri" onclick="stanMenuyeDon()">‹ Menü</button>
   </div>
 </div>
@@ -10597,19 +10597,19 @@ function gizliTikSay(){
 }
 const STAN_REKOR='sys_diag_hs'; // rekor tarayıcıda kalabilir (önemsiz)
 async function stanAc(){
-  console.log('🎮 stanAc çağrıldı, authToken:', authToken?'var':'YOK');
   const m=document.getElementById('stanModal');
-  if(!m){ console.log('❌ stanModal bulunamadı!'); return; }
-  document.getElementById('stanKur').style.display='none';
-  document.getElementById('stanGiris').style.display='none';
-  document.getElementById('stanOyun').style.display='none';
+  if(!m){ return; }
+  // TÜM iç ekranları gizle (menü + oyunlar + eski açık kalmış olanlar), döngüleri durdur
+  ['stanKur','stanGiris','stanMenu','stanOyun','flapOyun','sliOyun'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
+  if(typeof stanOyunDurdur==='function') stanOyunDurdur();
+  if(typeof flapDurdur==='function') flapDurdur();
+  if(typeof sliDurdur==='function') sliDurdur();
   m.style.display='flex';
   // Sunucudan sor: şifre kurulmuş mu? (yetki kontrolü de burada)
   try{
     const r=await fetch('/api/gizli/durum',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
     const d=await r.json();
-    console.log('🎮 gizli/durum yanıt:', JSON.stringify(d));
-    if(!d.ok||!d.yetki){ console.log('❌ yetki yok, kapatılıyor'); m.style.display='none'; return; }
+    if(!d.ok||!d.yetki){ m.style.display='none'; return; }
     if(!d.kuruldu){
       document.getElementById('stanKur').style.display='block';
       setTimeout(()=>document.getElementById('stanKurInput').focus(),100);
@@ -10619,7 +10619,7 @@ async function stanAc(){
       document.getElementById('stanGirisHata').textContent='';
       setTimeout(()=>document.getElementById('stanGirisInput').focus(),100);
     }
-  }catch(e){ console.log('❌ stanAc hatası:', e.message); m.style.display='none'; }
+  }catch(e){ m.style.display='none'; }
 }
 function stanKapat(){
   document.getElementById('stanModal').style.display='none';
@@ -10905,7 +10905,7 @@ document.getElementById('stanCanvas').addEventListener('touchend',(e)=>{
 // ═══════════════════ FLAPPY (Kanat) — klasik ═══════════════════
 let _flapCtx=null, _flapLoop=null, _flapDurum='dur';
 let _flapKus, _flapBorular, _flapSkor=0, _flapRekor=0, _flapZaman=0;
-const FLAP_G=0.45, FLAP_CIRP=-7.2, FLAP_BORU_ARA=170, FLAP_BORU_GEN=58, FLAP_HIZ=2.4;
+const FLAP_G=0.32, FLAP_CIRP=-6.2, FLAP_BORU_ARA=185, FLAP_BORU_GEN=58, FLAP_HIZ=1.7;
 const FLAP_W=380, FLAP_H=480;
 function flapBaslat(){
   _flapCtx=document.getElementById('flapCanvas').getContext('2d');
@@ -10944,8 +10944,8 @@ function flapDongu(){
     // kuş fiziği
     _flapKus.vy+=FLAP_G; _flapKus.y+=_flapKus.vy;
     _flapKus.aci=Math.max(-.5,Math.min(1.2,_flapKus.vy*.08));
-    // boru üret
-    if(_flapZaman%95===0 || _flapBorular.length===0 && _flapZaman>20){
+    // boru üret (yavaş hıza göre daha seyrek — rahat geçiş)
+    if(_flapZaman%130===0 || (_flapBorular.length===0 && _flapZaman>30)){
       const bosluk=90+Math.random()*(FLAP_H-FLAP_BORU_ARA-180);
       _flapBorular.push({x:FLAP_W, ust:bosluk, gecti:false});
     }
@@ -11024,6 +11024,7 @@ document.getElementById('flapCanvas').addEventListener('pointerdown',(e)=>{ e.pr
 let _sliCtx=null, _sliLoop=null, _sliDurum='dur';
 let _sliBen, _sliBotlar, _sliYemler, _sliRekor=0, _sliFare={x:210,y:210};
 const SLI_W=380, SLI_H=420, SLI_DUNYA=900; // dünya kamera ile kayar
+let _sliSprint=false; // hızlanma (fare basılı / boşluk) — orijinal slither gibi
 let _sliKamera={x:0,y:0};
 function sliBaslat(){
   _sliCtx=document.getElementById('sliCanvas').getContext('2d');
@@ -11034,13 +11035,13 @@ function sliBaslat(){
 function sliDurdur(){ if(_sliLoop){ cancelAnimationFrame(_sliLoop); _sliLoop=null; } }
 function sliRastgeleRenk(){ const r=['#ef4444','#f59e0b','#a855f7','#ec4899','#14b8a6','#f97316']; return r[Math.floor(Math.random()*r.length)]; }
 function sliYeni(){
-  _sliBen={ x:SLI_DUNYA/2, y:SLI_DUNYA/2, aci:0, hiz:2, kuyruk:[], boy:12, renk:'#4ade80', ben:true, oldu:false };
+  _sliBen={ x:SLI_DUNYA/2, y:SLI_DUNYA/2, aci:0, hiz:1.35, kuyruk:[], boy:14, renk:'#4ade80', ben:true, oldu:false };
   for(let i=0;i<12;i++) _sliBen.kuyruk.push({x:_sliBen.x-i*6, y:_sliBen.y});
   // botlar
   _sliBotlar=[];
   for(let i=0;i<5;i++){
     const bx=Math.random()*SLI_DUNYA, by=Math.random()*SLI_DUNYA;
-    const bot={ x:bx, y:by, aci:Math.random()*7, hiz:1.7+Math.random()*.6, kuyruk:[], boy:8+Math.floor(Math.random()*20), renk:sliRastgeleRenk(), hedefZaman:0, oldu:false };
+    const bot={ x:bx, y:by, aci:Math.random()*7, hiz:1.15+Math.random()*.35, kuyruk:[], boy:8+Math.floor(Math.random()*20), renk:sliRastgeleRenk(), hedefZaman:0, oldu:false };
     for(let j=0;j<bot.boy;j++) bot.kuyruk.push({x:bx-j*6,y:by});
     _sliBotlar.push(bot);
   }
@@ -11081,13 +11082,23 @@ function sliDongu(){
     // BEN: fareye doğru yönel
     const dünyaFareX=_sliBen.x+(_sliFare.x-SLI_W/2), dünyaFareY=_sliBen.y+(_sliFare.y-SLI_H/2);
     const benHedef=Math.atan2(dünyaFareY-_sliBen.y, dünyaFareX-_sliBen.x);
+    // SPRINT: hızlanma açıksa ve boy yeterliyse hızlan + yavaşça uzunluk azalt (yem bırak)
+    const sprintAktif = _sliSprint && _sliBen.boy>14;
+    _sliBen.hiz = sprintAktif ? 2.5 : 1.35;
+    if(sprintAktif){
+      // her ~8 frame'de 1 boy kaybı + arkaya yem bırak
+      if(!_sliBen._sprintTik) _sliBen._sprintTik=0;
+      _sliBen._sprintTik++;
+      if(_sliBen._sprintTik>=8){ _sliBen._sprintTik=0; _sliBen.boy=Math.max(14,_sliBen.boy-1); document.getElementById('sliSkor').textContent=_sliBen.boy;
+        const son=_sliBen.kuyruk[_sliBen.kuyruk.length-1]; if(son) sliYemEkle(son.x,son.y,_sliBen.renk); }
+    }
     sliYilanHareket(_sliBen, benHedef);
     // kamera ben'i takip
     _sliKamera.x=_sliBen.x-SLI_W/2; _sliKamera.y=_sliBen.y-SLI_H/2;
     // yem yeme (ben)
     for(let i=_sliYemler.length-1;i>=0;i--){
       const ye=_sliYemler[i];
-      if((_sliBen.x-ye.x)**2+(_sliBen.y-ye.y)**2 < 130){ _sliBen.boy+=1; _sliYemler.splice(i,1); sliYemEkle(); document.getElementById('sliSkor').textContent=_sliBen.boy; }
+      if((_sliBen.x-ye.x)**2+(_sliBen.y-ye.y)**2 < 130){ _sliBen.boy+=3; _sliYemler.splice(i,1); sliYemEkle(); document.getElementById('sliSkor').textContent=_sliBen.boy; }
     }
     // BOTLAR: yem/gezinme AI
     _sliBotlar.forEach(bot=>{
@@ -11127,7 +11138,7 @@ function sliDongu(){
       const bx=Math.random()*SLI_DUNYA, by=Math.random()*SLI_DUNYA;
       // ben'e çok yakın doğmasın
       if((bx-_sliBen.x)**2+(by-_sliBen.y)**2<40000) continue;
-      const bot={ x:bx,y:by,aci:Math.random()*7,hiz:1.7+Math.random()*.6,kuyruk:[],boy:8+Math.floor(Math.random()*15),renk:sliRastgeleRenk(),hedefZaman:0,oldu:false };
+      const bot={ x:bx,y:by,aci:Math.random()*7,hiz:1.15+Math.random()*.35,kuyruk:[],boy:8+Math.floor(Math.random()*15),renk:sliRastgeleRenk(),hedefZaman:0,oldu:false };
       for(let j=0;j<bot.boy;j++) bot.kuyruk.push({x:bx-j*6,y:by});
       _sliBotlar.push(bot);
     }
@@ -11206,10 +11217,16 @@ document.getElementById('sliCanvas').addEventListener('pointerdown',(e)=>{
   const rect=e.target.getBoundingClientRect();
   _sliFare.x=(e.clientX-rect.left)*(SLI_W/rect.width);
   _sliFare.y=(e.clientY-rect.top)*(SLI_H/rect.height);
+  _sliSprint=true; // basılı tutma = hızlan
 });
+document.getElementById('sliCanvas').addEventListener('pointerup',()=>{ _sliSprint=false; });
+document.getElementById('sliCanvas').addEventListener('pointerleave',()=>{ _sliSprint=false; });
 document.addEventListener('keydown',(e)=>{
   if(document.getElementById('sliOyun').style.display==='none') return;
-  if(e.key===' '&&_sliDurum==='bitti'){ sliYeni(); e.preventDefault(); }
+  if(e.key===' '){ if(_sliDurum==='bitti'){ sliYeni(); } else { _sliSprint=true; } e.preventDefault(); }
+});
+document.addEventListener('keyup',(e)=>{
+  if(e.key===' ') _sliSprint=false;
 });
 </script>
 </body>
