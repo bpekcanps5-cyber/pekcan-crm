@@ -40,6 +40,11 @@ async function test() {
     aktif = true;
     if (oncedenKapaliydi) {
       console.log(`✅ Supabase baglantisi BASARILI (sunucu saati: ${r.rows[0].zaman.toISOString()})`);
+      // OTOMATİK MİGRASYON: foto işaretleme kolonu yoksa ekle (kullanıcı SQL çalıştırmasa bile
+      // işaretler kalıcı olsun). IF NOT EXISTS -> zaten varsa hiçbir şey yapmaz, zarar vermez.
+      pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS isaretli BOOLEAN DEFAULT false')
+        .then(() => console.log('   ✓ messages.isaretli kolonu hazır (foto işaretleme kalıcı)'))
+        .catch((e) => console.log('   ⚠️ isaretli kolonu eklenemedi:', e.message));
     }
     return true;
   } catch (e) {
@@ -1093,10 +1098,18 @@ async function updateUserRole(username, role) {
 
 // FOTO/MEDYA İŞARET ("yapıldı" tiki) — messages tablosunda isaretli sütununa yaz.
 // Sütun yoksa sessizce geç (eski şema). Migration: ALTER TABLE messages ADD COLUMN isaretli boolean DEFAULT false;
-async function setMesajIsaret(msgId, isaretli) {
+async function setMesajIsaret(msgId, isaretli, chatJid, lineId) {
   if (!aktif) return;
   try {
-    await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2', [!!isaretli, msgId]);
+    // ÖNEMLİ: messages tablosu (line_id, chat_jid, id) kompozit anahtarlı. Sadece id ile
+    // UPDATE yanlış/eksik satır bulabilir. chatJid+lineId verilirse tam eşleşme yaparız.
+    if (chatJid && lineId) {
+      await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2 AND chat_jid=$3 AND line_id=$4', [!!isaretli, msgId, chatJid, lineId]);
+    } else if (chatJid) {
+      await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2 AND chat_jid=$3', [!!isaretli, msgId, chatJid]);
+    } else {
+      await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2', [!!isaretli, msgId]);
+    }
   } catch (e) { /* sütun yoksa veya hata: yoksay */ }
 }
 

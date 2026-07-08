@@ -2804,7 +2804,7 @@ wss.on('connection', (ws) => {
               // mesajı DB'ye yaz (upsert — zaten varsa günceller, yoksa ekler)
               await db.saveMessage(cjid, hedefMsg, ws._lineId || 'ofis').catch(() => {});
             }
-            await db.setMesajIsaret(msgId, isaretli).catch(() => {});
+            await db.setMesajIsaret(msgId, isaretli, cjid, ws._lineId || 'ofis').catch(() => {});
           } catch (_) {}
         })();
         // tüm ofis panellerine yay (ortak) — SINIR YOK, istenildiği kadar işaretlenebilir

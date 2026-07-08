@@ -9456,10 +9456,22 @@ function lbGaleriTopla(tiklananUrl){
   const fotoAlbumIci=[]; // her foto için albüm içi sıra (1'den)
   for(let i=0;i<fotolar.length;i++){
     const f=fotolar[i];
-    // yeni albüm mü? (ilk foto, ya da farklı gönderen/fromMe, ya da 90sn+ ara)
-    const yeniAlbum = (oncekiTs===null) ||
-      (f.fromMe!==oncekiFromMe) || (f.sender!==oncekiSender) ||
-      (Math.abs(f.ts-oncekiTs) > 90000);
+    // GEÇERLİ ts mi? (0, null veya çok küçük değer = güvenilmez -> albüm ayrımı yapma).
+    // ÖNEMLİ: DB'den yüklenen bazı fotoların ts'i 0 gelebiliyor; o zaman zaman kontrolü
+    // yanlış çalışıp TÜM fotoları tek albüm sayıyordu (dün+bugün karışması buydu).
+    const tsGecerli = f.ts && f.ts > 1000000000000; // makul bir milisaniye timestamp (2001 sonrası)
+    const oncekiTsGecerli = oncekiTs && oncekiTs > 1000000000000;
+    // yeni albüm mü? Kurallar:
+    //  - ilk foto -> yeni albüm
+    //  - farklı gönderen / fromMe -> yeni albüm
+    //  - ts'lerden BİRİ geçersizse -> AYRI say (güvenli: yanlış birleştirme yapma)
+    //  - ikisi de geçerli ama 30sn+ ara -> yeni albüm (gerçek albüm saniyeler içinde atılır)
+    let yeniAlbum;
+    if(oncekiTs===null){ yeniAlbum=true; }
+    else if(f.fromMe!==oncekiFromMe || f.sender!==oncekiSender){ yeniAlbum=true; }
+    else if(!tsGecerli || !oncekiTsGecerli){ yeniAlbum=true; } // ts güvenilmez -> ayrı albüm
+    else if(Math.abs(f.ts-oncekiTs) > 30000){ yeniAlbum=true; } // 30sn+ ara -> yeni albüm (90->30 sıkılaştırıldı)
+    else { yeniAlbum=false; }
     if(yeniAlbum){ albumNo++; albumIci=0; }
     albumIci++;
     fotoAlbum.push(albumNo);
