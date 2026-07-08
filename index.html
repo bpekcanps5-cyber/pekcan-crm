@@ -3103,6 +3103,7 @@ function guncelleBagliPill(){
 }
 
 let ws;
+let _bootId=null; // sunucu başlangıç kimliği (otomatik yenileme için — ilk bağlantıda saklanır)
 function connect(){
   // Sayfa HTTPS ise wss:// (guvenli), HTTP ise ws:// kullan — Cloudflare/internet uyumu icin sart
   const wsProto = location.protocol === 'https:' ? 'wss://' : 'ws://';
@@ -3112,6 +3113,21 @@ function connect(){
     try{ d=JSON.parse(ev.data); }catch(e){ return; } // bozuk mesaj akışı düşürmesin
     // pong: sunucu hayatta, bağlantı canlı -> zombi sayacını sıfırla
     if(d.type==='pong'){ _sonPong=Date.now(); return; }
+    if(d.type==='bootId'){
+      // OTOMATİK YENİLEME: sunucunun başlangıç kimliği geldi.
+      // İlk kez alıyorsak sakla. Daha önce farklı bir kimlik gördüysek -> sunucu yeniden
+      // başlamış (güncelleme geldi) -> sayfayı otomatik yenile ki herkes yeni sürümü görsün.
+      if(_bootId===null){
+        _bootId=d.bootId; // ilk bağlantı, sadece sakla (yenileme YOK)
+      } else if(_bootId!==d.bootId){
+        // sunucu yeniden başladı -> güncelleme var -> yenile
+        console.log('🔄 Sunucu güncellendi, panel yenileniyor…');
+        showToast('🔄 Güncelleme geldi, sayfa yenileniyor…');
+        // kısa gecikme: kullanıcı toast'ı görsün, sonra yenile (cache'siz)
+        setTimeout(()=>{ location.reload(true); }, 1500);
+      }
+      return;
+    }
     if(d.type==='status'){
       setConnected(d.connected);
       if(d.myJid){ myJid=d.myJid; myName=d.myName||'Ben'; updateMyName(); }

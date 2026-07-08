@@ -19,6 +19,16 @@ const { WebSocketServer } = require('ws');
 const db = require('./db'); // Supabase (PostgreSQL) veri katmani
 
 // ============================================================
+// SUNUCU BAŞLANGIÇ KİMLİĞİ (boot id) — OTOMATİK PANEL YENİLEME
+// Sunucu HER başladığında benzersiz bir kimlik üretir. Panel bağlanınca bu kimliği alır.
+// Sunucu yeniden başlayıp (güncelleme sonrası pm2 restart) panel tekrar bağlanınca, yeni
+// kimlik eskisinden FARKLIYSA -> güncelleme geldi demektir -> panel kendini otomatik yeniler.
+// Bir kişinin F5 atması bu kimliği DEĞİŞTİRMEZ (aynı sunucu) -> kimse boş yere yenilenmez.
+// ============================================================
+const BOOT_ID = 'boot_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+
+
+// ============================================================
 // LOG GURULTU FILTRESI
 // Baileys/libsignal bazen "Bad MAC", "Failed to decrypt", "Session error",
 // "Closing session/open session" gibi SIFRELEME hatalarini dogrudan console'a basar.
@@ -1572,6 +1582,9 @@ function broadcastHat(lineId, obj) {
 
 wss.on('connection', (ws) => {
   ws._lineId = 'ofis'; // varsayilan; panel 'merhaba' mesajiyla kendi hattini bildirecek
+  // OTOMATİK YENİLEME: bağlanır bağlanmaz sunucunun başlangıç kimliğini gönder.
+  // Panel bunu saklar; sunucu yeniden başlayıp kimlik değişince panel kendini yeniler.
+  try { ws.send(JSON.stringify({ type: 'bootId', bootId: BOOT_ID })); } catch (e) {}
   // Ilk status'u GONDERME — panel 'merhaba' der demez, KENDI hattinin dogru
   // durumunu (bagli/QR) gonderecegiz. Boylece pazarlamaci ofisin durumunu gormez.
   // (Asagidaki 'merhaba' handler'i dogru status + chats gonderir.)
