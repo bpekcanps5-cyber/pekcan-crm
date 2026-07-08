@@ -1098,19 +1098,36 @@ async function updateUserRole(username, role) {
 
 // FOTO/MEDYA İŞARET ("yapıldı" tiki) — messages tablosunda isaretli sütununa yaz.
 // Sütun yoksa sessizce geç (eski şema). Migration: ALTER TABLE messages ADD COLUMN isaretli boolean DEFAULT false;
-async function setMesajIsaret(msgId, isaretli, chatJid, lineId) {
+async function setMesajIsaret(msgId, isaretli, chatJid, lineId, mesajObj) {
   if (!aktif) return;
   try {
-    // ÖNEMLİ: messages tablosu (line_id, chat_jid, id) kompozit anahtarlı. Sadece id ile
-    // UPDATE yanlış/eksik satır bulabilir. chatJid+lineId verilirse tam eşleşme yaparız.
+    let r;
     if (chatJid && lineId) {
-      await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2 AND chat_jid=$3 AND line_id=$4', [!!isaretli, msgId, chatJid, lineId]);
+      r = await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2 AND chat_jid=$3 AND line_id=$4', [!!isaretli, msgId, chatJid, lineId]);
     } else if (chatJid) {
-      await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2 AND chat_jid=$3', [!!isaretli, msgId, chatJid]);
+      r = await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2 AND chat_jid=$3', [!!isaretli, msgId, chatJid]);
     } else {
-      await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2', [!!isaretli, msgId]);
+      r = await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2', [!!isaretli, msgId]);
     }
-  } catch (e) { /* sütun yoksa veya hata: yoksay */ }
+    // UPDATE hiçbir satır bulamadıysa (mesaj DB'de YOK) -> mesajı isaretli ile DOĞRUDAN ekle.
+    // Böylece foto DB'ye hiç yazılmamış olsa bile işaret KESİN kalıcı olur.
+    if (r.rowCount === 0 && chatJid && lineId) {
+      const m = mesajObj || {};
+      await pool.query(
+        `INSERT INTO messages (line_id, id, chat_jid, from_me, kind, text, media_url, thumb, sender, time, ts, isaretli, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+         ON CONFLICT (line_id, chat_jid, id) DO UPDATE SET isaretli=EXCLUDED.isaretli`,
+        [lineId, msgId, chatJid, !!m.fromMe, m.kind || 'image', m.text || '', m.mediaUrl || null,
+         m.thumb || null, m.sender || '', m.time || '', m.ts || 0, !!isaretli]
+      ).catch((e) => console.log(`   ❌ isaret INSERT hatası: ${e.message}`));
+      console.log(`   🏷️ setMesajIsaret: mesaj DB'de yoktu -> isaretli=${isaretli} ile eklendi (id=${(msgId||'').slice(0,14)})`);
+      return 1;
+    }
+    console.log(`   🏷️ setMesajIsaret: id=${(msgId||'').slice(0,14)} isaretli=${isaretli} -> ${r.rowCount} satır`);
+    return r.rowCount;
+  } catch (e) {
+    console.log(`   ❌ setMesajIsaret HATASI: ${e.message}`);
+  }
 }
 
 // ============================================================
