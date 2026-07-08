@@ -2206,7 +2206,7 @@
   <div class="settings-head">Ayarlar<div class="sh-sub" id="settingsName">—</div></div>
   <div class="set-item" onclick="toggleSound()">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
-    Bildirim sesi <span class="set-toggle on" id="soundToggle"></span>
+    Bildirim sesi <span class="set-toggle" id="soundToggle"></span>
   </div>
   <div class="set-item" id="takipToggleItem" onclick="toggleTakipUyari()" style="display:none">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
@@ -3064,7 +3064,10 @@ const archived=new Set();  // arsivlenen jid'ler
 
 // ---- Bildirim sesi (Web Audio ile, dosya gerektirmez) ----
 let audioCtx=null;
-let soundOn=true; // bildirim sesi acik mi
+let soundOn=false; // bildirim sesi HER ZAMAN kapalı başlar (F5 atınca da kapalı). İsteyen o oturumda açar.
+// NOT: localStorage'a KAYDETMİYORUZ -> her sayfa yenilemesinde kapalıdan başlar (istenen davranış).
+// Eski sürümden kalan kayıt varsa temizle (yoksa açık gelmeye devam ederdi).
+try{ localStorage.removeItem('bildirimSesi'); }catch(e){}
 function playPing(){
   if(!soundOn) return;
   try{
