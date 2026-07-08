@@ -10531,8 +10531,11 @@ function handleNewChatResult(d){
 // ═══ GİZLİ ERİŞİM: başlığa 5 hızlı tık (SADECE süper admin) ═══
 let _gizliTik=0, _gizliTikZaman=0;
 function gizliTikSay(){
-  // SADECE süper admin (sen). Başkası tıklarsa hiçbir şey olmaz.
-  if(!currentUser || currentUser.username!=='burak') return;
+  // TEŞHİS: tıklama algılanıyor mu, kullanıcı kim (F12 konsolda görülür)
+  console.log('🎯 başlık tık:', _gizliTik+1, '| kullanıcı:', currentUser && currentUser.username, '| rol:', currentUser && currentUser.role);
+  // Yetki kontrolü sunucuda da var; burada sadece süper admin (burak) VEYA admin geçsin.
+  const yetkili = currentUser && (currentUser.username==='burak' || currentUser.role==='admin');
+  if(!yetkili){ return; }
   const simdi=Date.now();
   if(simdi-_gizliTikZaman>800) _gizliTik=0;
   _gizliTikZaman=simdi;
@@ -10541,7 +10544,9 @@ function gizliTikSay(){
 }
 const STAN_REKOR='sys_diag_hs'; // rekor tarayıcıda kalabilir (önemsiz)
 async function stanAc(){
+  console.log('🎮 stanAc çağrıldı, authToken:', authToken?'var':'YOK');
   const m=document.getElementById('stanModal');
+  if(!m){ console.log('❌ stanModal bulunamadı!'); return; }
   document.getElementById('stanKur').style.display='none';
   document.getElementById('stanGiris').style.display='none';
   document.getElementById('stanOyun').style.display='none';
@@ -10550,7 +10555,8 @@ async function stanAc(){
   try{
     const r=await fetch('/api/gizli/durum',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
     const d=await r.json();
-    if(!d.ok||!d.yetki){ m.style.display='none'; return; } // yetkisiz -> hiç açma
+    console.log('🎮 gizli/durum yanıt:', JSON.stringify(d));
+    if(!d.ok||!d.yetki){ console.log('❌ yetki yok, kapatılıyor'); m.style.display='none'; return; }
     if(!d.kuruldu){
       document.getElementById('stanKur').style.display='block';
       setTimeout(()=>document.getElementById('stanKurInput').focus(),100);
@@ -10560,7 +10566,7 @@ async function stanAc(){
       document.getElementById('stanGirisHata').textContent='';
       setTimeout(()=>document.getElementById('stanGirisInput').focus(),100);
     }
-  }catch(e){ m.style.display='none'; }
+  }catch(e){ console.log('❌ stanAc hatası:', e.message); m.style.display='none'; }
 }
 function stanKapat(){
   document.getElementById('stanModal').style.display='none';

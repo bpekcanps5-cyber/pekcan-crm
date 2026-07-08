@@ -296,10 +296,10 @@ function isAdmin(token) {
   const s = token && sessions.get(token);
   return s && s.role === 'admin';
 }
-// GİZLİ BÖLÜM: sadece süper admin (burak) erişebilir
+// GİZLİ BÖLÜM: süper admin (burak) VEYA admin erişebilir
 function isSuperAdmin(token) {
   const s = token && sessions.get(token);
-  return s && s.username === 'burak';
+  return s && (s.username === 'burak' || s.role === 'admin');
 }
 // Gizli bölüm şifresi ayar anahtarı (settings tablosunda saklanır — herkesin tarayıcısında DEĞİL)
 const GIZLI_SIFRE_KEY = 'gizli_bolum_sifre';
