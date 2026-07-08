@@ -1377,6 +1377,12 @@ app.post('/upload', express.raw({ type: '*/*', limit: '64mb' }), async (req, res
       } catch (e) { /* poliçe kaydı başarısız olsa bile yükleme tamamlandı */ }
     }
 
+    // STABİLİZASYON: art arda dosya yüklemede WhatsApp'ın mesajı işlemesi için kısa bekleme.
+    // Panel bir sonraki dosyayı bu yanıt gelince gönderir; bu bekleme WhatsApp'ın boğulup
+    // dosya DÜŞÜRMESİNİ önler (toplu PDF gönderiminde kayıp kökü).
+    if (kind === 'document' || kind === 'image' || kind === 'video') {
+      await new Promise(r => setTimeout(r, 500));
+    }
     res.json({ ok: true });
   } catch (e) {
     console.error('Yukleme hatasi:', e.message);
@@ -1962,10 +1968,13 @@ wss.on('connection', (ws) => {
           // O durumda mesaji ALINTISIZ gonder ki YANIT METNI yine de gitsin (kaybolmasin).
           if (quotedOpt) {
             try {
+              console.log(`   ↩️  YANIT gönderiliyor (alıntılı) -> ${(msg.jid||'').split('@')[0]}`);
               sent = await Promise.race([SOCK.sendMessage(msg.jid, content, quotedOpt), timeoutP()]);
+              console.log(`   ✓ YANIT gönderildi, key=${sent?.key?.id ? sent.key.id.slice(0,12) : 'YOK'}`);
             } catch (alintiHatasi) {
               console.error('   ↳ alintili gonderim basarisiz, alintisiz deneniyor:', alintiHatasi.message);
               sent = await Promise.race([SOCK.sendMessage(msg.jid, content), timeoutP()]);
+              console.log(`   ✓ YANIT alıntısız gönderildi, key=${sent?.key?.id ? sent.key.id.slice(0,12) : 'YOK'}`);
               replyTo = null; // alinti gitmedi, panelde de alinti gosterme
             }
           } else {
@@ -2431,6 +2440,11 @@ wss.on('connection', (ws) => {
             }
             // GONDERIM ONAYI: sent.key yoksa WhatsApp kabul etmemis -> basarisiz say
             if (!sent || !sent.key) throw new Error('WhatsApp iletimi onaylamadi');
+            // STABİLİZASYON: medya (PDF/foto) gönderiminden sonra WhatsApp'ın mesajı işlemesi
+            // için kısa bekleme. Art arda çok hızlı upload -> WhatsApp boğulup mesaj DÜŞÜRÜYOR
+            // (yaşanan "60 PDF'ten bazıları gitmiyor" sorununun kökü). Bu bekleme rate-limit'i önler.
+            const medyaGonderildi = ['image', 'video', 'audio', 'document', 'sticker'].includes(orig.kind) && orig.mediaUrl;
+            if (medyaGonderildi) { await new Promise(r => setTimeout(r, 600)); }
             // panelde de gosterelim (belgede metin yerine dosya adi gosterilsin)
             addMessage(tjid, {
               id: sent.key.id, key: sent.key,
@@ -2776,13 +2790,24 @@ wss.on('connection', (ws) => {
         // bellekteki mesaja işaretle
         const chat = (ws._lineId === 'ofis' || !ws._lineId) ? CC.get(cjid) : null;
         const hedefChat = chat || CC.get(cjid);
+        let hedefMsg = null;
         if (hedefChat && hedefChat.messages) {
-          const m = hedefChat.messages.find(x => x.id === msgId);
-          if (m) m.isaretli = isaretli;
+          hedefMsg = hedefChat.messages.find(x => x.id === msgId);
+          if (hedefMsg) hedefMsg.isaretli = isaretli;
         }
-        // DB'ye yaz (kalıcı olsun)
-        db.setMesajIsaret(msgId, isaretli).catch(() => {});
-        // tüm ofis panellerine yay (ortak)
+        // DB'ye yaz (kalıcı olsun). ÖNEMLİ: mesaj DB'de kayıtlı DEĞİLSE (sadece bellekte),
+        // UPDATE hiçbir satır bulamaz ve işaret KAYDEDİLMEZ (kalıcı olmaz). Bu yüzden önce
+        // mesajı DB'ye KAYDET (varsa dokunmaz), sonra işaretle. Böylece işaret HER ZAMAN kalıcı.
+        (async () => {
+          try {
+            if (hedefMsg && db.isReady()) {
+              // mesajı DB'ye yaz (upsert — zaten varsa günceller, yoksa ekler)
+              await db.saveMessage(cjid, hedefMsg, ws._lineId || 'ofis').catch(() => {});
+            }
+            await db.setMesajIsaret(msgId, isaretli).catch(() => {});
+          } catch (_) {}
+        })();
+        // tüm ofis panellerine yay (ortak) — SINIR YOK, istenildiği kadar işaretlenebilir
         broadcastHat(ws._lineId || 'ofis', { type: 'mesajIsaretleGuncelle', jid: cjid, msgId, isaretli });
       }
 

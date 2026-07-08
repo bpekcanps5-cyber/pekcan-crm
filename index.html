@@ -1456,6 +1456,10 @@
   .ts-hata{color:#dc2626;font-weight:600;font-size:10.5px}
   .ts-bar{height:5px;background:var(--panel-2);border-radius:3px;overflow:hidden}
   .ts-bar-ic{height:100%;background:linear-gradient(90deg,var(--brand),#22c55e);border-radius:3px;transition:width .3s ease}
+  .ts-basarisiz-liste{margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:#dc2626;max-height:140px;overflow-y:auto;line-height:1.5}
+  .ts-basarisiz-liste b{color:#dc2626}
+  .ts-tekrar-btn{margin-top:8px;width:100%;padding:8px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer}
+  .ts-tekrar-btn:hover{background:#b91c1c}
   .iub-kapat{background:rgba(255,255,255,.2);border:none;color:#fff;width:26px;height:26px;border-radius:8px;cursor:pointer;font-size:14px;flex-shrink:0}
   .iub-kapat:hover{background:rgba(255,255,255,.35)}
   /* ── TAKİP UYARI KARTLARI (sağ altta, yöneticiye) ── */
@@ -2811,7 +2815,7 @@ function showToast(msg){
 // ═══ TOPLU GÖNDERİM SAYACI ═══ (kaç PDF/dosya gitti canlı takip)
 // Toplu iletme/sürükleme sırasında her dosya gidince "3/30 gönderildi" diye günceller.
 // Ekranda KALICI durur (işlem bitince 10sn sonra kaybolur). Başarısız olanları da gösterir.
-function topluSayacGoster(gonderilen, toplam, basarisiz){
+function topluSayacGoster(gonderilen, toplam, basarisiz, basarisizAdlar){
   let kutu=document.getElementById('topluSayac');
   if(!kutu){
     kutu=document.createElement('div');
@@ -2821,20 +2825,50 @@ function topluSayacGoster(gonderilen, toplam, basarisiz){
   }
   const bitti=(gonderilen+(basarisiz||0))>=toplam;
   const yuzde=Math.round((gonderilen/toplam)*100);
-  kutu.innerHTML=
+  let html=
     '<div class="ts-baslik">'+(bitti?'✓ Gönderim tamamlandı':'📤 Gönderiliyor…')+'</div>'+
     '<div class="ts-sayi"><span class="ts-buyuk">'+gonderilen+'</span> / '+toplam+' gönderildi'+(basarisiz?' <span class="ts-hata">('+basarisiz+' başarısız)</span>':'')+'</div>'+
     '<div class="ts-bar"><div class="ts-bar-ic" style="width:'+yuzde+'%"></div></div>';
+  // BAŞARISIZ DOSYALARIN ADI (bitince göster — hangileri gitmedi) + TEKRAR DENE butonu
+  if(bitti && basarisizAdlar && basarisizAdlar.length){
+    html+='<div class="ts-basarisiz-liste"><b>Gitmeyenler ('+basarisizAdlar.length+'):</b><br>'+
+      basarisizAdlar.slice(0,10).map(a=>'• '+esc((a||'').slice(0,30))).join('<br>')+
+      (basarisizAdlar.length>10?'<br>+'+(basarisizAdlar.length-10)+' tane daha':'')+
+      '</div>'+
+      '<button class="ts-tekrar-btn" onclick="fwdBasarisizTekrarDene()">🔴 Gitmeyenleri Tekrar Gönder</button>';
+  }
+  kutu.innerHTML=html;
   kutu.classList.add('show');
-  // işlem bittiyse 10sn sonra gizle; devam ediyorsa açık kalsın
+  // işlem bittiyse gizle; başarısız varsa DAHA UZUN dursun (kullanıcı okusun)
   clearTimeout(window._topluSayacTimer);
   if(bitti){
-    window._topluSayacTimer=setTimeout(()=>{ if(kutu) kutu.classList.remove('show'); }, 5000);
+    const sure=(basarisizAdlar&&basarisizAdlar.length)?15000:5000; // başarısız varsa 15sn
+    window._topluSayacTimer=setTimeout(()=>{ if(kutu) kutu.classList.remove('show'); }, sure);
   }
 }
 function topluSayacGizle(){
   const kutu=document.getElementById('topluSayac');
   if(kutu) setTimeout(()=>kutu.classList.remove('show'), 5000);
+}
+// GİTMEYENLERİ TEKRAR GÖNDER: son toplu iletmede başarısız olan dosyaları aynı hedeflere yeniden ilet
+function fwdBasarisizTekrarDene(){
+  if(!_fwdBasarisizIdler || !_fwdBasarisizIdler.length){ showToast('Tekrar gönderilecek dosya yok'); return; }
+  if(!_fwdSiraHedefler || !_fwdSiraHedefler.length){ showToast('Hedef bulunamadı'); return; }
+  const tekrarSira=[..._fwdBasarisizIdler];
+  showToast('🔄 '+tekrarSira.length+' dosya tekrar gönderiliyor…');
+  // sırayı yeniden başlat (sadece başarısızlarla)
+  _fwdSira=tekrarSira;
+  _fwdSiraToplam=tekrarSira.length;
+  _fwdSiraGonderilen=0;
+  _fwdSiraBasarisiz=0;
+  _fwdDeneme={};                 // deneme sayacını sıfırla (tekrar 3 şans)
+  _fwdBasarisizAdlar=[];
+  _fwdBasarisizIdler=[];
+  // kırmızı işaretleri temizle (tekrar deneniyor)
+  const c=chats[fwdFromJid];
+  if(c&&c.messages) tekrarSira.forEach(id=>{ const m=c.messages.find(x=>x.id===id); if(m) m.iletilemedi=false; });
+  topluSayacGoster(0, _fwdSiraToplam, 0);
+  gonderSiradakiForward();
 }
 // İLETİM UYARISI: bir mesaj karşıya iletilemediğinde üstte KALICI kırmızı bant.
 // Kullanıcı görene kadar durur, tıklayınca o gruba gider, X ile kapatılır.
@@ -7894,7 +7928,9 @@ function renderMessages(c, searchQ){
       // alıntıya tıklayınca yanıtlanan mesaja git. id varsa id ile, yoksa metinle bul.
       const rid=(m.replyTo.id||'').replace(/'/g,"\\'");
       const rtext=(m.replyTo.text||'').replace(/'/g,"\\'").slice(0,60);
-      quote='<div class="reply-quote" onclick="jumpToMsg(\''+rid+'\',\''+rtext+'\')" style="cursor:pointer"><div class="rq-sender">'+esc(m.replyTo.sender||'')+'</div><div class="rq-text">'+esc(m.replyTo.text||'')+'</div></div>';
+      // yanıtlanan mesajın medyasını (varsa) taşı: albüm fotosu yanıtında id eşleşmese bile
+      // foto direkt açılabilsin. yanitAlintiTikla önce medyayı hazırlar sonra jumpToMsg çağırır.
+      quote='<div class="reply-quote" onclick="yanitAlintiTikla(\''+rid+'\',\''+rtext+'\')" style="cursor:pointer"><div class="rq-sender">'+esc(m.replyTo.sender||'')+'</div><div class="rq-text">'+esc(m.replyTo.text||'')+'</div></div>';
     }
     let body='';
     if(m.kind==='image'&&(m.mediaUrl||m.thumb)&&_albumBas[idx]){
@@ -8043,7 +8079,7 @@ function renderMessages(c, searchQ){
     }
     const selCls = selectedMsgs.has(m.id) ? ' selected' : '';
     const menCls = m.mentionsMe ? ' mentions-me' : '';
-    const failCls = (m.durum===-1 || m.gonderilemedi) ? ' gonderilemedi' : ''; // gitmeyen mesaj: kirmizi
+    const failCls = (m.durum===-1 || m.gonderilemedi || m.iletilemedi) ? ' gonderilemedi' : ''; // gitmeyen mesaj: kirmizi
     // TIK: sadece BIZIM gonderdigimiz (out) mesajlarda. durum: 2=gonderildi(tek tik),
     // 3=iletildi(cift tik gri), 4=okundu(cift tik mavi), -1=gonderilemedi(kirmizi).
     const tik = (cls.indexOf('out')>=0 && !m.deleted) ? tikHtml(m.durum) : '';
@@ -8466,6 +8502,15 @@ function handleMsgAppend(d){
     else if(Array.isArray(kime)){ if(u&&kime.includes(u)) c.hasMention=true; }
   }
   if(archived.has(jid) && jid!==activeJid) archived.delete(jid);
+  // BEKLENEN YANIT FOTOSU: jumpToMsg bir fotoyu bekliyorduysa ve şimdi geldiyse -> lightbox aç
+  if(_bekleyenJumpId && m && m.id===_bekleyenJumpId){
+    const beklenen=_bekleyenJumpId; _bekleyenJumpId=null;
+    if(m.kind==='image' && (m.mediaUrl||m.thumb)){
+      setTimeout(()=>openLightbox(m.mediaUrl||m.thumb), 200);
+    } else {
+      setTimeout(()=>jumpToMsg(beklenen,''), 200);
+    }
+  }
   if(m && !m.fromMe && jid!==activeJid) playPing();
   if(jid===activeJid){
     c.unread=0; c.hasMention=false;
@@ -8514,36 +8559,76 @@ function handleMsgUpdate(d){
 function jumpToMsg(id, text){
   const box=document.getElementById('messages');
   let t=null;
+  let hedefMesaj=null; // bulunan mesaj nesnesi (foto ise lightbox'ta açmak için)
+  const c=chats[activeJid];
   // 1) id ile ara (EN KESİN). Foto/belge yanıtında artık id geliyor -> doğru mesaja gider.
   if(id){
     t=box.querySelector('[data-mid="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]');
+    if(c&&c.messages) hedefMesaj=c.messages.find(x=>x.id===id)||null;
   }
-  // 2) id ile bulunamadıysa: alıntı METNİNE göre bul. AMA dikkat: "📷 Fotograf" / "📄 Belge"
-  //    gibi GENEL etiketler ayırt edici değil -> en son fotoya gitmesin diye bunları arama.
+  // 2) id ile bulunamadıysa: alıntı METNİNE göre bul (genel etiketler hariç)
   if(!t && text){
     const ara=text.trim().toLocaleLowerCase('tr');
-    // genel medya etiketi mi? (ayırt edici metin yok)
     const genelEtiket = /^(📷|📄|🎬|🎤|📎)?\s*(fotoğraf|fotograf|belge|video|sesli mesaj|ses)\s*$/i.test(ara);
     if(ara && ara.length>=2 && !genelEtiket){
-      const c=chats[activeJid];
       if(c && c.messages){
-        // GERÇEK metin (caption/yazı) eşleşen EN SON mesajı bul
         for(let i=c.messages.length-1;i>=0;i--){
           const mm=c.messages[i];
           const mt=(mm.text||mm.caption||'').toLocaleLowerCase('tr');
-          if(mt && mt.includes(ara)){ t=box.querySelector('[data-mid="'+(window.CSS&&CSS.escape?CSS.escape(mm.id):mm.id)+'"]'); if(t) break; }
+          if(mt && mt.includes(ara)){ t=box.querySelector('[data-mid="'+(window.CSS&&CSS.escape?CSS.escape(mm.id):mm.id)+'"]'); if(t){ hedefMesaj=mm; break; } }
         }
       }
     }
+  }
+  // YANITLANAN FOTOĞRAF/MEDYA ise: mesaj bulunduysa direkt LIGHTBOX'ta aç (albümde).
+  // Kullanıcı isteği: albümdeki fotoyı yanıtlayınca, yanıta basınca o foto albümde açılsın.
+  if(hedefMesaj && hedefMesaj.kind==='image' && (hedefMesaj.mediaUrl||hedefMesaj.thumb)){
+    openLightbox(hedefMesaj.mediaUrl||hedefMesaj.thumb);
+    return;
   }
   if(t){
     t.classList.add('search-current');
     t.scrollIntoView({block:'center',behavior:'smooth'});
     setTimeout(()=>t.classList.remove('search-current'),1500);
   } else {
-    // hedef mesaj su an yuklu degil (cok eski / henuz cekilmedi) -> yukarı kaydırmayı dene
-    showToast('Yanıtlanan mesaja gidilemedi — yukarı kaydırıp arayın (eski olabilir).');
+    // hedef mesaj DOM'da yok. Foto yanıtıysa: bellekteki mesajlarda ara, foto ise lightbox aç.
+    if(id && c && c.messages){
+      const m2=c.messages.find(x=>x.id===id);
+      if(m2 && m2.kind==='image' && (m2.mediaUrl||m2.thumb)){ openLightbox(m2.mediaUrl||m2.thumb); return; }
+    }
+    // YANITLANAN FOTONUN kendi önizlemesinde mediaUrl/thumb varsa (albüm fotosu olabilir),
+    // id eşleşmese bile DİREKT onu lightbox'ta aç. Kullanıcı: "yanıta basınca foto açılsın".
+    if(_sonYanitMedya && (_sonYanitMedya.mediaUrl||_sonYanitMedya.thumb)){
+      openLightbox(_sonYanitMedya.mediaUrl||_sonYanitMedya.thumb);
+      _sonYanitMedya=null;
+      return;
+    }
+    // gerçekten çok eski / yüklü değil -> sunucudan bu mesajı iste, GELİNCE otomatik aç.
+    if(id){
+      _bekleyenJumpId=id; // mesaj gelince jumpToMsg tekrar denenecek (handleMsgAppend'de)
+      showToast('Yanıtlanan fotoğraf getiriliyor…');
+      if(connected && activeJid) ws.send(JSON.stringify({type:'syncChat', jid:activeJid}));
+      // 3sn sonra hâlâ gelmezse bilgi ver
+      setTimeout(()=>{ if(_bekleyenJumpId===id){ _bekleyenJumpId=null; } }, 5000);
+    } else {
+      showToast('Yanıtlanan mesaj bulunamadı');
+    }
   }
+}
+let _bekleyenJumpId=null; // sunucudan beklenen (yanıtlanan) mesaj id'si -> gelince otomatik aç
+let _sonYanitMedya=null;  // yanıt alıntısına tıklanınca o alıntının medyası (varsa direkt açılır)
+// Yanıt alıntısına tıklandı: yanıtlanan mesajın medyasını (foto) hazırla, sonra o mesaja git.
+// Albümdeki fotoya yanıt gelince, id eşleşmese bile foto lightbox'ta açılabilsin diye.
+function yanitAlintiTikla(id, text){
+  _sonYanitMedya=null;
+  const c=chats[activeJid];
+  if(id && c && c.messages){
+    const m=c.messages.find(x=>x.id===id);
+    if(m && m.kind==='image' && (m.mediaUrl||m.thumb)){
+      _sonYanitMedya={mediaUrl:m.mediaUrl, thumb:m.thumb}; // jumpToMsg bunu kullanabilir
+    }
+  }
+  jumpToMsg(id, text);
 }
 
 // Mesaj aksiyon menusunu ac/kapat (WhatsApp gibi ▾ butonu)
@@ -8849,12 +8934,14 @@ document.getElementById('fwdGo').onclick=()=>{
   _fwdSiraGonderilen=0;
   _fwdSiraBasarisiz=0;
   _fwdDeneme={};                       // mesaj id -> kaç kez denendi
+  _fwdBasarisizAdlar=[];                // başarısız dosya adları (kullanıcı görsün)
+  _fwdBasarisizIdler=[];                // başarısız dosya id'leri (tekrar dene için)
   if(sira.length>1) topluSayacGoster(0, sira.length, 0);
   gonderSiradakiForward();
 };
 // Hızlı sıralı iletme durumu
 let _fwdSira=[], _fwdSiraHedefler=[], _fwdSiraN=0, _fwdSiraToplam=0, _fwdSiraGonderilen=0, _fwdSiraBasarisiz=0;
-let _fwdSonGonderim=0, _fwdDeneme={}, _fwdAktifMid=null;
+let _fwdSonGonderim=0, _fwdDeneme={}, _fwdAktifMid=null, _fwdBasarisizAdlar=[], _fwdBasarisizIdler=[];
 function gonderSiradakiForward(){
   if(!_fwdSira.length){
     // hepsi bitti
@@ -8892,17 +8979,28 @@ function forwardSonuc(basarili, mid){
   if(basarili){
     _fwdSiraGonderilen++;
   } else {
-    // başarısız: 2 denemeden az ise SONA ekle (tekrar denensin), değilse başarısız say
-    if((_fwdDeneme[mid]||0) < 2){
-      _fwdSira.push(mid); // sona ekle, tekrar denenecek
+    // başarısız: 3 denemeden az ise SONA ekle (tekrar denensin), değilse başarısız say
+    if((_fwdDeneme[mid]||0) < 3){
+      _fwdSira.push(mid); // sona ekle, tekrar denenecek (toplam 3 deneme)
     } else {
       _fwdSiraBasarisiz++;
+      // BAŞARISIZ DOSYANIN ADINI + ID'sini KAYDET (kullanıcı hangileri gitmedi görsün + tekrar denesin)
+      const c=chats[fwdFromJid];
+      const m=c&&c.messages?c.messages.find(x=>x.id===mid):null;
+      const ad=m?(m.fileName||m.text||(m.kind==='image'?'Fotoğraf':'Dosya')):'Dosya';
+      if(!_fwdBasarisizAdlar) _fwdBasarisizAdlar=[];
+      if(!_fwdBasarisizIdler) _fwdBasarisizIdler=[];
+      _fwdBasarisizAdlar.push(ad);
+      _fwdBasarisizIdler.push(mid);
+      // O MESAJI PANELDE KIRMIZI YAP (gitmese bile görünsün — en kötü senaryo)
+      if(m){ m.iletilemedi=true; }
     }
   }
-  // sayacı güncelle (canlı: 3/30)
-  if(_fwdSiraToplam>1) topluSayacGoster(_fwdSiraGonderilen, _fwdSiraToplam, _fwdSiraBasarisiz);
-  // HIZLI: kısa bekleme sonrası sonrakine geç (150ms — WhatsApp gibi akıcı ama boğmadan)
-  setTimeout(gonderSiradakiForward, 150);
+  // sayacı güncelle (canlı: 3/30 + başarısız adları)
+  if(_fwdSiraToplam>1) topluSayacGoster(_fwdSiraGonderilen, _fwdSiraToplam, _fwdSiraBasarisiz, _fwdBasarisizAdlar);
+  // HIZLI ama GÜVENİLİR: sonraki dosyaya geçmeden kısa bekleme. Server zaten medya sonrası
+  // 600ms stabilizasyon yapıyor; buradaki ek bekleme WhatsApp'ın boğulmasını iyice önler.
+  setTimeout(gonderSiradakiForward, 250);
 }
 
 // ---- Rail filtreleri (sol kenar) ----
@@ -9316,6 +9414,8 @@ function lbApply(){ lbImg.style.transform='translate('+lbX+'px,'+lbY+'px) scale(
 let _lbGaleri=[];   // {url} listesi (gezilecek fotoğraflar)
 let _lbMesajIdler=[]; // paralel: her fotonun mesaj id'si (yanıt için)
 let _lbTarihler=[]; // paralel: her fotonun tarih/saat metni (üstte gösterilir)
+let _lbAlbumSira=[]; // paralel: her fotonun albüm içi sırası (1,2,3...)
+let _lbAlbumToplam=[]; // paralel: her fotonun ait olduğu albümdeki toplam foto sayısı
 let _lbIndex=0;     // şu an gösterilen fotoğrafın indexi
 // Fotoğraf tarihi metni: "30 Haziran 2026 · 14:25" gibi
 function lbTarihMetni(ts){
@@ -9334,21 +9434,48 @@ function lbTarihMetni(ts){
   return gun+' · '+saat;
 }
 function lbGaleriTopla(tiklananUrl){
-  _lbGaleri=[]; _lbMesajIdler=[]; _lbTarihler=[];
+  _lbGaleri=[]; _lbMesajIdler=[]; _lbTarihler=[]; _lbAlbumSira=[]; _lbAlbumToplam=[];
   const c = activeJid ? chats[activeJid] : null;
-  if(!c || !c.messages){ _lbGaleri=[tiklananUrl]; _lbMesajIdler=['']; _lbTarihler=['']; return; }
+  if(!c || !c.messages){ _lbGaleri=[tiklananUrl]; _lbMesajIdler=['']; _lbTarihler=['']; _lbAlbumSira=[1]; _lbAlbumToplam=[1]; return; }
   const msgs=c.messages;
   const fotoMu=(x)=> x && x.kind==='image' && (x.mediaUrl||x.thumb) && !x.deleted;
-  // GRUPTAKİ TÜM FOTOĞRAFLARI topla (albümle sınırlı DEĞİL) -> geriye basınca
-  // önceki albümlere/günlere de geçilir. Sıra: en eski -> en yeni (mesaj sırası).
+  // GRUPTAKİ TÜM FOTOĞRAFLARI topla (geriye basınca önceki albümlere de geçilir).
+  // AYRICA her fotonun ALBÜM numarasını ve albüm içi sırasını hesapla ki sayaç albüm
+  // bazlı olsun (8'li albümde 1/8, 2/8... geri gidince önceki albümün sayısı).
+  // Albüm = arka arkaya gelen, AYNI gönderen, 90 saniye içinde atılmış fotoğraflar.
+  const fotolar=[]; // {url, id, ts, sender, fromMe}
   for(let i=0;i<msgs.length;i++){
     if(fotoMu(msgs[i])){
-      _lbGaleri.push(msgs[i].mediaUrl||msgs[i].thumb);
-      _lbMesajIdler.push(msgs[i].id||'');
-      _lbTarihler.push(lbTarihMetni(msgs[i].ts));
+      fotolar.push({url:msgs[i].mediaUrl||msgs[i].thumb, id:msgs[i].id||'', ts:msgs[i].ts||0, sender:msgs[i].sender||'', fromMe:!!msgs[i].fromMe});
     }
   }
-  if(!_lbGaleri.length){ _lbGaleri=[tiklananUrl]; _lbMesajIdler=['']; _lbTarihler=['']; }
+  // albümlere böl
+  let albumNo=0, albumIci=0, oncekiTs=null, oncekiSender=null, oncekiFromMe=null;
+  const albumBoyutlari={}; // albumNo -> kaç foto
+  const fotoAlbum=[]; // her foto için albumNo
+  const fotoAlbumIci=[]; // her foto için albüm içi sıra (1'den)
+  for(let i=0;i<fotolar.length;i++){
+    const f=fotolar[i];
+    // yeni albüm mü? (ilk foto, ya da farklı gönderen/fromMe, ya da 90sn+ ara)
+    const yeniAlbum = (oncekiTs===null) ||
+      (f.fromMe!==oncekiFromMe) || (f.sender!==oncekiSender) ||
+      (Math.abs(f.ts-oncekiTs) > 90000);
+    if(yeniAlbum){ albumNo++; albumIci=0; }
+    albumIci++;
+    fotoAlbum.push(albumNo);
+    fotoAlbumIci.push(albumIci);
+    albumBoyutlari[albumNo]=(albumBoyutlari[albumNo]||0)+1;
+    oncekiTs=f.ts; oncekiSender=f.sender; oncekiFromMe=f.fromMe;
+  }
+  // dizileri doldur
+  for(let i=0;i<fotolar.length;i++){
+    _lbGaleri.push(fotolar[i].url);
+    _lbMesajIdler.push(fotolar[i].id);
+    _lbTarihler.push(lbTarihMetni(fotolar[i].ts));
+    _lbAlbumSira.push(fotoAlbumIci[i]);                    // albüm içi sıra (1,2,3...)
+    _lbAlbumToplam.push(albumBoyutlari[fotoAlbum[i]]);     // bu albümdeki toplam foto
+  }
+  if(!_lbGaleri.length){ _lbGaleri=[tiklananUrl]; _lbMesajIdler=['']; _lbTarihler=['']; _lbAlbumSira=[1]; _lbAlbumToplam=[1]; }
 }
 function openLightbox(url){
   // tıklanan fotonun albümünü topla, index'ini bul
@@ -9370,7 +9497,11 @@ function lbGoster(){
   if(next) next.style.display=cokFoto?'grid':'none';
   if(sayac){
     sayac.style.display=cokFoto?'block':'none';
-    sayac.textContent=(_lbIndex+1)+' / '+_lbGaleri.length;
+    // ALBÜM BAZLI sayaç: bu albümde kaçıncı foto / albümdeki toplam (örn "3 / 8").
+    // Tüm galeri sayısı (58) yerine albüm içi sayı gösterilir; geri gidince önceki albümün.
+    const albSira=_lbAlbumSira[_lbIndex]||(_lbIndex+1);
+    const albToplam=_lbAlbumToplam[_lbIndex]||_lbGaleri.length;
+    sayac.textContent=albSira+' / '+albToplam;
   }
   // TARİH: fotoğrafın üstünde hangi güne ait olduğunu göster (karışmasın)
   const tarihEl=document.getElementById('lbTarih');
@@ -9768,7 +9899,8 @@ async function doSendFiles(){
   let gonderilen=0, basarisiz=0;
   if(toplam>1) topluSayacGoster(0, toplam, 0);
   // her dosyayı sırayla gönder (await -> boğulmaz), başarısızı 1 kez daha dene
-  const gonder=async(file, i, ikinciDeneme)=>{
+  const gonder=async(file, i, deneme)=>{
+    deneme=deneme||1;
     const q=new URLSearchParams({jid:hedefJid, name:file.name, mime:file.type||'application/octet-stream', agent:benimAdim()});
     if(authToken) q.set('token', authToken);
     if(caption && i===0) q.set('caption', caption);
@@ -9778,23 +9910,24 @@ async function doSendFiles(){
       let j;
       try{ j=await r.json(); }catch(e){ j={ok:false, error:'sunucu yanıtı okunamadı'}; }
       if(!r.ok || !j.ok){
-        if(!ikinciDeneme){ await new Promise(res=>setTimeout(res,300)); return gonder(file, i, true); } // 1 kez daha dene
+        if(deneme<3){ await new Promise(res=>setTimeout(res,300)); return gonder(file, i, deneme+1); } // 3 deneme
         return false;
       }
       return true;
     }catch(err){
-      if(!ikinciDeneme){ await new Promise(res=>setTimeout(res,300)); return gonder(file, i, true); }
+      if(deneme<3){ await new Promise(res=>setTimeout(res,300)); return gonder(file, i, deneme+1); }
       return false;
     }
   };
+  const _surukBasarisizAdlar=[];
   for(let i=0;i<files.length;i++){
     const file=files[i];
     const boyutMB=(file.size/1048576).toFixed(1);
     if(toplam===1) showToast('📎 '+file.name+(hedefAd?(' → '+hedefAd):'')+' gönderiliyor… ('+boyutMB+' MB)');
     const ok=await gonder(file, i, false);
-    if(ok){ gonderilen++; } else { basarisiz++; }
-    // canlı sayaç güncelle
-    if(toplam>1) topluSayacGoster(gonderilen, toplam, basarisiz);
+    if(ok){ gonderilen++; } else { basarisiz++; _surukBasarisizAdlar.push(file.name); }
+    // canlı sayaç güncelle (başarısız adlarıyla)
+    if(toplam>1) topluSayacGoster(gonderilen, toplam, basarisiz, _surukBasarisizAdlar);
     else if(ok) showToast('✓ '+file.name+(hedefAd?(' → '+hedefAd):'')+' gönderildi');
     else showToast('⚠️ '+file.name+' gönderilemedi');
     // HIZLI ama boğmadan: dosyalar arası kısa nefes (150ms)
