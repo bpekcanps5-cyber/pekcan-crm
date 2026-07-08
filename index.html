@@ -371,19 +371,19 @@
   .chat-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px;border:2px solid var(--panel)}
   .chat-list::-webkit-scrollbar-thumb:hover{background:var(--faint)}
   /* Ana sekme gecisi: Sohbetler | Ic Mesajlar | Kontrol — YENİ NESİL */
-  .main-tabs{display:flex;gap:6px;padding:10px 12px;background:var(--panel);border-bottom:1px solid var(--border);position:relative}
-  .main-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 8px;background:transparent;border:none;border-radius:12px;cursor:pointer;color:var(--muted);font-size:13.5px;font-weight:650;letter-spacing:-.2px;transition:color .18s cubic-bezier(.4,0,.2,1),background .18s cubic-bezier(.4,0,.2,1),transform .12s ease;position:relative;overflow:hidden}
+  .main-tabs{display:flex;gap:5px;padding:8px 10px;background:var(--panel-2);border-bottom:1px solid var(--border);position:relative}
+  .main-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 8px;background:transparent;border:none;border-radius:11px;cursor:pointer;color:var(--muted);font-size:13.5px;font-weight:650;letter-spacing:-.2px;transition:color .18s cubic-bezier(.4,0,.2,1),background .18s cubic-bezier(.4,0,.2,1),transform .12s ease;position:relative;overflow:hidden}
   .main-tab svg{width:19px;height:19px;transition:transform .22s cubic-bezier(.34,1.56,.64,1);flex-shrink:0}
-  .main-tab:hover:not(.active){color:var(--text);background:color-mix(in srgb,var(--brand) 7%,transparent)}
+  .main-tab:hover:not(.active){color:var(--text);background:rgba(0,0,0,.04)}
   .main-tab:hover:not(.active) svg{transform:scale(1.12)}
   .main-tab:active{transform:scale(.96)}
-  .main-tab.active{color:#fff;background:linear-gradient(135deg,var(--brand),color-mix(in srgb,var(--brand) 75%,#000));box-shadow:0 4px 14px color-mix(in srgb,var(--brand) 35%,transparent),inset 0 1px 0 rgba(255,255,255,.15);font-weight:700}
+  .main-tab.active{color:#fff;background:linear-gradient(135deg,var(--brand),color-mix(in srgb,var(--brand) 78%,#000));font-weight:700}
   .main-tab.active svg{transform:scale(1.05)}
   /* aktif sekmede parlak üst kenar vurgusu */
-  .main-tab.active::after{content:'';position:absolute;top:0;left:22%;right:22%;height:2px;background:rgba(255,255,255,.55);border-radius:0 0 3px 3px}
+  .main-tab.active::after{content:'';position:absolute;top:0;left:24%;right:24%;height:2px;background:rgba(255,255,255,.5);border-radius:0 0 3px 3px}
   /* badge (okunmamış sayısı) sekme üstünde */
-  .main-tab .tab-badge{position:static;min-width:18px;height:18px;padding:0 5px;background:#ef4444;color:#fff;font-size:10.5px;font-weight:800;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(239,68,68,.4)}
-  .main-tab.active .tab-badge{background:rgba(255,255,255,.28);box-shadow:none}
+  .main-tab .tab-badge{position:static;min-width:18px;height:18px;padding:0 5px;background:#ef4444;color:#fff;font-size:10.5px;font-weight:800;border-radius:9px;display:inline-flex;align-items:center;justify-content:center}
+  .main-tab.active .tab-badge{background:rgba(255,255,255,.28)}
   .tab-badge{position:absolute;top:4px;right:10px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;min-width:17px;height:17px;border-radius:9px;display:grid;place-items:center;padding:0 4px}
 
   /* ═══════════════════════════════════════════════════════════
@@ -3136,6 +3136,40 @@ function guncelleBagliPill(){
 
 let ws;
 let _bootId=null; // sunucu başlangıç kimliği (otomatik yenileme için — ilk bağlantıda saklanır)
+// GÜNCELLEME SORUSU: sunucu güncellenince kullanıcıya sor (otomatik yenileme yok, karar onun)
+function guncellemeSorusuGoster(){
+  if(document.getElementById('guncellemeSoru')) return; // zaten açık
+  const kutu=document.createElement('div');
+  kutu.id='guncellemeSoru';
+  kutu.style.cssText='position:fixed;left:0;right:0;bottom:24px;z-index:999999;display:flex;justify-content:center;pointer-events:none;animation:guncKay .35s cubic-bezier(.2,.9,.3,1)';
+  kutu.innerHTML=''+
+    '<div style="pointer-events:auto;background:linear-gradient(145deg,#0c121b,#131d29);border:1px solid rgba(34,211,238,.35);border-radius:18px;padding:18px 22px;box-shadow:0 16px 50px rgba(0,0,0,.5),0 0 0 1px rgba(34,211,238,.1);max-width:420px;margin:0 16px;display:flex;align-items:center;gap:16px">'+
+      '<div style="font-size:32px;flex-shrink:0">🔄</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:2px">Güncelleme geldi</div>'+
+        '<div style="font-size:12.5px;color:#94a8bd;line-height:1.45">Yeni sürüm hazır. Şimdi yenilemek ister misin?</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;flex-shrink:0">'+
+        '<button onclick="guncellemeYanit(false)" style="padding:9px 15px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#94a8bd;font-size:13px;font-weight:650;cursor:pointer;transition:all .14s" onmouseover="this.style.background=\'rgba(255,255,255,.06)\'" onmouseout="this.style.background=\'transparent\'">Hayır</button>'+
+        '<button onclick="guncellemeYanit(true)" style="padding:9px 17px;border-radius:10px;border:none;background:linear-gradient(135deg,#22d3ee,#0891b2);color:#04222b;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 3px 12px rgba(34,211,238,.4);transition:transform .12s" onmouseover="this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.transform=\'none\'">Evet, yenile</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(kutu);
+  if(!document.getElementById('guncKayStil')){
+    const st=document.createElement('style'); st.id='guncKayStil';
+    st.textContent='@keyframes guncKay{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}';
+    document.head.appendChild(st);
+  }
+}
+function guncellemeYanit(evet){
+  const kutu=document.getElementById('guncellemeSoru');
+  if(kutu) kutu.remove();
+  if(evet){
+    showToast('🔄 Yenileniyor…');
+    setTimeout(()=>{ location.reload(true); }, 400);
+  }
+  // Hayır: hiçbir şey yapma, kullanıcı çalışmaya devam eder
+}
 function connect(){
   // Sayfa HTTPS ise wss:// (guvenli), HTTP ise ws:// kullan — Cloudflare/internet uyumu icin sart
   const wsProto = location.protocol === 'https:' ? 'wss://' : 'ws://';
@@ -3152,31 +3186,10 @@ function connect(){
       if(_bootId===null){
         _bootId=d.bootId; // ilk bağlantı, sadece sakla (yenileme YOK)
       } else if(_bootId!==d.bootId){
-        // sunucu yeniden başladı -> güncelleme var -> yenile
-        console.log('🔄 Sunucu güncellendi, panel yenileniyor…');
-        // TAM EKRAN bilgilendirme: kullanıcı ne olduğunu anlasın (5sn görünür, sonra yeniler)
-        try{
-          const kapla=document.createElement('div');
-          kapla.id='guncellemeKaplama';
-          kapla.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(10,15,25,.92);backdrop-filter:blur(8px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;color:#fff;font-family:inherit;animation:guncFadeIn .3s ease';
-          kapla.innerHTML=''+
-            '<div style="width:64px;height:64px;border:4px solid rgba(255,255,255,.2);border-top-color:#06cf9c;border-radius:50%;animation:guncDon 1s linear infinite"></div>'+
-            '<div style="font-size:22px;font-weight:800;letter-spacing:-.3px">🔄 Güncelleme yükleniyor</div>'+
-            '<div style="font-size:15px;opacity:.85;text-align:center;max-width:320px;line-height:1.5">Yeni sürüm hazırlanıyor, sayfa birazdan otomatik yenilenecek. Bir şey yapmanıza gerek yok.</div>'+
-            '<div id="guncSayac" style="font-size:13px;opacity:.6;margin-top:4px">5 saniye…</div>';
-          document.body.appendChild(kapla);
-          if(!document.getElementById('guncStil')){
-            const st=document.createElement('style'); st.id='guncStil';
-            st.textContent='@keyframes guncDon{to{transform:rotate(360deg)}}@keyframes guncFadeIn{from{opacity:0}to{opacity:1}}';
-            document.head.appendChild(st);
-          }
-          // geri sayım göster (5..1)
-          let kalan=5;
-          const sayacEl=document.getElementById('guncSayac');
-          const sayGeri=setInterval(()=>{ kalan--; if(sayacEl) sayacEl.textContent=kalan+' saniye…'; if(kalan<=0) clearInterval(sayGeri); }, 1000);
-        }catch(e){}
-        // 5 saniye sonra yenile (cache'siz) — kullanıcı mesajı okuyup anlasın
-        setTimeout(()=>{ location.reload(true); }, 5000);
+        // sunucu yeniden başladı -> güncelleme var. Kullanıcıya SOR (otomatik yenileme YOK).
+        console.log('🔄 Sunucu güncellendi, kullanıcıya soruluyor…');
+        _bootId=d.bootId; // yeni id'yi sakla ki tekrar tekrar sormasın
+        guncellemeSorusuGoster();
       }
       return;
     }
@@ -3750,7 +3763,8 @@ function kontrolAltGec(sekme){
   document.getElementById('kontrolListe').style.display = satisGorunur?'':'none';
   document.getElementById('kontrolDash').style.display = satisGorunur?'':'none';
   document.getElementById('kontrolYonetici').style.display = (satisGorunur&&_kontrolAdmin)?'flex':'none';
-  document.getElementById('kontrolFiltre').style.display = satisGorunur?'':'none';
+  // Filtre satırı (kişi seç + tarih aralığı) hem SATIŞ hem PERFORMANS'ta görünsün (ödemede gizli)
+  document.getElementById('kontrolFiltre').style.display = odemeGorunur?'none':'';
   // Performans alanı
   document.getElementById('performansAlan').style.display = perfGorunur?'block':'none';
   // Ödemeler alanı
@@ -3946,10 +3960,10 @@ function perfDetayAc(i){
       // SAAT: son işlemin tarihi+saati (geçerliyse göster, yoksa hiç gösterme — NaN olmasın)
       const saatYazi = perfTarihSaat(g.sonTs);
       const saatEt = saatYazi ? '<span class="pd-grup-saat">🕐 '+saatYazi+'</span>' : '';
-      // YÖNETİCİ: bu grubun poliçelerini toplu sil butonu (poliçe varsa)
+      // YÖNETİCİ: bu grubun poliçe SAYISINI elle düzelt (117 -> 110 gibi)
       let silBtn='';
       if(_kontrolAdmin && g.police>0 && g.polIdler && g.polIdler.length){
-        silBtn='<button class="pd-grup-sil" title="Bu gruptaki '+g.police+' poliçeyi sil" onclick="policeGrupSil('+i+','+gi+')">🗑️</button>';
+        silBtn='<button class="pd-grup-sil" title="Poliçe sayısını düzelt ('+g.police+')" onclick="policeSayiDuzelt('+i+','+gi+')">✏️</button>';
       }
       h+='<div class="pd-grup"><div class="pd-grup-sol"><span class="pd-grup-ad">'+esc(g.ad)+'</span>'+saatEt+'</div><span class="pd-grup-sag">'+detaylar.join('')+silBtn+'</span></div>';
     });
@@ -3962,23 +3976,34 @@ function perfDetayAc(i){
   _perfAcik=i;
 }
 
-// POLİÇE SİLME (yönetici): bir grubun tüm poliçelerini toplu sil
-async function policeGrupSil(kisiIdx, grupIdx){
+// POLİÇE SAYISI DÜZELTME (yönetici): bir grubun poliçe sayısını elle düzelt (117 -> 110)
+async function policeSayiDuzelt(kisiIdx, grupIdx){
   const k=_perfListe[kisiIdx]; if(!k||!k.gruplar||!k.gruplar[grupIdx]) return;
   const g=k.gruplar[grupIdx];
-  if(!g.polIdler||!g.polIdler.length){ showToast('Silinecek poliçe bulunamadı'); return; }
+  if(!g.polIdler||!g.polIdler.length){ showToast('Poliçe bulunamadı'); return; }
+  const mevcut=g.police;
+  const cevap=prompt(
+    '“'+k.ad+'” · “'+g.ad+'” grubu\n\n'+
+    'Şu an: '+mevcut+' poliçe\n\n'+
+    'Yeni sayıyı yaz (sadece azaltılabilir, örn. '+Math.max(0,mevcut-1)+'):',
+    String(mevcut));
+  if(cevap===null) return; // vazgeçti
+  const hedef=parseInt(cevap.trim(),10);
+  if(isNaN(hedef)||hedef<0){ showToast('Geçersiz sayı'); return; }
+  if(hedef===mevcut){ showToast('Sayı aynı, değişiklik yok'); return; }
+  if(hedef>mevcut){ showToast('⚠️ Sayı sadece azaltılabilir ('+mevcut+'\u2019dan küçük yaz)'); return; }
   const onay=await askConfirm(
-    '“'+esc(k.ad)+'” kişisinin “'+esc(g.ad)+'” grubundaki '+g.police+' poliçe kaydı silinecek.\n\n'+
-    'Bu, performans raporundan düşecek. WhatsApp mesajları SİLİNMEZ, sadece rapor kaydı silinir.\n\nEmin misin?',
-    'Sil ('+g.police+' poliçe)','Vazgeç');
+    'Poliçe sayısı '+mevcut+' → '+hedef+' olarak düzeltilecek.\n\n'+
+    (mevcut-hedef)+' poliçe kaydı silinecek. Genel toplam da güncellenecek.\n\nEmin misin?',
+    'Düzelt ('+mevcut+' → '+hedef+')','Vazgeç');
   if(!onay) return;
   try{
-    const r=await fetch('/api/police/sil',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, idler:g.polIdler})});
+    const r=await fetch('/api/police/duzelt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken, idler:g.polIdler, hedef:hedef})});
     const d=await r.json();
     if(d.ok){
-      showToast('✓ '+(d.silinen||g.police)+' poliçe silindi, rapor güncelleniyor…');
-      performansYukle(); // raporu tazele
-    } else showToast('⚠️ '+(d.error||'Silinemedi'));
+      showToast('✓ Sayı düzeltildi: '+mevcut+' → '+(d.yeniSayi??hedef)+', rapor güncelleniyor…');
+      performansYukle(); // raporu tazele (grup + genel toplam)
+    } else showToast('⚠️ '+(d.error||'Düzeltilemedi'));
   }catch(e){ showToast('⚠️ Bağlantı hatası'); }
 }
 

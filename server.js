@@ -1118,21 +1118,27 @@ app.post('/api/performans', express.json(), async (req, res) => {
   }
 });
 
-// POLİÇE SİLME (performans raporundan): tek tek VEYA grup toplu. Sadece yönetici.
-// idler: silinecek poliçe kayıt id'leri dizisi. Poliçe kaydı silinir + rapordan düşer.
-app.post('/api/police/sil', express.json(), async (req, res) => {
+// POLİÇE SAYISI DÜZELTME (performans raporundan): bir grubun poliçe sayısını elle düzelt.
+// idler: o gruptaki TÜM poliçe id'leri. hedef: olması gereken sayı.
+// Fazla kayıtlar (en YENİden başlayarak) silinir -> grup + genel toplam güncellenir.
+app.post('/api/police/duzelt', express.json(), async (req, res) => {
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Bu işlem sadece yönetici içindir' });
-  const idler = req.body?.idler;
-  if (!Array.isArray(idler) || !idler.length) return res.json({ ok: false, error: 'Silinecek poliçe seçilmedi' });
+  const idler = req.body?.idler;   // gruptaki tüm poliçe id'leri (yeni->eski sıralı gelmeli)
+  const hedef = parseInt(req.body?.hedef, 10);
+  if (!Array.isArray(idler) || !idler.length) return res.json({ ok: false, error: 'Poliçe bulunamadı' });
+  if (isNaN(hedef) || hedef < 0) return res.json({ ok: false, error: 'Geçersiz sayı' });
+  if (hedef >= idler.length) return res.json({ ok: false, error: 'Yeni sayı mevcut sayıdan küçük olmalı (sadece azaltılabilir)' });
   try {
-    const sonuc = await db.policeIdSil(idler);
+    // hedef kadar KALSIN, fazlası silinsin. idler yeni->eski geldiği için baştan hedef kadarını
+    // KORU, gerisini (en eskiler) sil. (İstenirse tersi de yapılabilir; en eskiyi silmek mantıklı.)
+    const silinecek = idler.slice(hedef); // hedef'ten sonrakiler silinir
+    const sonuc = await db.policeIdSil(silinecek);
     if (sonuc && sonuc.ok) {
-      console.log(`🗑️ YÖNETİCİ ${idler.length} poliçe kaydı sildi (rapordan düşürüldü)`);
-      // performans panellerini tazele (yeniPolice yayını rapor açık olanları yeniler)
+      console.log(`✏️ YÖNETİCİ poliçe sayısı düzeltti: ${idler.length} -> ${hedef} (${silinecek.length} kayıt silindi)`);
       broadcast({ type: 'yeniPolice', kullanici: '' });
-      return res.json({ ok: true, silinen: sonuc.silinen || 0 });
+      return res.json({ ok: true, silinen: sonuc.silinen || 0, yeniSayi: hedef });
     }
-    return res.json({ ok: false, error: (sonuc && sonuc.error) || 'Silinemedi' });
+    return res.json({ ok: false, error: (sonuc && sonuc.error) || 'Düzeltilemedi' });
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }
