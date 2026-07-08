@@ -296,6 +296,46 @@ function isAdmin(token) {
   const s = token && sessions.get(token);
   return s && s.role === 'admin';
 }
+// GİZLİ BÖLÜM: sadece süper admin (burak) erişebilir
+function isSuperAdmin(token) {
+  const s = token && sessions.get(token);
+  return s && s.username === 'burak';
+}
+// Gizli bölüm şifresi ayar anahtarı (settings tablosunda saklanır — herkesin tarayıcısında DEĞİL)
+const GIZLI_SIFRE_KEY = 'gizli_bolum_sifre';
+function gizliHash(s) { let h = 5381; for (let i = 0; i < s.length; i++) { h = ((h << 5) + h) + s.charCodeAt(i); h = h & h; } return String(h); }
+
+// Gizli bölüm durumu: şifre kurulmuş mu? (sadece süper admin sorabilir)
+app.post('/api/gizli/durum', express.json(), async (req, res) => {
+  if (!isSuperAdmin(req.body?.token)) return res.json({ ok: false, yetki: false });
+  try {
+    const kayitli = await db.getSetting(GIZLI_SIFRE_KEY, null);
+    res.json({ ok: true, yetki: true, kuruldu: !!kayitli });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+// Gizli bölüm şifresi kur (sadece süper admin, sadece ilk kez)
+app.post('/api/gizli/kur', express.json(), async (req, res) => {
+  if (!isSuperAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetkiniz yok' });
+  const sifre = String(req.body?.sifre || '').trim();
+  if (sifre.length < 3) return res.json({ ok: false, error: 'Şifre en az 3 karakter olmalı' });
+  try {
+    const mevcut = await db.getSetting(GIZLI_SIFRE_KEY, null);
+    if (mevcut) return res.json({ ok: false, error: 'Şifre zaten kurulmuş' });
+    await db.saveSetting(GIZLI_SIFRE_KEY, gizliHash(sifre));
+    console.log('🔒 Gizli bölüm şifresi kuruldu (süper admin)');
+    res.json({ ok: true });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+// Gizli bölüm şifresi doğrula (sadece süper admin)
+app.post('/api/gizli/dogrula', express.json(), async (req, res) => {
+  if (!isSuperAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetkiniz yok' });
+  const sifre = String(req.body?.sifre || '').trim();
+  try {
+    const kayitli = await db.getSetting(GIZLI_SIFRE_KEY, null);
+    if (!kayitli) return res.json({ ok: false, error: 'Şifre kurulmamış' });
+    res.json({ ok: true, dogru: gizliHash(sifre) === kayitli });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
 // Ödemeleri ONAYLAYABİLİR mi? (muhasebeci veya yönetici)
 function odemeOnaylayabilir(token) {
   const s = token && sessions.get(token);
