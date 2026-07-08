@@ -1975,14 +1975,16 @@ wss.on('connection', (ws) => {
           // TEŞHİS: gönderim ne kadar sürdü? (yavaşlama/tıkanma tespiti için)
           const gonderimSure = Date.now() - _sonMesajTrafigi;
           if (gonderimSure > 5000) console.log(`   ⏱️  YAVAŞ gönderim: ${(gonderimSure/1000).toFixed(1)}sn (grup: ${(msg.jid||'').split('@')[0]}) — soket yoğun olabilir`);
+          // BAŞLANGIÇ DURUMU: grupta 1 (gönderiliyor/saat), kişide 2 (tek tik).
+          // Grupta gerçek WhatsApp makbuzu (messages.update status) gelince 2'ye çıkar.
+          // Böylece "makbuz hiç gelmedi = gerçekten gitmedi" tespiti kesin olur (yanlış alarm yok).
+          const baslangicDurum = (msg.jid || '').endsWith('@g.us') ? 1 : 2;
           addMessage(msg.jid, {
             id: sent.key.id, key: sent.key,
             raw: sent, // GONDERIM SONUCU: kendi mesajimizi sonradan YANITLAYINCA alinti icin gerekli
             fromMe: true, kind: 'text', text: msg.text,
             sender: msg.agent || 'Ben', time: nowTime(), replyTo,
-            durum: 2, // gonderildi (tek tik) — WhatsApp onayladi
-            // EKIP ETIKETLERI: panelden gelen, etiketlenen ekip uyesi kullanici adlari.
-            // Bu kullanicilar panele girince "Bahsedilmeler"de gorur.
+            durum: baslangicDurum,
             teamMentions: Array.isArray(msg.teamMentions) ? msg.teamMentions : undefined,
           }, _LID);
           // ═══ İLETİM DENETÇİSİ ═══ (panele düşüp WhatsApp'a gitmeyen mesaj sorunu)
@@ -3729,7 +3731,40 @@ async function iletimZamanAsimi(msgId) {
   const m = chat ? chat.messages.find(x => x.id === msgId) : null;
   if (m && (m.durum || 0) >= 3) return; // bu arada iletildi -> sorun yok
 
-  console.log(`⚠️  İLETİM ONAYI GELMEDİ (${ILETIM_SURE / 1000}sn): grup=${(jid || '').split('@')[0]}, deneme=${deneme} -> aksiyon.`);
+  // ═══ KRİTİK: GRUP mu KİŞİ mi? ═══
+  // GRUPLARDA "iletildi onayı" (çift tik) GÜVENİLMEZ: geç gelir veya hiç gelmez. Ama mesaj
+  // ASLINDA GİTMİŞTİR (tek tik = WhatsApp sunucusu aldı). Bu yüzden ÇİFT TİK bekleyip yeniden
+  // göndermek YANLIŞTI (müşteri 2 mesaj alıyordu).
+  // AMA "gerçekten gitmedi" durumu da yakalanmalı. Gerçek başarısızlığın işareti: mesaj
+  // gönderildi ama UZUN SÜRE "tek tik" (durum>=2 makbuzu) BİLE gelmedi. WhatsApp mesajı
+  // alsaydı tek tiği hemen verirdi. Bu yüzden GRUPTA:
+  //   - durum >= 2 (tek tik geldi) -> mesaj GİTTİ, sorun yok (çift tik bekleme)
+  //   - durum < 2 (tek tik bile YOK) -> gerçekten gitmemiş olabilir -> KIRMIZI (ama yeniden GÖNDERME
+  //     yapma, çünkü belki gitti de makbuz gecikti; kullanıcı görür, kendi karar verir)
+  const grupMu = (jid || '').endsWith('@g.us');
+  if (grupMu) {
+    const durum = m ? (m.durum || 0) : 0;
+    if (durum >= 2) {
+      // tek tik (veya daha üstü) geldi -> mesaj WhatsApp'a ulaştı, GİTTİ say. Sorun yok.
+      return;
+    }
+    // tek tik BİLE gelmedi (durum 0/1) -> mesaj gerçekten gitmemiş olabilir.
+    // Kırmızı YAPMADAN önce SON BİR ŞANS: 30sn daha bekle, o arada tek tik gelirse iptal.
+    console.log(`⚠️  GRUP mesajı ${ILETIM_SURE/1000}sn'dir tek tik bile almadı: ${(jid||'').split('@')[0]} -> 30sn daha bekleniyor...`);
+    setTimeout(() => {
+      const cc = hatChats(lineId);
+      const ch = cc ? cc.get(jid) : null;
+      const mm = ch ? ch.messages.find(x => x.id === msgId) : null;
+      if (mm && (mm.durum || 0) >= 2) return; // bu arada tek tik geldi -> gitmiş, sorun yok
+      // hâlâ tek tik yok -> GERÇEKTEN gitmedi. Kırmızı yap (ama yeniden gönderme — çift kopya riski).
+      console.log(`   ✗ GRUP mesajı gerçekten iletilemedi (tek tik hiç gelmedi): ${(jid||'').split('@')[0]}`);
+      iletimBasarisizBildir(lineId, jid, msgId, veri);
+    }, 30 * 1000);
+    return;
+  }
+
+  // ── Buradan sonrası SADECE KİŞİSEL mesajlar (çift tik güvenilir) ──
+  console.log(`⚠️  İLETİM ONAYI GELMEDİ (${ILETIM_SURE / 1000}sn): kişi=${(jid || '').split('@')[0]}, deneme=${deneme} -> aksiyon.`);
 
   // 1) Bağlantıyı şüpheli say -> hemen canlılık testi (ölüyse yeniden bağlan)
   if (lineId === 'ofis') {
@@ -3737,11 +3772,14 @@ async function iletimZamanAsimi(msgId) {
     if (global._canlilikKontrolTetikle) { try { global._canlilikKontrolTetikle(true); } catch (_) {} }
   }
 
-  // 2) Otomatik yeniden gönder (limit dahilinde)
+  // 2) Otomatik yeniden gönder (SADECE kişisel mesaj, limit dahilinde)
   if (deneme < ILETIM_MAX_DENEME && veri && veri.text) {
     setTimeout(async () => {
       const l = lines.get(lineId);
       if (!l || !l.sock || !l.connected) { iletimBasarisizBildir(lineId, jid, msgId, veri); return; }
+      // SON KONTROL: yeniden göndermeden hemen önce çift tik gelmiş olabilir -> gönderme
+      const mm = chat ? chat.messages.find(x => x.id === msgId) : null;
+      if (mm && (mm.durum || 0) >= 3) return; // iletilmiş, tekrar gönderme
       try {
         const content = { text: veri.text };
         const mentionJids = (veri.text.match(/@(\d{10,15})/g) || []).map(t => t.slice(1) + '@s.whatsapp.net');
@@ -3751,7 +3789,7 @@ async function iletimZamanAsimi(msgId) {
           new Promise((_, rej) => setTimeout(() => rej(new Error('yeniden gonderim zaman asimi')), 12000)),
         ]);
         if (!sent || !sent.key) throw new Error('yeniden gonderim onaylanmadi');
-        console.log(`   ↻ Mesaj otomatik yeniden gönderildi (deneme ${deneme + 1}): ${(jid || '').split('@')[0]}`);
+        console.log(`   ↻ Kişisel mesaj otomatik yeniden gönderildi (deneme ${deneme + 1}): ${(jid || '').split('@')[0]}`);
         if (m) {
           m.id = sent.key.id; m.key = sent.key; m.raw = sent; m.durum = 2; m.gonderilemedi = false;
           broadcastHat(lineId, { type: 'msgYenidenGonderildi', jid, eskiId: msgId, yeniId: sent.key.id });
