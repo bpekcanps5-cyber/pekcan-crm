@@ -8538,11 +8538,8 @@ function handleMsgAppend(d){
   // BEKLENEN YANIT FOTOSU: jumpToMsg bir fotoyu bekliyorduysa ve şimdi geldiyse -> lightbox aç
   if(_bekleyenJumpId && m && m.id===_bekleyenJumpId){
     const beklenen=_bekleyenJumpId; _bekleyenJumpId=null;
-    if(m.kind==='image' && (m.mediaUrl||m.thumb)){
-      setTimeout(()=>openLightbox(m.mediaUrl||m.thumb), 200);
-    } else {
-      setTimeout(()=>jumpToMsg(beklenen,''), 200);
-    }
+    // render olsun diye kısa bekle, sonra jumpToMsg -> önce mesaja git, sonra foto açılır (WhatsApp gibi)
+    setTimeout(()=>jumpToMsg(beklenen,''), 300);
   }
   if(m && !m.fromMe && jid!==activeJid) playPing();
   if(jid===activeJid){
@@ -8613,10 +8610,20 @@ function jumpToMsg(id, text){
       }
     }
   }
-  // YANITLANAN FOTOĞRAF/MEDYA ise: mesaj bulunduysa direkt LIGHTBOX'ta aç (albümde).
-  // Kullanıcı isteği: albümdeki fotoyı yanıtlayınca, yanıta basınca o foto albümde açılsın.
+  // YANITLANAN FOTOĞRAF/MEDYA ise: WhatsApp gibi ÖNCE o mesaja git (kaydır+vurgula),
+  // SONRA lightbox'ta aç. Böylece kullanıcı fotonun sohbette nerede olduğunu görür, sonra açılır.
   if(hedefMesaj && hedefMesaj.kind==='image' && (hedefMesaj.mediaUrl||hedefMesaj.thumb)){
-    openLightbox(hedefMesaj.mediaUrl||hedefMesaj.thumb);
+    if(t){
+      // mesaj DOM'da var -> önce oraya kaydır + vurgula
+      t.classList.add('search-current');
+      t.scrollIntoView({block:'center',behavior:'smooth'});
+      setTimeout(()=>t.classList.remove('search-current'),2000);
+      // kaydırma + vurgu görülsün diye kısa bekle, SONRA lightbox aç
+      setTimeout(()=>{ openLightbox(hedefMesaj.mediaUrl||hedefMesaj.thumb); }, 700);
+    } else {
+      // mesaj DOM'da yok (çok yukarıda) -> direkt aç (kaydıracak yer yok)
+      openLightbox(hedefMesaj.mediaUrl||hedefMesaj.thumb);
+    }
     return;
   }
   if(t){
