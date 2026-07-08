@@ -9518,10 +9518,15 @@ function lbGoster(){
 }
 // Lightbox'taki fotonun mesajını bul (url -> mesaj)
 function lbAktifMesaj(){
-  const url=_lbGaleri[_lbIndex];
   const c=activeJid&&chats[activeJid];
-  if(!c||!c.messages||!url) return null;
-  return c.messages.find(m=>m.mediaUrl===url)||null;
+  if(!c||!c.messages) return null;
+  // EN KESİN: _lbMesajIdler dizisinden bu fotonun id'sini al, id ile bul.
+  const id=_lbMesajIdler&&_lbMesajIdler[_lbIndex];
+  if(id){ const m=c.messages.find(x=>x.id===id); if(m) return m; }
+  // yedek: url ile bul (mediaUrl VEYA thumb — foto thumb ile eklendiyse de bulunsun)
+  const url=_lbGaleri[_lbIndex];
+  if(!url) return null;
+  return c.messages.find(m=>m.mediaUrl===url||m.thumb===url)||null;
 }
 // Pin butonunu güncel duruma getir: işaretliyse YEŞİL (nerede kaldığın belli olur)
 function lbPinGuncelle(){
@@ -9531,10 +9536,12 @@ function lbPinGuncelle(){
   btn.style.display='';
   btn.classList.toggle('aktif', !!m.isaretli);
   btn.title=m.isaretli?'✓ İşaretli — kaldırmak için tıkla':'İşaretle (✓) — bu fotoyu yapıldı olarak işaretle';
-  // sayaçta da küçük işaret göstergesi (çok fotoda gezerken kaybolmamak için)
+  // sayaçta da küçük işaret göstergesi (çok fotoda gezerken kaybolmamak için) — ALBÜM bazlı
   const sayac=document.getElementById('lbSayac');
   if(sayac && _lbGaleri.length>1){
-    sayac.textContent=(_lbIndex+1)+' / '+_lbGaleri.length+(m.isaretli?' · ✓ işaretli':'');
+    const albSira=_lbAlbumSira[_lbIndex]||(_lbIndex+1);
+    const albToplam=_lbAlbumToplam[_lbIndex]||_lbGaleri.length;
+    sayac.textContent=albSira+' / '+albToplam+(m.isaretli?' · ✓ işaretli':'');
   }
 }
 // Fotonun İÇİNDEN işaretle: pin'e bas -> işaretlenir (herkes görür) -> ok ile sonrakine geç

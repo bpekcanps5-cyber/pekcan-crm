@@ -2948,7 +2948,19 @@ wss.on('connection', (ws) => {
               const birlesik = new Map();
               for (const x of (chat.messages || [])) birlesik.set(x.id, x);
               let eklendi = false;
-              for (const x of dbMsgs) if (!birlesik.has(x.id)) { birlesik.set(x.id, x); eklendi = true; }
+              for (const x of dbMsgs) {
+                if (!birlesik.has(x.id)) { birlesik.set(x.id, x); eklendi = true; }
+                else {
+                  // Mesaj zaten bellekte var. ÖNEMLİ: DB'deki KALICI işaret (isaretli) bilgisini
+                  // bellektekine aktar. Yoksa bellekteki (isaretli=false) DB'deki işareti EZİYOR
+                  // ve F5'te işaret KAYBOLUYORDU (yaşanan sorunun kökü buydu).
+                  const bellekMsg = birlesik.get(x.id);
+                  if (bellekMsg && x.isaretli && !bellekMsg.isaretli) {
+                    bellekMsg.isaretli = true;
+                    eklendi = true; // panele güncel hali gitsin
+                  }
+                }
+              }
               // Sadece DB'den GERCEKTEN yeni mesaj eklendiyse VEYA bellek bostiysa tekrar gonder
               // (bos yere ikinci kez gondermeyelim — panel gereksiz render etmesin).
               if (eklendi || !chat.messages.length) {
