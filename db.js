@@ -1389,7 +1389,7 @@ async function loadPoliceYuklemeler(baslangicTs = null, bitisTs = null, lineId =
       sql += ` AND ts >= $${params.length - 1} AND ts <= $${params.length}`;
     }
     if (lineId) { params.push(lineId); sql += ` AND line_id = $${params.length}`; }
-    sql += ' ORDER BY ts DESC LIMIT 5000';
+    sql += ' ORDER BY ts DESC'; // SINIR YOK: tüm poliçe kayıtları gelsin (5000 sınırı kaldırıldı)
     const r = await pool.query(sql, params);
     return r.rows;
   } catch (e) { return []; }

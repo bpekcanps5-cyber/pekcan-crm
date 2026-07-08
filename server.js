@@ -1060,7 +1060,7 @@ app.post('/api/performans', express.json(), async (req, res) => {
     }
     function grupAl(k, ad) {
       const g = (ad || 'Bilinmeyen grup').trim() || 'Bilinmeyen grup';
-      if (!k.gruplar.has(g)) k.gruplar.set(g, { ad: g, police: 0, kesim: 0, ilgilenme: 0, branslar: {}, sonTs: 0 });
+      if (!k.gruplar.has(g)) k.gruplar.set(g, { ad: g, police: 0, kesim: 0, ilgilenme: 0, branslar: {}, sonTs: 0, polIdler: [], jid: '' });
       return k.gruplar.get(g);
     }
     for (const p of policeler) {
@@ -1076,6 +1076,8 @@ app.post('/api/performans', express.json(), async (req, res) => {
       g.police++;
       g.branslar[b] = (g.branslar[b] || 0) + 1;
       if (pts > g.sonTs) g.sonTs = pts;
+      if (p.id) g.polIdler.push(p.id); // POLİÇE SİLME için: bu gruptaki poliçe kayıt id'leri
+      if (p.chat_jid && !g.jid) g.jid = p.chat_jid;
     }
     for (const a of aktiviteler) {
       const k = kisiAl(a.kullanici_ad);
@@ -1094,7 +1096,7 @@ app.post('/api/performans', express.json(), async (req, res) => {
       kesim: k.kesim, ilgilenme: k.ilgilenme, ikiAylik: k.ikiAylik,
       grupSayisi: k.gruplar.size,
       sonTs: k.sonTs,
-      // DETAY: grup bazında döküm (en çok poliçe olan grup üstte)
+      // DETAY: grup bazında döküm (en çok poliçe olan grup üstte). polIdler+jid: silme için.
       gruplar: Array.from(k.gruplar.values()).sort((a, b) => b.police - a.police || b.kesim - a.kesim),
     })).sort((a, b) => b.police - a.police || b.kesim - a.kesim);
 
@@ -1111,6 +1113,26 @@ app.post('/api/performans', express.json(), async (req, res) => {
     for (const p of policeler) { const b = p.brans || 'diğer'; bransDagilim[b] = (bransDagilim[b] || 0) + 1; }
 
     res.json({ ok: true, kapsam, liste, toplam, bransDagilim });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// POLİÇE SİLME (performans raporundan): tek tek VEYA grup toplu. Sadece yönetici.
+// idler: silinecek poliçe kayıt id'leri dizisi. Poliçe kaydı silinir + rapordan düşer.
+app.post('/api/police/sil', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Bu işlem sadece yönetici içindir' });
+  const idler = req.body?.idler;
+  if (!Array.isArray(idler) || !idler.length) return res.json({ ok: false, error: 'Silinecek poliçe seçilmedi' });
+  try {
+    const sonuc = await db.policeIdSil(idler);
+    if (sonuc && sonuc.ok) {
+      console.log(`🗑️ YÖNETİCİ ${idler.length} poliçe kaydı sildi (rapordan düşürüldü)`);
+      // performans panellerini tazele (yeniPolice yayını rapor açık olanları yeniler)
+      broadcast({ type: 'yeniPolice', kullanici: '' });
+      return res.json({ ok: true, silinen: sonuc.silinen || 0 });
+    }
+    return res.json({ ok: false, error: (sonuc && sonuc.error) || 'Silinemedi' });
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }
@@ -1651,7 +1673,7 @@ wss.on('connection', (ws) => {
         // "BURADAYIM" durumu: hangi grupla kim ilgileniyor -> panel yesil isaretleri gostersin
         if (db.isReady()) {
           try { const b = await db.getBuradayim(); ws.send(JSON.stringify({ type: 'buradayimHepsi', durum: b })); } catch (_) {}
-          try { const f = await db.getSetting('favoriler', []); ws.send(JSON.stringify({ type: 'favoriler', liste: Array.isArray(f) ? f : [] })); } catch (_) {}
+          try { const f = await db.getSetting('favoriler_' + (ws._username || ''), []); ws.send(JSON.stringify({ type: 'favoriler', liste: Array.isArray(f) ? f : [] })); } catch (_) {}
           try { const ms = await db.getSetting('mesaj_sabit', {}); ws.send(JSON.stringify({ type: 'mesajSabitler', durum: (ms && typeof ms === 'object') ? ms : {} })); } catch (_) {}
         }
         return;
@@ -2357,18 +2379,25 @@ wss.on('connection', (ws) => {
         } catch (e) { ws.send(JSON.stringify({ type: 'opError', error: 'Mesaj sabitlenemedi.' })); }
       }
 
-      // FAVORILER: sohbeti favorilere ekle/cikar -> HERKESE yay (ortak liste, WhatsApp gibi)
+      // FAVORILER: sohbeti favorilere ekle/cikar -> KİŞİYE ÖZEL (herkes kendi favorisini görür)
       else if (msg.type === 'favoriToggle') {
         if (!ws._username || !db.isReady()) return;
         try {
-          let f = await db.getSetting('favoriler', []);
+          // KİŞİYE ÖZEL anahtar: favoriler_<username>. Her kullanıcının kendi favori listesi var.
+          const favKey = 'favoriler_' + ws._username;
+          let f = await db.getSetting(favKey, []);
           if (!Array.isArray(f)) f = [];
           const idx = f.indexOf(msg.jid);
           let favori;
           if (idx >= 0) { f.splice(idx, 1); favori = false; }
           else { f.push(msg.jid); favori = true; }
-          await db.saveSetting('favoriler', f);
-          broadcast({ type: 'favoriUpdate', jid: msg.jid, favori });
+          await db.saveSetting(favKey, f);
+          // SADECE bu kullanıcının panellerine yay (ortak DEĞİL) — herkes kendi favorisini görür
+          wss.clients.forEach((c) => {
+            if (c.readyState === 1 && c._username === ws._username) {
+              try { c.send(JSON.stringify({ type: 'favoriUpdate', jid: msg.jid, favori })); } catch (_) {}
+            }
+          });
         } catch (e) { ws.send(JSON.stringify({ type: 'opError', error: 'Favori güncellenemedi.' })); }
       }
 
