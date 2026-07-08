@@ -8434,6 +8434,15 @@ function handleMsgAppend(d){
   if(!c.messages) c.messages=[];
   const m=d.mesaj;
   if(!m){ renderList(); return; }
+  // OPTIMISTIK EŞLEŞTIRME: bu mesaj bizim az önce eklediğimiz geçici mesajın gerçek hali mi?
+  // Sunucu _geciciId'yi geri yolladıysa VEYA aynı metinli fromMe geçici mesaj varsa -> geçiciyi SİL
+  // (yerine bu gerçek mesaj geçecek). Böylece mesaj çift görünmez.
+  if(m.fromMe){
+    let gidx=-1;
+    if(d.geciciId){ gidx=c.messages.findIndex(x=>x.id===d.geciciId); }
+    if(gidx<0){ gidx=c.messages.findIndex(x=>x._gecici && x.fromMe && (x.text||'')===(m.text||'')); }
+    if(gidx>=0){ c.messages.splice(gidx,1); } // geçiciyi kaldır, aşağıda gerçeği eklenecek
+  }
   // ZATEN VAR MI? (aynı mesaj iki kez gelmesin)
   if(m.id && c.messages.some(x=>x.id===m.id)){
     const v=c.messages.find(x=>x.id===m.id);
@@ -9504,15 +9513,43 @@ function send(){
     ws.send(JSON.stringify({type:'edit', jid:activeJid, id:editTarget, text}));
     inp.value=''; inp.style.height='auto'; clearReply(); return;
   }
+  const yanitId = replyTarget ? replyTarget.id : null;
   const payload={type:'send', jid:activeJid, text, agent:benimAdim()};
-  if(replyTarget) payload.replyId=replyTarget.id;
+  if(yanitId) payload.replyId=yanitId;
+  // OPTIMISTIK GÖSTERIM (WhatsApp gibi): mesajı ANINDA ekrana koy (saat ikonuyla), sonra
+  // sunucudan gerçek mesaj gelince yerini alır. Böylece "gönder"e basınca mesaj HEMEN görünür,
+  // sunucu-WhatsApp turunu beklemez -> gecikme hissi biter.
+  const geciciId='local_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+  const c=chats[activeJid];
+  if(c){
+    if(!c.messages) c.messages=[];
+    const gecici={
+      id:geciciId, fromMe:true, kind:'text', text:text,
+      sender:benimAdim()||'Ben', time:new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}),
+      ts:Date.now(), durum:1, // saat ikonu (gönderiliyor)
+      _gecici:true, // sunucudan gerçeği gelince bu silinecek
+    };
+    if(yanitId){
+      const ym=c.messages.find(x=>x.id===yanitId);
+      if(ym) gecici.replyTo={id:yanitId, text:(ym.text||''), sender:(ym.sender||'')};
+    }
+    c.messages.push(gecici);
+    c.lastMsg=text; c.lastTs=Date.now();
+    payload._geciciId=geciciId; // sunucu bunu geri yollarsa eşleştiririz
+    renderMessages(c);
+    // GÜVENLİK: 15sn içinde sunucudan gerçek mesaj gelmezse (gönderim takıldı) geçiciyi
+    // "gönderilemedi" yap ki sonsuza kadar saat ikonunda kalmasın.
+    setTimeout(()=>{
+      const cc=chats[activeJid]||c;
+      const g=cc.messages&&cc.messages.find(x=>x.id===geciciId&&x._gecici);
+      if(g){ g.durum=-1; g.gonderilemedi=true; if(chats[activeJid]===cc) renderMessagesDebounced(cc); }
+    }, 15000);
+  }
   ws.send(JSON.stringify(payload));
   inp.value=''; inp.style.height='auto'; clearReply();
-  // KENDİ mesajını attın -> en alta in (yukarıdaysan bile). Mesaj gelince render olacak ama
-  // hemen alta inip bildirimi temizleyelim, gönderdiğini gör.
   sifirlaAltaInBadge();
   const box=document.getElementById('messages');
-  if(box) setTimeout(()=>{ box.scrollTo({top:box.scrollHeight, behavior:'smooth'}); }, 60);
+  if(box) setTimeout(()=>{ box.scrollTo({top:box.scrollHeight, behavior:'smooth'}); }, 30);
 }
 document.getElementById('sendBtn').onclick=send;
 // IC MESAJ gonderme
