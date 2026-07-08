@@ -2091,6 +2091,17 @@ wss.on('connection', (ws) => {
             orig.silenKisi = msg.agent || ''; // KIM sildi (panelde "X sildi" gostermek icin)
             broadcastHat(_LID, { type: 'message', jid: msg.jid, chat: stripRaw(chat) });
             if (db.isReady()) db.saveMessage(msg.jid, orig, _LID).catch(() => {});
+            // PERFORMANS RAPORU: bu mesaj bir PDF/poliçe idiyse, poliçe kaydını da sil
+            // (rapordan düşsün). Poliçe id formatı: pol_<lineId>_<mesajId>.
+            if (db.isReady()) {
+              const polId = 'pol_' + _LID + '_' + msg.id;
+              db.policeIdSil([polId]).then((r) => {
+                if (r && r.silinen > 0) {
+                  console.log(`📄 SİLİNEN mesaj poliçeydi -> rapordan da düşürüldü (${polId.slice(0,30)})`);
+                  broadcastHat(_LID, { type: 'yeniPolice', kullanici: msg.agent || '' }); // rapor açıksa tazele
+                }
+              }).catch(() => {});
+            }
             ws.send(JSON.stringify({ type: 'opOk', message: 'Mesaj silindi.' }));
           } catch (e) {
             // SILME BASARISIZ: panele DURUST bildir — "silindi" gibi gosterme (yoksa kullanici
@@ -2104,6 +2115,12 @@ wss.on('connection', (ws) => {
           chat.messages = chat.messages.filter(x => x.id !== msg.id);
           // DB'den de sil (yoksa yenileyince geri gelir)
           if (db.isReady() && db.deleteMessage) db.deleteMessage(msg.jid, msg.id, _LID).catch(() => {});
+          // PERFORMANS: poliçe kaydı varsa onu da sil (rapordan düşsün)
+          if (db.isReady()) {
+            db.policeIdSil(['pol_' + _LID + '_' + msg.id]).then((r) => {
+              if (r && r.silinen > 0) broadcastHat(_LID, { type: 'yeniPolice', kullanici: msg.agent || '' });
+            }).catch(() => {});
+          }
           broadcastHat(_LID, { type: 'message', jid: msg.jid, chat: stripRaw(chat) });
           ws.send(JSON.stringify({ type: 'opOk', message: 'Gönderilememiş mesaj kaldırıldı.' }));
         } else {
