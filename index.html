@@ -10904,8 +10904,8 @@ document.getElementById('stanCanvas').addEventListener('touchend',(e)=>{
 
 // ═══════════════════ FLAPPY (Kanat) — klasik ═══════════════════
 let _flapCtx=null, _flapLoop=null, _flapDurum='dur';
-let _flapKus, _flapBorular, _flapSkor=0, _flapRekor=0, _flapZaman=0;
-const FLAP_G=0.32, FLAP_CIRP=-6.2, FLAP_BORU_ARA=185, FLAP_BORU_GEN=58, FLAP_HIZ=1.7;
+let _flapKus, _flapBorular, _flapSkor=0, _flapRekor=0, _flapZaman=0, _flapSonZaman=0, _flapBirikim=0;
+const FLAP_G=0.26, FLAP_CIRP=-5.6, FLAP_BORU_ARA=195, FLAP_BORU_GEN=58, FLAP_HIZ=1.5;
 const FLAP_W=380, FLAP_H=480;
 function flapBaslat(){
   _flapCtx=document.getElementById('flapCanvas').getContext('2d');
@@ -10918,7 +10918,7 @@ function flapYeni(){
   _flapKus={x:110, y:FLAP_H/2, vy:0, aci:0};
   _flapBorular=[];
   _flapSkor=0; document.getElementById('flapSkor').textContent='0';
-  _flapZaman=0;
+  _flapZaman=0; _flapSonZaman=0; _flapBirikim=0;
   _flapDurum='hazir'; // ilk çırpışta başlar
   document.getElementById('flapDurum').innerHTML='<b>Tıkla / Boşluk</b> ile başla';
   flapDurdur();
@@ -10929,8 +10929,35 @@ function flapCirp(){
   if(_flapDurum==='hazir'){ _flapDurum='oyna'; document.getElementById('flapDurum').innerHTML='<b>Çırpmaya devam et!</b>'; }
   if(_flapDurum==='oyna'){ _flapKus.vy=FLAP_CIRP; }
 }
-function flapDongu(){
+// Flappy mantık (sabit 60FPS adımda çağrılır)
+function flapMantik(){
+  _flapZaman++;
+  _flapKus.vy+=FLAP_G; _flapKus.y+=_flapKus.vy;
+  _flapKus.aci=Math.max(-.5,Math.min(1.2,_flapKus.vy*.08));
+  if(_flapZaman%130===0 || (_flapBorular.length===0 && _flapZaman>30)){
+    const bosluk=90+Math.random()*(FLAP_H-FLAP_BORU_ARA-180);
+    _flapBorular.push({x:FLAP_W, ust:bosluk, gecti:false});
+  }
+  for(let i=_flapBorular.length-1;i>=0;i--){
+    const b=_flapBorular[i];
+    b.x-=FLAP_HIZ;
+    if(!b.gecti && b.x+FLAP_BORU_GEN<_flapKus.x){ b.gecti=true; _flapSkor++; document.getElementById('flapSkor').textContent=_flapSkor; }
+    if(b.x<-FLAP_BORU_GEN) _flapBorular.splice(i,1);
+    const kr=13;
+    if(_flapKus.x+kr>b.x && _flapKus.x-kr<b.x+FLAP_BORU_GEN){
+      if(_flapKus.y-kr<b.ust || _flapKus.y+kr>b.ust+FLAP_BORU_ARA){ flapBitti(); }
+    }
+  }
+  if(_flapKus.y>FLAP_H-20 || _flapKus.y<0){ flapBitti(); }
+}
+function flapDongu(zaman){
   const ctx=_flapCtx; if(!ctx) return;
+  // SABİT HIZ: ekran 60/120/144Hz olsa da aynı hızda oynasın (delta-time accumulator)
+  if(!_flapSonZaman) _flapSonZaman=zaman;
+  let delta=zaman-_flapSonZaman; _flapSonZaman=zaman;
+  if(delta>100) delta=100; // sekme arkaplandan dönünce sıçrama olmasın
+  _flapBirikim=(_flapBirikim||0)+delta;
+  const ADIM=1000/60; // 60 FPS sabit adım
   // ── gökyüzü (mavi gradyan) ──
   const gg=ctx.createLinearGradient(0,0,0,FLAP_H); gg.addColorStop(0,'#5cc4e4'); gg.addColorStop(1,'#aee3ef');
   ctx.fillStyle=gg; ctx.fillRect(0,0,FLAP_W,FLAP_H);
@@ -10938,32 +10965,14 @@ function flapDongu(){
   ctx.fillStyle='rgba(255,255,255,.55)';
   const bt=(_flapZaman*.3)%FLAP_W;
   [[60,90],[230,60],[320,140]].forEach(([bx,by])=>{ const x=((bx-bt)%FLAP_W+FLAP_W)%FLAP_W; ctx.beginPath(); ctx.arc(x,by,18,0,7); ctx.arc(x+18,by,22,0,7); ctx.arc(x+38,by,16,0,7); ctx.fill(); });
-
-  if(_flapDurum==='oyna'){
-    _flapZaman++;
-    // kuş fiziği
-    _flapKus.vy+=FLAP_G; _flapKus.y+=_flapKus.vy;
-    _flapKus.aci=Math.max(-.5,Math.min(1.2,_flapKus.vy*.08));
-    // boru üret (yavaş hıza göre daha seyrek — rahat geçiş)
-    if(_flapZaman%130===0 || (_flapBorular.length===0 && _flapZaman>30)){
-      const bosluk=90+Math.random()*(FLAP_H-FLAP_BORU_ARA-180);
-      _flapBorular.push({x:FLAP_W, ust:bosluk, gecti:false});
-    }
-    // boru hareket + skor + çarpışma
-    for(let i=_flapBorular.length-1;i>=0;i--){
-      const b=_flapBorular[i];
-      b.x-=FLAP_HIZ;
-      if(!b.gecti && b.x+FLAP_BORU_GEN<_flapKus.x){ b.gecti=true; _flapSkor++; document.getElementById('flapSkor').textContent=_flapSkor; }
-      if(b.x<-FLAP_BORU_GEN) _flapBorular.splice(i,1);
-      // çarpışma
-      const kr=13;
-      if(_flapKus.x+kr>b.x && _flapKus.x-kr<b.x+FLAP_BORU_GEN){
-        if(_flapKus.y-kr<b.ust || _flapKus.y+kr>b.ust+FLAP_BORU_ARA){ flapBitti(); }
-      }
-    }
-    // yer/tavan
-    if(_flapKus.y>FLAP_H-20 || _flapKus.y<0){ flapBitti(); }
+  // sabit adımları işle (kaç adım birikti ise o kadar)
+  let guvenlik=0;
+  while(_flapBirikim>=ADIM && guvenlik<5){
+    _flapBirikim-=ADIM; guvenlik++;
+    if(_flapDurum==='oyna') flapMantik();
   }
+
+  // (mantık artık flapMantik'te, sabit adımda çalışıyor — döngüde sadece çizim)
   // ── borular çiz (yeşil) ──
   _flapBorular.forEach(b=>{
     flapBoruCiz(ctx, b.x, 0, FLAP_BORU_GEN, b.ust, true);
@@ -11025,6 +11034,7 @@ let _sliCtx=null, _sliLoop=null, _sliDurum='dur';
 let _sliBen, _sliBotlar, _sliYemler, _sliRekor=0, _sliFare={x:210,y:210};
 const SLI_W=380, SLI_H=420, SLI_DUNYA=900; // dünya kamera ile kayar
 let _sliSprint=false; // hızlanma (fare basılı / boşluk) — orijinal slither gibi
+let _sliSonZaman=0, _sliBirikim=0; // sabit hız için
 let _sliKamera={x:0,y:0};
 function sliBaslat(){
   _sliCtx=document.getElementById('sliCanvas').getContext('2d');
@@ -11035,13 +11045,13 @@ function sliBaslat(){
 function sliDurdur(){ if(_sliLoop){ cancelAnimationFrame(_sliLoop); _sliLoop=null; } }
 function sliRastgeleRenk(){ const r=['#ef4444','#f59e0b','#a855f7','#ec4899','#14b8a6','#f97316']; return r[Math.floor(Math.random()*r.length)]; }
 function sliYeni(){
-  _sliBen={ x:SLI_DUNYA/2, y:SLI_DUNYA/2, aci:0, hiz:1.35, kuyruk:[], boy:14, renk:'#4ade80', ben:true, oldu:false };
+  _sliBen={ x:SLI_DUNYA/2, y:SLI_DUNYA/2, aci:0, hiz:0.9, kuyruk:[], boy:14, renk:'#4ade80', ben:true, oldu:false };
   for(let i=0;i<12;i++) _sliBen.kuyruk.push({x:_sliBen.x-i*6, y:_sliBen.y});
   // botlar
   _sliBotlar=[];
   for(let i=0;i<5;i++){
     const bx=Math.random()*SLI_DUNYA, by=Math.random()*SLI_DUNYA;
-    const bot={ x:bx, y:by, aci:Math.random()*7, hiz:1.15+Math.random()*.35, kuyruk:[], boy:8+Math.floor(Math.random()*20), renk:sliRastgeleRenk(), hedefZaman:0, oldu:false };
+    const bot={ x:bx, y:by, aci:Math.random()*7, hiz:0.8+Math.random()*.25, kuyruk:[], boy:8+Math.floor(Math.random()*20), renk:sliRastgeleRenk(), hedefZaman:0, oldu:false };
     for(let j=0;j<bot.boy;j++) bot.kuyruk.push({x:bx-j*6,y:by});
     _sliBotlar.push(bot);
   }
@@ -11049,6 +11059,7 @@ function sliYeni(){
   _sliYemler=[];
   for(let i=0;i<70;i++) sliYemEkle();
   _sliDurum='oyna';
+  _sliSonZaman=0; _sliBirikim=0;
   document.getElementById('sliSkor').textContent=_sliBen.boy;
   document.getElementById('sliDurum').innerHTML='<b>Fare / parmak</b> ile yönlendir';
   sliDurdur();
@@ -11076,15 +11087,31 @@ function sliCarpMi(bas, digerKuyruk, esik){
   }
   return false;
 }
-function sliDongu(){
+function sliDongu(zaman){
   const ctx=_sliCtx; if(!ctx) return;
-  if(_sliDurum==='oyna'){
+  // SABİT HIZ: ekran Hz'i ne olursa olsun aynı hızda (delta-time accumulator)
+  if(!_sliSonZaman) _sliSonZaman=zaman;
+  let delta=zaman-_sliSonZaman; _sliSonZaman=zaman;
+  if(delta>100) delta=100;
+  _sliBirikim=(_sliBirikim||0)+delta;
+  const ADIM=1000/60;
+  let guvenlik=0;
+  while(_sliBirikim>=ADIM && guvenlik<5){
+    _sliBirikim-=ADIM; guvenlik++;
+    if(_sliDurum==='oyna') sliMantik();
+  }
+  sliCizim();
+  _sliLoop=requestAnimationFrame(sliDongu);
+}
+// Slither MANTIK (sabit adımda) — hareket, yem, bot AI, çarpışma
+function sliMantik(){
+  {
     // BEN: fareye doğru yönel
     const dünyaFareX=_sliBen.x+(_sliFare.x-SLI_W/2), dünyaFareY=_sliBen.y+(_sliFare.y-SLI_H/2);
     const benHedef=Math.atan2(dünyaFareY-_sliBen.y, dünyaFareX-_sliBen.x);
     // SPRINT: hızlanma açıksa ve boy yeterliyse hızlan + yavaşça uzunluk azalt (yem bırak)
     const sprintAktif = _sliSprint && _sliBen.boy>14;
-    _sliBen.hiz = sprintAktif ? 2.5 : 1.35;
+    _sliBen.hiz = sprintAktif ? 1.7 : 0.9;
     if(sprintAktif){
       // her ~8 frame'de 1 boy kaybı + arkaya yem bırak
       if(!_sliBen._sprintTik) _sliBen._sprintTik=0;
@@ -11138,7 +11165,7 @@ function sliDongu(){
       const bx=Math.random()*SLI_DUNYA, by=Math.random()*SLI_DUNYA;
       // ben'e çok yakın doğmasın
       if((bx-_sliBen.x)**2+(by-_sliBen.y)**2<40000) continue;
-      const bot={ x:bx,y:by,aci:Math.random()*7,hiz:1.15+Math.random()*.35,kuyruk:[],boy:8+Math.floor(Math.random()*15),renk:sliRastgeleRenk(),hedefZaman:0,oldu:false };
+      const bot={ x:bx,y:by,aci:Math.random()*7,hiz:0.8+Math.random()*.25,kuyruk:[],boy:8+Math.floor(Math.random()*15),renk:sliRastgeleRenk(),hedefZaman:0,oldu:false };
       for(let j=0;j<bot.boy;j++) bot.kuyruk.push({x:bx-j*6,y:by});
       _sliBotlar.push(bot);
     }
@@ -11147,6 +11174,10 @@ function sliDongu(){
     const sira=tumBoylar.indexOf(_sliBen.boy)+1;
     document.getElementById('sliSira').textContent=sira;
   }
+}
+// Slither ÇİZİM (her frame)
+function sliCizim(){
+  const ctx=_sliCtx; if(!ctx) return;
   // ── ÇİZİM ──
   ctx.fillStyle='#0a1420'; ctx.fillRect(0,0,SLI_W,SLI_H);
   // ızgara (kayan)
@@ -11167,7 +11198,6 @@ function sliDongu(){
   _sliBotlar.forEach(bot=>{ if(!bot.oldu) sliYilanCiz(ctx,bot,false); });
   // ben
   if(!_sliBen.oldu) sliYilanCiz(ctx,_sliBen,true);
-  _sliLoop=requestAnimationFrame(sliDongu);
 }
 function sliYilanCiz(ctx,y,ben){
   const kal=ben?9:8;
