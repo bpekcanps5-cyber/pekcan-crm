@@ -3335,6 +3335,9 @@ function connect(){
     else if(d.type==='mesajIsaretleGuncelle'){
       // bir fotoğraf/medya işaretlendi/kaldırıldı (ortak — başka panel yaptı)
       const c=chats[d.jid];
+      // KALICI: localStorage'a da yaz (bu panelde de kalıcı olsun)
+      if(d.isaretli) _isaretliIdler.add(d.msgId); else _isaretliIdler.delete(d.msgId);
+      isaretliKaydet();
       if(c && c.messages){
         const m=c.messages.find(x=>x.id===d.msgId);
         if(m){ m.isaretli=d.isaretli; if(activeJid===d.jid) renderMessagesDebounced(c); }
@@ -3570,6 +3573,7 @@ function benimAdim(){
 function startApp(){
   // panele giris yapildi - WebSocket'i baslat (bir kez)
   pinnedYukle(); // sabitlenen sohbetleri tarayıcıdan geri yükle (kaybolmasın)
+  isaretliYukle(); // işaretli mesajları tarayıcıdan geri yükle (KALICI işaretler)
   odemeKurulum(); // ödeme yükleme alanı (sürükle-bırak) hazırla
   // ödeme sayacını yükle (pazarlama hariç herkes görebilir)
   if(currentUser && currentUser.lineTip!=='pazarlama'){
@@ -7762,6 +7766,9 @@ function tikHtml(durum){
   return '<span class="tik bekliyor" title="Gönderiliyor">🕐</span>';
 }
 function renderMessages(c, searchQ){
+  // KALICI İŞARET: localStorage'daki işaretleri bu sohbetin mesajlarına uygula (her render'da).
+  // Böylece sohbet değişse/F5/server restart olsa bile işaretler kaybolmaz.
+  isaretleriUygula(c);
   // KORUMA: Bir mesaj menüsü açıkken (kullanıcı Sil/İlet/Seç'e basmak üzereyken) listeyi
   // yeniden çizersek menü+butonlar yok olur -> ilk tıklama boşa gider. Bu yüzden menü açıksa
   // çizimi ERTELE (menü kapanınca yapılır). searchQ ile arama çizimi hariç (o kullanıcı isteği).
@@ -8714,6 +8721,23 @@ function startSelect(id){
   updateSelectionBar();
 }
 // FOTO İŞARETLEME: foto/belgeye "yapıldı" tiki (ortak — sunucuda saklanır, herkes görür)
+// ═══ KALICI İŞARET KATMANI (localStorage) ═══
+// İşaret sunucu belleğinde/DB'de bazen kayboluyordu (bellek DB'yi eziyor, server restart vb.).
+// GARANTİ çözüm: işaretli mesaj id'lerini tarayıcıda localStorage'da tut. Panel her mesaj
+// render'ında bu listeyi uygular. Böylece sohbet değişse, F5 atılsa, server restart olsa bile
+// işaret ASLA kaybolmaz. Sunucu senkronu ayrıca çalışır (ortak görünürlük için).
+let _isaretliIdler=new Set();
+function isaretliYukle(){
+  try{ const v=localStorage.getItem('isaretliMesajlar'); if(v){ const a=JSON.parse(v); if(Array.isArray(a)) _isaretliIdler=new Set(a); } }catch(e){}
+}
+function isaretliKaydet(){
+  try{ localStorage.setItem('isaretliMesajlar', JSON.stringify([..._isaretliIdler])); }catch(e){}
+}
+// Bir sohbetin mesajlarına localStorage'daki işaretleri uygula (render öncesi çağrılır)
+function isaretleriUygula(c){
+  if(!c||!c.messages||!_isaretliIdler.size) return;
+  for(const m of c.messages){ if(m.id && _isaretliIdler.has(m.id)) m.isaretli=true; }
+}
 function isaretleToggle(id){
   document.querySelectorAll('.msg-actions.open').forEach(m=>m.classList.remove('open'));
   const c=chats[activeJid];
@@ -8722,6 +8746,9 @@ function isaretleToggle(id){
   if(!m)return;
   const yeniDurum=!m.isaretli;
   m.isaretli=yeniDurum; // anlık göster (optimistic)
+  // KALICI: localStorage'a yaz (kesin kalıcılık — sunucudan bağımsız)
+  if(yeniDurum) _isaretliIdler.add(id); else _isaretliIdler.delete(id);
+  isaretliKaydet();
   renderMessagesDebounced(c);
   // sunucuya bildir (ortak kayıt + diğer panellere yayılır)
   ws.send(JSON.stringify({type:'mesajIsaretle', jid:activeJid, msgId:id, isaretli:yeniDurum}));
