@@ -10600,6 +10600,16 @@ function handleNewChatResult(d){
           <div style="text-align:left;flex:1"><div style="font-size:16px;font-weight:800;color:#e8fbec">Sürüngen</div><div style="font-size:12px;color:#6b8a72">Botlara karşı büyü</div></div>
           <span style="color:#4ade80;font-size:20px">›</span>
         </button>
+        <button class="stan-menu-btn" onclick="stanOyunSec('kare')">
+          <span style="font-size:30px">🔢</span>
+          <div style="text-align:left;flex:1"><div style="font-size:16px;font-weight:800;color:#e8fbec">Kare</div><div style="font-size:12px;color:#6b8a72">Sayıları birleştir</div></div>
+          <span style="color:#4ade80;font-size:20px">›</span>
+        </button>
+        <button class="stan-menu-btn" onclick="stanOyunSec('duvar')">
+          <span style="font-size:30px">🧱</span>
+          <div style="text-align:left;flex:1"><div style="font-size:16px;font-weight:800;color:#e8fbec">Duvar</div><div style="font-size:12px;color:#6b8a72">Tuğlaları kır</div></div>
+          <span style="color:#4ade80;font-size:20px">›</span>
+        </button>
       </div>
     </div>
   </div>
@@ -10642,6 +10652,34 @@ function handleNewChatResult(d){
     <div class="stan-bilgi" id="sliDurum"><b>Fare / parmak</b> ile yönlendir · <b>basılı tut</b> = hızlan · yem topla, botları geç</div>
     <button class="stan-geri" onclick="stanMenuyeDon()">‹ Menü</button>
   </div>
+
+  <!-- KARE -->
+  <div id="kareOyun" style="display:none;flex-direction:column;align-items:center;gap:14px">
+    <div class="stan-hud">
+      <div class="stan-skor-kutu"><div class="sk-buyuk" id="kareSkor">0</div><div class="sk-etiket">Skor</div></div>
+      <div class="stan-skor-kutu rekor"><div class="sk-buyuk" id="kareRekor">0</div><div class="sk-etiket">Rekor</div></div>
+      <div class="stan-skor-kutu"><div class="sk-buyuk" id="kareEnBuyuk">2</div><div class="sk-etiket">En büyük</div></div>
+    </div>
+    <canvas id="kareCanvas" width="380" height="380"></canvas>
+    <div class="stan-bilgi" id="kareDurum"><b>Ok tuşları / WASD</b> veya <b>kaydır</b> · aynı sayılar birleşir</div>
+    <div style="display:flex;gap:8px">
+      <button class="stan-geri" onclick="kareYeni()">↻ Yeniden</button>
+      <button class="stan-geri" onclick="stanMenuyeDon()">‹ Menü</button>
+    </div>
+  </div>
+
+  <!-- DUVAR -->
+  <div id="duvOyun" style="display:none;flex-direction:column;align-items:center;gap:14px">
+    <div class="stan-hud">
+      <div class="stan-skor-kutu"><div class="sk-buyuk" id="duvSkor">0</div><div class="sk-etiket">Skor</div></div>
+      <div class="stan-skor-kutu rekor"><div class="sk-buyuk" id="duvRekor">0</div><div class="sk-etiket">Rekor</div></div>
+      <div class="stan-skor-kutu"><div class="sk-buyuk" id="duvCan">3</div><div class="sk-etiket">Can</div></div>
+      <div class="stan-skor-kutu"><div class="sk-buyuk" id="duvSeviye">1</div><div class="sk-etiket">Seviye</div></div>
+    </div>
+    <canvas id="duvCanvas" width="380" height="460"></canvas>
+    <div class="stan-bilgi" id="duvDurum"><b>Fare / parmak</b> veya <b>◀ ▶</b> ile raketi oynat · <b>Boşluk</b> ile başla</div>
+    <button class="stan-geri" onclick="stanMenuyeDon()">‹ Menü</button>
+  </div>
 </div>
 
 <script>
@@ -10664,7 +10702,7 @@ async function stanAc(){
   const m=document.getElementById('stanModal');
   if(!m){ return; }
   // TÜM iç ekranları gizle (menü + oyunlar + eski açık kalmış olanlar), döngüleri durdur
-  ['stanKur','stanGiris','stanMenu','stanOyun','flapOyun','sliOyun'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
+  ['stanKur','stanGiris','stanMenu','stanOyun','flapOyun','sliOyun','kareOyun','duvOyun'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
   if(typeof stanOyunDurdur==='function') stanOyunDurdur();
   if(typeof flapDurdur==='function') flapDurdur();
   if(typeof sliDurdur==='function') sliDurdur();
@@ -10690,6 +10728,7 @@ function stanKapat(){
   stanOyunDurdur();
   if(typeof flapDurdur==='function') flapDurdur();
   if(typeof sliDurdur==='function') sliDurdur();
+  if(typeof duvDurdur==='function') duvDurdur();
 }
 async function stanKurKaydet(){
   const a=document.getElementById('stanKurInput').value.trim();
@@ -10742,8 +10781,9 @@ function stanOyunaGec(){
 }
 // tüm oyun ekranlarını gizle + döngüleri durdur
 function stanTumOyunlariGizle(){
-  ['stanMenu','stanOyun','flapOyun','sliOyun'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
+  ['stanMenu','stanOyun','flapOyun','sliOyun','kareOyun','duvOyun'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
   stanOyunDurdur(); flapDurdur(); sliDurdur();
+  if(typeof duvDurdur==='function') duvDurdur();
 }
 function stanMenuyeDon(){
   stanTumOyunlariGizle();
@@ -10765,6 +10805,12 @@ function stanOyunSec(oyun){
   } else if(oyun==='slither'){
     document.getElementById('sliOyun').style.display='flex';
     sliBaslat();
+  } else if(oyun==='kare'){
+    document.getElementById('kareOyun').style.display='flex';
+    kareBaslat();
+  } else if(oyun==='duvar'){
+    document.getElementById('duvOyun').style.display='flex';
+    duvBaslat();
   }
 }
 function stanYeniOyun(){
@@ -11061,6 +11107,7 @@ function flapDongu(zaman){
     ctx.fillText('Hazır?', FLAP_W/2, FLAP_H/2-40);
     ctx.font='500 15px system-ui'; ctx.fillText('Tıkla / Boşluk ile başla', FLAP_W/2, FLAP_H/2);
   }
+  if(_flapDurum==='bitti') flapBitisCiz(); // bitiş yazısı kalıcı olsun
   _flapLoop=requestAnimationFrame(flapDongu);
 }
 function flapBoruCiz(ctx,x,y,w,h,ust){
@@ -11074,17 +11121,22 @@ function flapBoruCiz(ctx,x,y,w,h,ust){
   ctx.strokeRect(x-4,az,w+8,16);
 }
 function flapBitti(){
+  if(_flapDurum==='bitti') return;
   _flapDurum='bitti';
-  const yeni=_flapSkor>_flapRekor;
-  if(yeni){ _flapRekor=_flapSkor; localStorage.setItem('sys_diag_flap',String(_flapRekor)); document.getElementById('flapRekor').textContent=_flapRekor; }
-  const ctx=_flapCtx;
+  _flapYeniRekor=_flapSkor>_flapRekor;
+  if(_flapYeniRekor){ _flapRekor=_flapSkor; localStorage.setItem('sys_diag_flap',String(_flapRekor)); document.getElementById('flapRekor').textContent=_flapRekor; }
+  document.getElementById('flapDurum').innerHTML='<b>Düştü</b> — tekrar için tıkla';
+}
+let _flapYeniRekor=false;
+// bitiş ekranı: her karede çizilir ki döngü üstüne yazıp silmesin
+function flapBitisCiz(){
+  const ctx=_flapCtx; if(!ctx) return;
   ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(0,0,FLAP_W,FLAP_H);
   ctx.textAlign='center';
-  ctx.fillStyle=yeni?'#fbbf24':'#fff'; ctx.font='800 28px system-ui';
-  ctx.fillText(yeni?'🏆 REKOR!':'Düştü!', FLAP_W/2, FLAP_H/2-30);
+  ctx.fillStyle=_flapYeniRekor?'#fbbf24':'#fff'; ctx.font='800 28px system-ui';
+  ctx.fillText(_flapYeniRekor?'🏆 REKOR!':'Düştü!', FLAP_W/2, FLAP_H/2-30);
   ctx.fillStyle='#fff'; ctx.font='700 20px system-ui'; ctx.fillText('Skor: '+_flapSkor, FLAP_W/2, FLAP_H/2+2);
   ctx.fillStyle='#cbd5e1'; ctx.font='500 14px system-ui'; ctx.fillText('Tıkla / Boşluk ile tekrar', FLAP_W/2, FLAP_H/2+32);
-  document.getElementById('flapDurum').innerHTML='<b>Düştü</b> — tekrar için tıkla';
 }
 // flappy kontrol
 document.addEventListener('keydown',(e)=>{
@@ -11165,6 +11217,7 @@ function sliDongu(zaman){
     if(_sliDurum==='oyna') sliMantik();
   }
   sliCizim();
+  if(_sliDurum==='bitti') sliBitisCiz(); // bitiş yazısı kalıcı
   _sliLoop=requestAnimationFrame(sliDongu);
 }
 // Slither MANTIK (sabit adımda) — hareket, yem, bot AI, çarpışma
@@ -11287,18 +11340,22 @@ function sliYilanCiz(ctx,y,ben){
   // ben etiketi
   if(ben){ ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='700 10px system-ui'; ctx.textAlign='center'; ctx.fillText('SEN', bx, by-kal-6); }
 }
+let _sliYeniRekor=false;
 function sliBitti(){
+  if(_sliDurum==='bitti') return;
   _sliDurum='bitti';
-  const yeni=_sliBen.boy>_sliRekor;
-  if(yeni){ _sliRekor=_sliBen.boy; localStorage.setItem('sys_diag_sli',String(_sliRekor)); document.getElementById('sliRekor').textContent=_sliRekor; }
-  const ctx=_sliCtx;
+  _sliYeniRekor=_sliBen.boy>_sliRekor;
+  if(_sliYeniRekor){ _sliRekor=_sliBen.boy; localStorage.setItem('sys_diag_sli',String(_sliRekor)); document.getElementById('sliRekor').textContent=_sliRekor; }
+  document.getElementById('sliDurum').innerHTML='<b>Yakalandın</b> — tekrar için tıkla';
+}
+function sliBitisCiz(){
+  const ctx=_sliCtx; if(!ctx) return;
   ctx.fillStyle='rgba(5,10,18,.7)'; ctx.fillRect(0,0,SLI_W,SLI_H);
   ctx.textAlign='center';
-  ctx.fillStyle=yeni?'#fbbf24':'#4ade80'; ctx.font='800 26px system-ui';
-  ctx.fillText(yeni?'🏆 REKOR!':'Yakalandın!', SLI_W/2, SLI_H/2-25);
+  ctx.fillStyle=_sliYeniRekor?'#fbbf24':'#4ade80'; ctx.font='800 26px system-ui';
+  ctx.fillText(_sliYeniRekor?'🏆 REKOR!':'Yakalandın!', SLI_W/2, SLI_H/2-25);
   ctx.fillStyle='#e8fbec'; ctx.font='700 19px system-ui'; ctx.fillText('Uzunluk: '+_sliBen.boy, SLI_W/2, SLI_H/2+3);
   ctx.fillStyle='#94a8bd'; ctx.font='500 14px system-ui'; ctx.fillText('Tıkla / Boşluk ile tekrar', SLI_W/2, SLI_H/2+32);
-  document.getElementById('sliDurum').innerHTML='<b>Yakalandın</b> — tekrar için tıkla';
 }
 // slither kontrol (fare + dokunma)
 document.getElementById('sliCanvas').addEventListener('pointermove',(e)=>{
@@ -11322,6 +11379,323 @@ document.addEventListener('keydown',(e)=>{
 document.addEventListener('keyup',(e)=>{
   if(e.key===' ') _sliSprint=false;
 });
+
+// ═══════════════════ KARE — sayı birleştirme ═══════════════════
+let _kareCtx=null, _kareIzgara=[], _kareSkor=0, _kareRekor=0, _kareBitti=false;
+const KARE_N=4, KARE_H=80, KARE_BOSLUK=12; // 4*80 + 5*12 = 380
+const KARE_RENK={
+  0:'#16241c', 2:'#2e4636', 4:'#3a5b42', 8:'#4a7c4e', 16:'#5b9c52',
+  32:'#6fbc55', 64:'#86d95a', 128:'#c9a227', 256:'#d4a017',
+  512:'#e0951a', 1024:'#eb851c', 2048:'#f5701f', 4096:'#e0492b'
+};
+function kareBaslat(){
+  _kareCtx=document.getElementById('kareCanvas').getContext('2d');
+  _kareRekor=parseInt(localStorage.getItem('sys_diag_kare')||'0',10)||0;
+  document.getElementById('kareRekor').textContent=_kareRekor;
+  kareYeni();
+}
+function kareYeni(){
+  _kareIzgara=Array.from({length:KARE_N},()=>Array(KARE_N).fill(0));
+  _kareSkor=0; _kareBitti=false;
+  kareYeniTas(); kareYeniTas();
+  kareGuncelleHud();
+  document.getElementById('kareDurum').innerHTML='<b>Ok tuşları / WASD</b> veya <b>kaydır</b> · aynı sayılar birleşir';
+  kareCiz();
+}
+function kareYeniTas(){
+  const bos=[];
+  for(let r=0;r<KARE_N;r++) for(let c=0;c<KARE_N;c++) if(!_kareIzgara[r][c]) bos.push([r,c]);
+  if(!bos.length) return;
+  const [r,c]=bos[Math.floor(Math.random()*bos.length)];
+  _kareIzgara[r][c]=Math.random()<0.9?2:4;
+}
+function kareGuncelleHud(){
+  document.getElementById('kareSkor').textContent=_kareSkor;
+  let enB=0; _kareIzgara.forEach(s=>s.forEach(v=>{ if(v>enB) enB=v; }));
+  document.getElementById('kareEnBuyuk').textContent=enB||2;
+  if(_kareSkor>_kareRekor){ _kareRekor=_kareSkor; localStorage.setItem('sys_diag_kare',String(_kareRekor)); document.getElementById('kareRekor').textContent=_kareRekor; }
+}
+// bir satırı sola kaydır+birleştir -> yeni satır ve kazanılan puan
+function kareSatirKaydir(satir){
+  let s=satir.filter(v=>v);           // boşlukları at
+  let puan=0;
+  for(let i=0;i<s.length-1;i++){
+    if(s[i]===s[i+1]){ s[i]*=2; puan+=s[i]; s.splice(i+1,1); }
+  }
+  while(s.length<KARE_N) s.push(0);
+  return {satir:s, puan};
+}
+function kareDondur(g){ // saat yönünde 90°
+  const y=Array.from({length:KARE_N},()=>Array(KARE_N).fill(0));
+  for(let r=0;r<KARE_N;r++) for(let c=0;c<KARE_N;c++) y[c][KARE_N-1-r]=g[r][c];
+  return y;
+}
+function kareHareket(yon){ // 0=sol 1=yukarı 2=sağ 3=aşağı
+  if(_kareBitti) return;
+  let g=_kareIzgara.map(s=>s.slice());
+  for(let i=0;i<yon;i++) g=kareDondur(g);       // sola çevir
+  let degisti=false, kazanc=0;
+  for(let r=0;r<KARE_N;r++){
+    const onceki=g[r].join(',');
+    const {satir,puan}=kareSatirKaydir(g[r]);
+    g[r]=satir; kazanc+=puan;
+    if(satir.join(',')!==onceki) degisti=true;
+  }
+  for(let i=0;i<(4-yon)%4;i++) g=kareDondur(g);  // geri çevir
+  if(!degisti) return;
+  _kareIzgara=g; _kareSkor+=kazanc;
+  kareYeniTas();
+  kareGuncelleHud();
+  kareCiz();
+  if(kareHamleVarMi()===false){ _kareBitti=true; kareBittiEkran(); }
+}
+function kareHamleVarMi(){
+  for(let r=0;r<KARE_N;r++) for(let c=0;c<KARE_N;c++){
+    if(!_kareIzgara[r][c]) return true;
+    if(c<KARE_N-1 && _kareIzgara[r][c]===_kareIzgara[r][c+1]) return true;
+    if(r<KARE_N-1 && _kareIzgara[r][c]===_kareIzgara[r+1][c]) return true;
+  }
+  return false;
+}
+function kareCiz(){
+  const ctx=_kareCtx; if(!ctx) return;
+  ctx.fillStyle='#0d1912'; ctx.fillRect(0,0,380,380);
+  for(let r=0;r<KARE_N;r++) for(let c=0;c<KARE_N;c++){
+    const v=_kareIzgara[r][c];
+    const x=KARE_BOSLUK+c*(KARE_H+KARE_BOSLUK), y=KARE_BOSLUK+r*(KARE_H+KARE_BOSLUK);
+    ctx.fillStyle=KARE_RENK[v]||'#e0492b';
+    stanYuvarlakKare(ctx,x,y,KARE_H,KARE_H,10); ctx.fill();
+    if(v){
+      ctx.fillStyle = v<=8 ? '#dff5e2' : '#08120b';
+      ctx.font='800 '+(v<100?32:v<1000?26:21)+'px system-ui,sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(String(v), x+KARE_H/2, y+KARE_H/2+1);
+    }
+  }
+  ctx.textBaseline='alphabetic';
+}
+function kareBittiEkran(){
+  const ctx=_kareCtx;
+  ctx.fillStyle='rgba(6,14,9,.82)'; ctx.fillRect(0,0,380,380);
+  ctx.textAlign='center';
+  ctx.fillStyle='#4ade80'; ctx.font='800 28px system-ui';
+  ctx.fillText('Hamle kalmadı', 190, 175);
+  ctx.fillStyle='#e8fbec'; ctx.font='700 19px system-ui';
+  ctx.fillText('Skor: '+_kareSkor, 190, 208);
+  ctx.fillStyle='#6b8a72'; ctx.font='500 14px system-ui';
+  ctx.fillText('“Yeniden” ile tekrar başla', 190, 238);
+  document.getElementById('kareDurum').innerHTML='<b>Oyun bitti</b> — Yeniden’e bas';
+}
+document.addEventListener('keydown',(e)=>{
+  const el=document.getElementById('kareOyun');
+  if(!el || el.style.display==='none') return;
+  const k=e.key.toLowerCase();
+  if(k==='arrowleft'||k==='a'){ kareHareket(0); e.preventDefault(); }
+  else if(k==='arrowup'||k==='w'){ kareHareket(1); e.preventDefault(); }
+  else if(k==='arrowright'||k==='d'){ kareHareket(2); e.preventDefault(); }
+  else if(k==='arrowdown'||k==='s'){ kareHareket(3); e.preventDefault(); }
+});
+let _kareDokX=0,_kareDokY=0;
+document.getElementById('kareCanvas').addEventListener('touchstart',(e)=>{ const t=e.touches[0]; _kareDokX=t.clientX; _kareDokY=t.clientY; },{passive:true});
+document.getElementById('kareCanvas').addEventListener('touchend',(e)=>{
+  const t=e.changedTouches[0];
+  const dx=t.clientX-_kareDokX, dy=t.clientY-_kareDokY;
+  if(Math.abs(dx)<24&&Math.abs(dy)<24) return;
+  if(Math.abs(dx)>Math.abs(dy)) kareHareket(dx>0?2:0); else kareHareket(dy>0?3:1);
+},{passive:true});
+
+// ═══════════════════ DUVAR — tuğla kırma ═══════════════════
+let _duvCtx=null, _duvLoop=null, _duvDurum='dur';
+let _duvRaket, _duvTop, _duvTuglalar=[], _duvSkor=0, _duvRekor=0, _duvCan=3, _duvSeviye=1;
+let _duvSonZaman=0, _duvBirikim=0, _duvSol=false, _duvSag=false;
+const DUV_W=380, DUV_H=460;
+const DUV_SATIR=5, DUV_SUTUN=8, DUV_KENAR=10, DUV_ARA=4, DUV_UST=54;
+const DUV_TG=(DUV_W-DUV_KENAR*2-DUV_ARA*(DUV_SUTUN-1))/DUV_SUTUN; // tuğla genişliği
+const DUV_TY=17; // tuğla yüksekliği
+const DUV_RENKLER=['#ef4444','#f59e0b','#eab308','#4ade80','#38bdf8'];
+function duvBaslat(){
+  _duvCtx=document.getElementById('duvCanvas').getContext('2d');
+  _duvRekor=parseInt(localStorage.getItem('sys_diag_duv')||'0',10)||0;
+  document.getElementById('duvRekor').textContent=_duvRekor;
+  _duvSkor=0; _duvCan=3; _duvSeviye=1;
+  duvSeviyeKur();
+  duvDurdur();
+  _duvSonZaman=0; _duvBirikim=0;
+  _duvLoop=requestAnimationFrame(duvDongu);
+}
+function duvDurdur(){ if(_duvLoop){ cancelAnimationFrame(_duvLoop); _duvLoop=null; } }
+function duvSeviyeKur(){
+  _duvRaket={x:DUV_W/2-36, w:72, h:11, y:DUV_H-30};
+  _duvTuglalar=[];
+  for(let r=0;r<DUV_SATIR;r++) for(let c=0;c<DUV_SUTUN;c++){
+    // üst satırlar seviyeye göre 2 vuruşluk (sert) olabilir
+    const sert = (_duvSeviye>=3 && r===0) || (_duvSeviye>=5 && r<=1);
+    _duvTuglalar.push({ x:DUV_KENAR+c*(DUV_TG+DUV_ARA), y:DUV_UST+r*(DUV_TY+DUV_ARA), can:sert?2:1, renk:DUV_RENKLER[r%DUV_RENKLER.length] });
+  }
+  duvTopuYerlestir();
+  duvHud();
+}
+function duvTopuYerlestir(){
+  // top raketin üstünde bekler, boşlukla fırlar
+  const hiz=2.35+(_duvSeviye-1)*0.18; // seviye başına hafif hızlanma (max ~3.4)
+  _duvTop={ x:_duvRaket.x+_duvRaket.w/2, y:_duvRaket.y-8, vx:0, vy:0, r:6, hiz:Math.min(hiz,3.4), bekliyor:true };
+  _duvDurum='hazir';
+  document.getElementById('duvDurum').innerHTML='<b>Boşluk</b> / tıkla ile başlat · <b>fare</b> veya <b>◀ ▶</b> ile oynat';
+}
+function duvFirlat(){
+  if(_duvDurum==='bitti'){ _duvSkor=0; _duvCan=3; _duvSeviye=1; duvSeviyeKur(); return; }
+  if(_duvDurum!=='hazir') return;
+  const aci=(-60+Math.random()*40)*Math.PI/180; // yukarı doğru, hafif rastgele
+  _duvTop.vx=Math.sin(aci)*_duvTop.hiz*1.0 + (Math.random()<.5?-.4:.4);
+  _duvTop.vy=-Math.abs(Math.cos(aci))*_duvTop.hiz;
+  _duvTop.bekliyor=false;
+  _duvDurum='oyna';
+  document.getElementById('duvDurum').innerHTML='Tuğlaları kır · raketi kaçırma!';
+}
+function duvHud(){
+  document.getElementById('duvSkor').textContent=_duvSkor;
+  document.getElementById('duvCan').textContent=_duvCan;
+  document.getElementById('duvSeviye').textContent=_duvSeviye;
+  if(_duvSkor>_duvRekor){ _duvRekor=_duvSkor; localStorage.setItem('sys_diag_duv',String(_duvRekor)); document.getElementById('duvRekor').textContent=_duvRekor; }
+}
+function duvMantik(){
+  // raket: klavye
+  if(_duvSol) _duvRaket.x-=5.2;
+  if(_duvSag) _duvRaket.x+=5.2;
+  _duvRaket.x=Math.max(0,Math.min(DUV_W-_duvRaket.w,_duvRaket.x));
+  if(_duvTop.bekliyor){ _duvTop.x=_duvRaket.x+_duvRaket.w/2; _duvTop.y=_duvRaket.y-8; return; }
+  _duvTop.x+=_duvTop.vx; _duvTop.y+=_duvTop.vy;
+  // duvarlar
+  if(_duvTop.x-_duvTop.r<0){ _duvTop.x=_duvTop.r; _duvTop.vx=Math.abs(_duvTop.vx); }
+  if(_duvTop.x+_duvTop.r>DUV_W){ _duvTop.x=DUV_W-_duvTop.r; _duvTop.vx=-Math.abs(_duvTop.vx); }
+  if(_duvTop.y-_duvTop.r<0){ _duvTop.y=_duvTop.r; _duvTop.vy=Math.abs(_duvTop.vy); }
+  // raket çarpması
+  if(_duvTop.vy>0 && _duvTop.y+_duvTop.r>=_duvRaket.y && _duvTop.y-_duvTop.r<_duvRaket.y+_duvRaket.h){
+    if(_duvTop.x>=_duvRaket.x-3 && _duvTop.x<=_duvRaket.x+_duvRaket.w+3){
+      _duvTop.y=_duvRaket.y-_duvTop.r;
+      // vuruş noktasına göre açı (kenardan vurursan yana savrulur)
+      const oran=((_duvTop.x-_duvRaket.x)/_duvRaket.w-0.5)*2; // -1..1
+      const aci=oran*(60*Math.PI/180);
+      _duvTop.vx=Math.sin(aci)*_duvTop.hiz;
+      _duvTop.vy=-Math.abs(Math.cos(aci)*_duvTop.hiz);
+    }
+  }
+  // tuğla çarpması
+  for(let i=0;i<_duvTuglalar.length;i++){
+    const t=_duvTuglalar[i];
+    if(_duvTop.x+_duvTop.r>t.x && _duvTop.x-_duvTop.r<t.x+DUV_TG &&
+       _duvTop.y+_duvTop.r>t.y && _duvTop.y-_duvTop.r<t.y+DUV_TY){
+      // hangi eksenden girdi? (daha az batan eksenden sek)
+      const solFark=Math.abs(_duvTop.x+_duvTop.r-t.x), sagFark=Math.abs(t.x+DUV_TG-(_duvTop.x-_duvTop.r));
+      const ustFark=Math.abs(_duvTop.y+_duvTop.r-t.y), altFark=Math.abs(t.y+DUV_TY-(_duvTop.y-_duvTop.r));
+      const enAz=Math.min(solFark,sagFark,ustFark,altFark);
+      if(enAz===ustFark||enAz===altFark) _duvTop.vy=-_duvTop.vy; else _duvTop.vx=-_duvTop.vx;
+      t.can--;
+      if(t.can<=0){ _duvTuglalar.splice(i,1); _duvSkor+=10; } else { _duvSkor+=4; }
+      duvHud();
+      break; // tek karede tek tuğla
+    }
+  }
+  // seviye tamam
+  if(!_duvTuglalar.length){
+    _duvSeviye++; _duvSkor+=50; duvSeviyeKur();
+    document.getElementById('duvDurum').innerHTML='<b>Seviye '+_duvSeviye+'</b> — Boşluk ile devam';
+    return;
+  }
+  // düştü
+  if(_duvTop.y-_duvTop.r>DUV_H){
+    _duvCan--;
+    duvHud();
+    if(_duvCan<=0){ duvBittiEkran(); return; }
+    duvTopuYerlestir();
+    document.getElementById('duvDurum').innerHTML='Can gitti! <b>Boşluk</b> ile devam';
+  }
+}
+function duvCizim(){
+  const ctx=_duvCtx; if(!ctx) return;
+  const g=ctx.createLinearGradient(0,0,0,DUV_H);
+  g.addColorStop(0,'#0d1520'); g.addColorStop(1,'#0a1017');
+  ctx.fillStyle=g; ctx.fillRect(0,0,DUV_W,DUV_H);
+  // tuğlalar
+  _duvTuglalar.forEach(t=>{
+    ctx.fillStyle=t.renk;
+    ctx.globalAlpha=t.can>1?1:.88;
+    stanYuvarlakKare(ctx,t.x,t.y,DUV_TG,DUV_TY,4); ctx.fill();
+    ctx.globalAlpha=1;
+    if(t.can>1){ ctx.fillStyle='rgba(255,255,255,.35)'; stanYuvarlakKare(ctx,t.x+4,t.y+4,DUV_TG-8,DUV_TY-8,2); ctx.fill(); }
+  });
+  // raket
+  const rg=ctx.createLinearGradient(_duvRaket.x,0,_duvRaket.x+_duvRaket.w,0);
+  rg.addColorStop(0,'#22d3ee'); rg.addColorStop(1,'#0891b2');
+  ctx.fillStyle=rg; stanYuvarlakKare(ctx,_duvRaket.x,_duvRaket.y,_duvRaket.w,_duvRaket.h,6); ctx.fill();
+  // top
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(_duvTop.x,_duvTop.y,_duvTop.r,0,7); ctx.fill();
+  ctx.fillStyle='rgba(34,211,238,.35)'; ctx.beginPath(); ctx.arc(_duvTop.x,_duvTop.y,_duvTop.r+3,0,7); ctx.fill();
+  if(_duvDurum==='hazir'){
+    ctx.fillStyle='rgba(255,255,255,.75)'; ctx.font='600 13px system-ui'; ctx.textAlign='center';
+    ctx.fillText('Boşluk / tıkla ile başlat', DUV_W/2, DUV_H-52);
+  }
+}
+function duvDongu(zaman){
+  if(!_duvCtx) return;
+  if(!_duvSonZaman) _duvSonZaman=zaman;
+  let delta=zaman-_duvSonZaman; _duvSonZaman=zaman;
+  if(delta>100) delta=100;
+  _duvBirikim+=delta;
+  const ADIM=1000/60;
+  let guv=0;
+  while(_duvBirikim>=ADIM && guv<5){
+    _duvBirikim-=ADIM; guv++;
+    if(_duvDurum==='oyna'||_duvDurum==='hazir') duvMantik();
+  }
+  duvCizim();
+  if(_duvDurum==='bitti') duvBitisCiz(); // bitiş yazısı kalıcı
+  _duvLoop=requestAnimationFrame(duvDongu);
+}
+let _duvYeniRekor=false;
+function duvBittiEkran(){
+  if(_duvDurum==='bitti') return;
+  _duvYeniRekor=_duvSkor>=_duvRekor && _duvSkor>0;
+  _duvDurum='bitti';
+  duvHud();
+  document.getElementById('duvDurum').innerHTML='<b>Oyun bitti</b> — Boşluk ile tekrar';
+}
+function duvBitisCiz(){
+  const ctx=_duvCtx; if(!ctx) return;
+  ctx.fillStyle='rgba(5,10,18,.78)'; ctx.fillRect(0,0,DUV_W,DUV_H);
+  ctx.textAlign='center';
+  ctx.fillStyle=_duvYeniRekor?'#fbbf24':'#22d3ee'; ctx.font='800 27px system-ui';
+  ctx.fillText(_duvYeniRekor?'🏆 REKOR!':'Oyun Bitti', DUV_W/2, DUV_H/2-20);
+  ctx.fillStyle='#e8f4fb'; ctx.font='700 19px system-ui';
+  ctx.fillText('Skor: '+_duvSkor+' · Seviye '+_duvSeviye, DUV_W/2, DUV_H/2+10);
+  ctx.fillStyle='#94a8bd'; ctx.font='500 14px system-ui';
+  ctx.fillText('Boşluk / tıkla ile tekrar', DUV_W/2, DUV_H/2+40);
+}
+// duvar kontrolleri
+document.addEventListener('keydown',(e)=>{
+  const el=document.getElementById('duvOyun');
+  if(!el || el.style.display==='none') return;
+  const k=e.key.toLowerCase();
+  if(k==='arrowleft'||k==='a'){ _duvSol=true; e.preventDefault(); }
+  else if(k==='arrowright'||k==='d'){ _duvSag=true; e.preventDefault(); }
+  else if(k===' '){ duvFirlat(); e.preventDefault(); }
+});
+document.addEventListener('keyup',(e)=>{
+  const k=e.key.toLowerCase();
+  if(k==='arrowleft'||k==='a') _duvSol=false;
+  if(k==='arrowright'||k==='d') _duvSag=false;
+});
+(function(){
+  const cv=document.getElementById('duvCanvas');
+  if(!cv) return;
+  function raketTasi(e){
+    const rect=cv.getBoundingClientRect();
+    const x=(e.clientX-rect.left)*(DUV_W/rect.width);
+    _duvRaket.x=Math.max(0,Math.min(DUV_W-_duvRaket.w, x-_duvRaket.w/2));
+  }
+  cv.addEventListener('pointermove',(e)=>{ if(_duvRaket) raketTasi(e); });
+  cv.addEventListener('pointerdown',(e)=>{ if(_duvRaket) raketTasi(e); duvFirlat(); });
+})();
 </script>
 </body>
 </html>
