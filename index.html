@@ -3182,6 +3182,33 @@ function connect(){
     try{ d=JSON.parse(ev.data); }catch(e){ return; } // bozuk mesaj akışı düşürmesin
     // pong: sunucu hayatta, bağlantı canlı -> zombi sayacını sıfırla
     if(d.type==='pong'){ _sonPong=Date.now(); return; }
+    // GEÇİCİ MESAJ EŞLEŞTİ: panelde anında gösterdiğimiz mesajın gerçek WhatsApp kimliği geldi.
+    // Geçiciyi gerçeğe çevir (id ver, _gecici işaretini kaldır) -> ekranda ÇİFT görünmez.
+    if(d.type==='geciciEslesti'){
+      const cc=chats[d.jid];
+      if(cc&&cc.messages){
+        const g=cc.messages.find(x=>x.id===d.geciciId&&x._gecici);
+        if(g){
+          // aynı gerçek id zaten listede varsa geçiciyi tamamen kaldır
+          if(cc.messages.some(x=>x.id===d.gercekId)){
+            cc.messages=cc.messages.filter(x=>x!==g);
+          } else {
+            g.id=d.gercekId; delete g._gecici; g.durum=Math.max(g.durum||1,1);
+          }
+          if(d.jid===activeJid) renderMessages(cc);
+        }
+      }
+      return;
+    }
+    // SUNUCU: "bu mesaj bende yok / kaldırıldı" -> paneli temizle (hayalet mesaj kurtarma)
+    if(d.type==='mesajYerelSil'){
+      const cc=chats[d.jid];
+      if(cc&&cc.messages){
+        cc.messages=cc.messages.filter(x=>x.id!==d.id);
+        if(d.jid===activeJid) renderMessages(cc);
+      }
+      return;
+    }
     if(d.type==='bootId'){
       // OTOMATİK YENİLEME: sunucunun başlangıç kimliği geldi.
       // İlk kez alıyorsak sakla. Daha önce farklı bir kimlik gördüysek -> sunucu yeniden

@@ -49,6 +49,10 @@ function guncellemeNotuOku() {
 const GUNCELLEME_NOT = guncellemeNotuOku();
 if (GUNCELLEME_NOT) console.log(`📢 Güncelleme notu: "${GUNCELLEME_NOT}"`);
 
+// ÇİFT GÖNDERİM KORUMASI: panelin gönderdiği benzersiz istek kimlikleri (2 dk saklanır).
+// Aynı kimlik ikinci kez gelirse mesaj tekrar gönderilmez.
+const _gonderilenIstekler = new Map();
+
 
 // ============================================================
 // LOG GURULTU FILTRESI
@@ -2027,6 +2031,21 @@ wss.on('connection', (ws) => {
 
       // 1) Metin / yanit gonderme
       if (msg.type === 'send' && SOCK && CONNECTED) {
+        // ═══ ÇİFT GÖNDERİM KORUMASI (idempotency) ═══
+        // Panel her gönderime benzersiz bir kimlik (_geciciId) verir. Aynı kimlik ikinci kez
+        // gelirse (çift tık, ağ tekrarı, panel iki kez yolladı) İKİNCİSİNİ YOK SAY.
+        // Böylece aynı mesaj asla iki kere gitmez.
+        const istekId = msg._geciciId;
+        if (istekId) {
+          const simdi = Date.now();
+          // eski kayıtları temizle (2 dk)
+          for (const [k, t] of _gonderilenIstekler) { if (simdi - t > 120000) _gonderilenIstekler.delete(k); }
+          if (_gonderilenIstekler.has(istekId)) {
+            console.log(`🛑 ÇİFT GÖNDERİM engellendi (aynı istek): ${istekId.slice(0, 20)}`);
+            return; // sessizce yok say — mesaj zaten gönderildi
+          }
+          _gonderilenIstekler.set(istekId, simdi);
+        }
         let replyTo = null;
         let quotedOpt = undefined;
         if (msg.replyId) {
@@ -2099,6 +2118,11 @@ wss.on('connection', (ws) => {
             durum: baslangicDurum,
             teamMentions: Array.isArray(msg.teamMentions) ? msg.teamMentions : undefined,
           }, _LID);
+          // PANEL EŞLEŞTİRME: panelde gösterilen geçici mesajı gerçek mesajla eşleştir.
+          // (Yoksa geçici mesaj ekranda kalıp mesaj ÇİFT görünüyordu.)
+          if (istekId) {
+            try { ws.send(JSON.stringify({ type: 'geciciEslesti', jid: msg.jid, geciciId: istekId, gercekId: sent.key.id })); } catch (_) {}
+          }
           // ═══ İLETİM DENETÇİSİ ═══ (panele düşüp WhatsApp'a gitmeyen mesaj sorunu)
           // sendMessage key döndürdü ama bu, karşıya İLETİLDİĞİ anlamına GELMEZ (yarı-açık
           // bağlantıda key döner ama mesaj gitmez). Bu mesajı takibe al: 45sn içinde
@@ -2165,16 +2189,39 @@ wss.on('connection', (ws) => {
       }
 
       // 1c) Gonderilen mesaji SIL (herkes icin, ~48 saat icinde)
-      else if (msg.type === 'delete' && SOCK && CONNECTED) {
+      else if (msg.type === 'delete') {
         const chat = C.get(msg.jid);
         const orig = chat?.messages.find(x => x.id === msg.id);
         // TEŞHİS: silme neden başarısız? mesaj bulundu mu, key var mı, fromMe mi?
-        console.log(`🗑️  SİLME isteği: id=${(msg.id||'').slice(0,16)} | mesaj bulundu=${!!orig} | key var=${!!orig?.key} | fromMe=${orig?.fromMe} | kind=${orig?.kind} | metin uzunluğu=${(orig?.text||'').length}`);
-        if (orig?.key) {
-          // Normal durum: WhatsApp'tan sil (key var)
+        console.log(`🗑️  SİLME isteği: id=${(msg.id||'').slice(0,16)} | mesaj bulundu=${!!orig} | key var=${!!orig?.key} | fromMe=${orig?.fromMe} | hat bağlı=${!!(SOCK && CONNECTED)}`);
+        // ── DURUM A: Sunucuda böyle bir mesaj YOK (hayalet / eski id / panelde kalmış kopya).
+        //    WhatsApp'tan silinecek bir şey yok. Panele "sen kendi ekranından kaldır" de.
+        //    (Eskiden sadece hata veriliyordu -> mesaj ekranda sonsuza kadar kalıyordu.)
+        if (!orig) {
+          ws.send(JSON.stringify({ type: 'mesajYerelSil', jid: msg.jid, id: msg.id }));
+          ws.send(JSON.stringify({ type: 'opOk', message: 'Mesaj kaldırıldı.' }));
+        }
+        // ── DURUM B: key YOK = mesaj WhatsApp'a hiç gitmemiş (gönderilememiş/hayalet).
+        //    Bellekten + DB'den kaldır. Hat kopuk olsa bile çalışır.
+        else if (!orig.key) {
+          chat.messages = chat.messages.filter(x => x.id !== msg.id);
+          if (db.isReady() && db.deleteMessage) db.deleteMessage(msg.jid, msg.id, _LID).catch(() => {});
+          if (db.isReady()) {
+            db.policeIdSil(['pol_' + _LID + '_' + msg.id]).then((r) => {
+              if (r && r.silinen > 0) broadcastHat(_LID, { type: 'yeniPolice', kullanici: msg.agent || '' });
+            }).catch(() => {});
+          }
+          broadcastHat(_LID, { type: 'message', jid: msg.jid, chat: stripRaw(chat) });
+          ws.send(JSON.stringify({ type: 'opOk', message: 'Gönderilememiş mesaj kaldırıldı.' }));
+        }
+        // ── DURUM C: key VAR ama hat kopuk -> WhatsApp'tan silinemez. DÜRÜST söyle.
+        else if (!SOCK || !CONNECTED) {
+          ws.send(JSON.stringify({ type: 'opError', error: 'WhatsApp bağlantısı yok, mesaj şu an silinemiyor. Bağlantı gelince tekrar deneyin.' }));
+        }
+        // ── DURUM D: Normal silme (key var + hat bağlı) -> WhatsApp'tan sil
+        else {
           try {
             // SILME KEY'INI TEMIZLE: DB'den yuklenen/eksik key'lerde silme basarisiz olabiliyordu.
-            // WhatsApp'in bekledigi temiz formata getir (reaksiyon mantigiyla ayni).
             let silKey = orig.key;
             if (silKey && (!silKey.remoteJid || silKey.id !== msg.id)) {
               silKey = {
@@ -2184,51 +2231,30 @@ wss.on('connection', (ws) => {
                 ...(silKey.participant ? { participant: silKey.participant } : {})
               };
             }
-            // ZAMAN ASIMI ekle: silme isteği asili kalmasin (15sn)
             const silTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('silme zaman asimi')), 15000));
             await Promise.race([SOCK.sendMessage(msg.jid, { delete: silKey }), silTimeout]);
             orig.deleted = true;
             orig.text = '';
             orig.kind = 'text';
             orig.mediaUrl = null;
-            orig.silenKisi = msg.agent || ''; // KIM sildi (panelde "X sildi" gostermek icin)
+            orig.silenKisi = msg.agent || '';
             broadcastHat(_LID, { type: 'message', jid: msg.jid, chat: stripRaw(chat) });
             if (db.isReady()) db.saveMessage(msg.jid, orig, _LID).catch(() => {});
             // PERFORMANS RAPORU: bu mesaj bir PDF/poliçe idiyse, poliçe kaydını da sil
-            // (rapordan düşsün). Poliçe id formatı: pol_<lineId>_<mesajId>.
             if (db.isReady()) {
               const polId = 'pol_' + _LID + '_' + msg.id;
               db.policeIdSil([polId]).then((r) => {
                 if (r && r.silinen > 0) {
                   console.log(`📄 SİLİNEN mesaj poliçeydi -> rapordan da düşürüldü (${polId.slice(0,30)})`);
-                  broadcastHat(_LID, { type: 'yeniPolice', kullanici: msg.agent || '' }); // rapor açıksa tazele
+                  broadcastHat(_LID, { type: 'yeniPolice', kullanici: msg.agent || '' });
                 }
               }).catch(() => {});
             }
             ws.send(JSON.stringify({ type: 'opOk', message: 'Mesaj silindi.' }));
           } catch (e) {
-            // SILME BASARISIZ: panele DURUST bildir — "silindi" gibi gosterme (yoksa kullanici
-            // sildim sanir ama WhatsApp'ta durur). Mesaj oldugu gibi kalsin.
             console.error('⚠️  SILME BASARISIZ:', e.message, '| id:', (msg.id||'').slice(0,12));
             ws.send(JSON.stringify({ type: 'opError', error: 'Mesaj silinemedi! (WhatsApp 2 dakikadan eski mesajları herkesten silmeye izin vermeyebilir veya bağlantı sorunu olabilir.) Tekrar deneyin.' }));
           }
-        } else if (orig && chat) {
-          // key YOK = mesaj WhatsApp'a hic gitmemis (hayalet/gonderilememis mesaj).
-          // Onu bellekten TAMAMEN kaldir ki kullanici kurtulsun (WhatsApp'ta zaten yok).
-          chat.messages = chat.messages.filter(x => x.id !== msg.id);
-          // DB'den de sil (yoksa yenileyince geri gelir)
-          if (db.isReady() && db.deleteMessage) db.deleteMessage(msg.jid, msg.id, _LID).catch(() => {});
-          // PERFORMANS: poliçe kaydı varsa onu da sil (rapordan düşsün)
-          if (db.isReady()) {
-            db.policeIdSil(['pol_' + _LID + '_' + msg.id]).then((r) => {
-              if (r && r.silinen > 0) broadcastHat(_LID, { type: 'yeniPolice', kullanici: msg.agent || '' });
-            }).catch(() => {});
-          }
-          broadcastHat(_LID, { type: 'message', jid: msg.jid, chat: stripRaw(chat) });
-          ws.send(JSON.stringify({ type: 'opOk', message: 'Gönderilememiş mesaj kaldırıldı.' }));
-        } else {
-          // mesaj bulunamadi
-          ws.send(JSON.stringify({ type: 'opError', error: 'Silinecek mesaj bulunamadı (eski mesaj olabilir).' }));
         }
       }
 
