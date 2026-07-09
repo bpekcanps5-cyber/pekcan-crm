@@ -3135,17 +3135,22 @@ function guncelleBagliPill(){
 let ws;
 let _bootId=null; // sunucu başlangıç kimliği (otomatik yenileme için — ilk bağlantıda saklanır)
 // GÜNCELLEME SORUSU: sunucu güncellenince kullanıcıya sor (otomatik yenileme yok, karar onun)
-function guncellemeSorusuGoster(){
+function guncellemeSorusuGoster(not){
   if(document.getElementById('guncellemeSoru')) return; // zaten açık
+  // NOT: sunucuda guncelleme.txt / GUNCELLEME_NOT ile yazdığın metin (varsa) burada görünür
+  const notHtml = (not && String(not).trim())
+    ? '<div style="font-size:12.5px;color:#22d3ee;line-height:1.45;margin-top:3px;font-weight:600">'+esc(String(not).trim())+'</div>'
+    : '';
   const kutu=document.createElement('div');
   kutu.id='guncellemeSoru';
   kutu.style.cssText='position:fixed;left:0;right:0;bottom:24px;z-index:999999;display:flex;justify-content:center;pointer-events:none;animation:guncKay .35s cubic-bezier(.2,.9,.3,1)';
   kutu.innerHTML=''+
-    '<div style="pointer-events:auto;background:linear-gradient(145deg,#0c121b,#131d29);border:1px solid rgba(34,211,238,.35);border-radius:18px;padding:18px 22px;box-shadow:0 16px 50px rgba(0,0,0,.5),0 0 0 1px rgba(34,211,238,.1);max-width:420px;margin:0 16px;display:flex;align-items:center;gap:16px">'+
+    '<div style="pointer-events:auto;background:linear-gradient(145deg,#0c121b,#131d29);border:1px solid rgba(34,211,238,.35);border-radius:18px;padding:18px 22px;box-shadow:0 16px 50px rgba(0,0,0,.5),0 0 0 1px rgba(34,211,238,.1);max-width:460px;margin:0 16px;display:flex;align-items:center;gap:16px">'+
       '<div style="font-size:32px;flex-shrink:0">🔄</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:2px">Güncelleme geldi</div>'+
-        '<div style="font-size:12.5px;color:#94a8bd;line-height:1.45">Yeni sürüm hazır. Şimdi yenilemek ister misin?</div>'+
+        notHtml+
+        '<div style="font-size:12.5px;color:#94a8bd;line-height:1.45;margin-top:3px">Şimdi yenilemek ister misin?</div>'+
       '</div>'+
       '<div style="display:flex;gap:8px;flex-shrink:0">'+
         '<button onclick="guncellemeYanit(false)" style="padding:9px 15px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#94a8bd;font-size:13px;font-weight:650;cursor:pointer;transition:all .14s" onmouseover="this.style.background=\'rgba(255,255,255,.06)\'" onmouseout="this.style.background=\'transparent\'">Hayır</button>'+
@@ -3185,9 +3190,8 @@ function connect(){
         _bootId=d.bootId; // ilk bağlantı, sadece sakla (yenileme YOK)
       } else if(_bootId!==d.bootId){
         // sunucu yeniden başladı -> güncelleme var. Kullanıcıya SOR (otomatik yenileme YOK).
-        console.log('🔄 Sunucu güncellendi, kullanıcıya soruluyor…');
         _bootId=d.bootId; // yeni id'yi sakla ki tekrar tekrar sormasın
-        guncellemeSorusuGoster();
+        guncellemeSorusuGoster(d.not||''); // senin yazdığın not (varsa) soruda görünür
       }
       return;
     }
@@ -8478,6 +8482,15 @@ function gonderSiradakiSil(){
     return;
   }
   const id=_topluSilSira.shift();
+  // GEÇİCİ / gönderilememiş mesaj -> sunucuda kayıt yok, panelden doğrudan kaldır ve devam et
+  const cc=chats[_topluSilJid];
+  const mm=(cc&&cc.messages)?cc.messages.find(x=>x.id===id):null;
+  if(mm && (mm._gecici || String(id).startsWith('local_'))){
+    cc.messages=cc.messages.filter(x=>x.id!==id);
+    if(_topluSilJid===activeJid) renderMessages(cc);
+    setTimeout(gonderSiradakiSil, 60);
+    return;
+  }
   _topluSilSonGonderim=Date.now();
   ws.send(JSON.stringify({type:'delete', jid:_topluSilJid, id, agent:benimAdim()}));
   // GÜVENLİK: opOk/opError gelmezse sıra takılmasın — kısa süre sonra sonrakine geç.
@@ -8920,8 +8933,32 @@ function startEdit(id){
 
 // ---- Silme ----
 function askDelete(id){
+  const c=chats[activeJid];
+  const m=(c&&c.messages)?c.messages.find(x=>x.id===id):null;
+  // ── GEÇİCİ MESAJ (sunucuda YOK): panelde optimistik gösterilmiş, gönderilememiş.
+  //    Sunucuya silme isteği yollamak işe yaramaz (orada kayıt yok) -> doğrudan ekrandan kaldır.
+  const yerelMi = m && (m._gecici || String(id).startsWith('local_'));
+  if(yerelMi){
+    askConfirm('Mesajı kaldır', 'Bu mesaj gönderilemedi. Ekrandan kaldırılsın mı?', 'Kaldır', ()=>{
+      c.messages=c.messages.filter(x=>x.id!==id);
+      renderMessages(c);
+      showToast('Mesaj kaldırıldı');
+    });
+    return;
+  }
   askConfirm('Mesajı sil', 'Bu mesajı herkesten silmek istiyor musun?', 'Sil', ()=>{
     ws.send(JSON.stringify({type:'delete', jid:activeJid, id, agent:benimAdim()}));
+    // GÜVENCE: gönderilemeyen (kırmızı) mesaj sunucu belleğinde bulunmayabilir.
+    // 1.5sn sonra hâlâ ekrandaysa yerelden kaldır ki kullanıcı takılı kalmasın.
+    if(m && (m.durum===-1 || m.gonderilemedi)){
+      setTimeout(()=>{
+        const cc=chats[activeJid]; if(!cc||!cc.messages) return;
+        if(cc.messages.some(x=>x.id===id)){
+          cc.messages=cc.messages.filter(x=>x.id!==id);
+          renderMessages(cc);
+        }
+      }, 1500);
+    }
   });
 }
 

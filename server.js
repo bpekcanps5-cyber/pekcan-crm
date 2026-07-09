@@ -27,6 +27,28 @@ const db = require('./db'); // Supabase (PostgreSQL) veri katmani
 // ============================================================
 const BOOT_ID = 'boot_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
+// ── GÜNCELLEME NOTU ──
+// Sen terminalden bir not yazarsın, herkesin "Güncelleme geldi" sorusunda O YAZI görünür.
+// İki yol:
+//   1) Dosya:  echo "Yılan oyunu eklendi" > /root/pekcan-crm/guncelleme.txt  &&  pm2 restart pekcan
+//   2) Değişken:  GUNCELLEME_NOT="Poliçe düzeltme geldi" pm2 restart pekcan --update-env
+// Not yoksa soru sade görünür (sadece "Güncelleme geldi").
+function guncellemeNotuOku() {
+  try {
+    if (process.env.GUNCELLEME_NOT && process.env.GUNCELLEME_NOT.trim()) {
+      return process.env.GUNCELLEME_NOT.trim().slice(0, 200);
+    }
+    const dosya = path.join(__dirname, 'guncelleme.txt');
+    if (fs.existsSync(dosya)) {
+      const icerik = fs.readFileSync(dosya, 'utf8').trim();
+      if (icerik) return icerik.slice(0, 200);
+    }
+  } catch (_) {}
+  return '';
+}
+const GUNCELLEME_NOT = guncellemeNotuOku();
+if (GUNCELLEME_NOT) console.log(`📢 Güncelleme notu: "${GUNCELLEME_NOT}"`);
+
 
 // ============================================================
 // LOG GURULTU FILTRESI
@@ -1652,7 +1674,7 @@ wss.on('connection', (ws) => {
   ws._lineId = 'ofis'; // varsayilan; panel 'merhaba' mesajiyla kendi hattini bildirecek
   // OTOMATİK YENİLEME: bağlanır bağlanmaz sunucunun başlangıç kimliğini gönder.
   // Panel bunu saklar; sunucu yeniden başlayıp kimlik değişince panel kendini yeniler.
-  try { ws.send(JSON.stringify({ type: 'bootId', bootId: BOOT_ID })); } catch (e) {}
+  try { ws.send(JSON.stringify({ type: 'bootId', bootId: BOOT_ID, not: GUNCELLEME_NOT })); } catch (e) {}
   // Ilk status'u GONDERME — panel 'merhaba' der demez, KENDI hattinin dogru
   // durumunu (bagli/QR) gonderecegiz. Boylece pazarlamaci ofisin durumunu gormez.
   // (Asagidaki 'merhaba' handler'i dogru status + chats gonderir.)
@@ -3905,8 +3927,21 @@ async function iletimZamanAsimi(msgId) {
     return;
   }
 
-  // ── Buradan sonrası SADECE KİŞİSEL mesajlar (çift tik güvenilir) ──
-  console.log(`⚠️  İLETİM ONAYI GELMEDİ (${ILETIM_SURE / 1000}sn): kişi=${(jid || '').split('@')[0]}, deneme=${deneme} -> aksiyon.`);
+  // ── Buradan sonrası SADECE KİŞİSEL mesajlar ──
+  // ═══ KRİTİK (çift mesaj kökü): TEK TİK = mesaj WhatsApp sunucusuna ULAŞTI. ═══
+  // Çift tik (durum 3) ise "alıcının telefonuna indi" demek. Alıcının telefonu KAPALI/çevrimdışıysa
+  // çift tik günlerce gelmeyebilir — ama mesaj WhatsApp'ta kuyrukta bekler ve AÇILINCA gider.
+  // Eskiden çift tik beklenip yeniden gönderiliyordu -> alıcı telefonu açınca İKİ mesaj alıyordu.
+  // Bu yüzden: durum >= 2 (tek tik) ise mesaj GİTMİŞTİR, asla yeniden gönderme.
+  const durumK = m ? (m.durum || 0) : 0;
+  if (durumK >= 2) {
+    // WhatsApp mesajı aldı. Alıcıya iletim (çift tik) gecikebilir; bu NORMAL, müdahale etme.
+    return;
+  }
+
+  // Buraya geldiysek: tek tik BİLE yok (durum 0/1) -> WhatsApp mesajı hiç almamış olabilir.
+  // Bu durumda yeniden göndermek GÜVENLİ (kopya oluşmaz, çünkü ilki hiç kaydedilmedi).
+  console.log(`⚠️  İLETİM ONAYI GELMEDİ (${ILETIM_SURE / 1000}sn, tek tik bile yok): kişi=${(jid || '').split('@')[0]}, deneme=${deneme} -> aksiyon.`);
 
   // 1) Bağlantıyı şüpheli say -> hemen canlılık testi (ölüyse yeniden bağlan)
   if (lineId === 'ofis') {
@@ -3919,9 +3954,10 @@ async function iletimZamanAsimi(msgId) {
     setTimeout(async () => {
       const l = lines.get(lineId);
       if (!l || !l.sock || !l.connected) { iletimBasarisizBildir(lineId, jid, msgId, veri); return; }
-      // SON KONTROL: yeniden göndermeden hemen önce çift tik gelmiş olabilir -> gönderme
+      // SON KONTROL: bu 4sn içinde TEK TİK gelmiş olabilir -> mesaj gitmiş, tekrar GÖNDERME.
+      // (durum>=2 yeterli; çift tik beklemek çift kopyaya yol açıyordu)
       const mm = chat ? chat.messages.find(x => x.id === msgId) : null;
-      if (mm && (mm.durum || 0) >= 3) return; // iletilmiş, tekrar gönderme
+      if (mm && (mm.durum || 0) >= 2) return; // WhatsApp aldı, tekrar gönderme
       try {
         const content = { text: veri.text };
         const mentionJids = (veri.text.match(/@(\d{10,15})/g) || []).map(t => t.slice(1) + '@s.whatsapp.net');
