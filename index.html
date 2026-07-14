@@ -7937,6 +7937,7 @@ function tikHtml(durum){
   if(d>=2) return '<span class="tik" title="WhatsApp aldı, karşıya ulaşması bekleniyor">✓</span>';
   return '<span class="tik bekliyor" title="Gönderiliyor">🕐</span>';
 }
+let _rmTimer=null, _rmChat=null, _rmMenuBekle=null;
 function renderMessages(c, searchQ){
   // KALICI İŞARET: localStorage'daki işaretleri bu sohbetin mesajlarına uygula (her render'da).
   // Böylece sohbet değişse/F5/server restart olsa bile işaretler kaybolmaz.
@@ -7946,8 +7947,11 @@ function renderMessages(c, searchQ){
   // çizimi ERTELE (menü kapanınca yapılır). searchQ ile arama çizimi hariç (o kullanıcı isteği).
   if(!searchQ && document.querySelector('.msg-actions.open')){
     _rmChat=c;
-    clearTimeout(_rmTimer);
-    _rmTimer=setTimeout(()=>{ if(_rmChat && !document.querySelector('.msg-actions.open')) renderMessages(_rmChat); }, 400);
+    clearTimeout(_rmMenuBekle);
+    _rmMenuBekle=setTimeout(function bekle(){
+      if(document.querySelector('.msg-actions.open')){ _rmMenuBekle=setTimeout(bekle,200); }
+      else if(_rmChat){ renderMessages(_rmChat); }
+    }, 200);
     return;
   }
   const box=document.getElementById('messages');
@@ -8331,20 +8335,24 @@ function sifirlaAltaInBadge(){
 let box_sonMesajSayisi=null;
 
 // Acik sohbete hizli mesaj gelince her birinde bastan cizmesin (kasma onleme)
-let _rmTimer=null, _rmChat=null;
 function renderMessagesDebounced(c){
   _rmChat=c;
   clearTimeout(_rmTimer);
-  // Sure DUSURULDU (60->20ms): acik sohbette mesaj daha anlik gorunsun.
   _rmTimer=setTimeout(()=>{
     if(!_rmChat) return;
-    // KRİTİK: Bir mesaj menüsü AÇIKSA listeyi yeniden çizme! Çizersek menü+butonlar
-    // DOM'dan silinir, kullanıcının bastığı buton yok olur -> "ilk denemede çalışmıyor"
-    // bug'ının kökü buydu. Menü açıkken erteले, kapanınca çiz. (Seçim modu hariç — orada
-    // zaten çizim gerekli ama menü tekil açık değil.)
+    // KRİTİK: Bir mesaj menüsü AÇIKSA listeyi yeniden çizme! Çizersek menü+butonlar DOM'dan
+    // silinir, kullanıcının bastığı buton yok olur. Menü açıkken çizimi TEK bir bekleyene
+    // bağla (üst üste erteleme YIĞMA) -> menü kapanır kapanmaz bir kez çiz.
     if(document.querySelector('.msg-actions.open')){
-      // menü açık -> 400ms sonra tekrar dene (menü kapanınca çizilecek)
-      _rmTimer=setTimeout(()=>{ if(_rmChat && !document.querySelector('.msg-actions.open')) renderMessages(_rmChat); }, 400);
+      clearTimeout(_rmMenuBekle);
+      _rmMenuBekle=setTimeout(function bekle(){
+        if(document.querySelector('.msg-actions.open')){
+          // hâlâ açık -> kısa aralıkla tekrar bak (yığılma yok, tek zamanlayıcı)
+          _rmMenuBekle=setTimeout(bekle, 200);
+        } else if(_rmChat){
+          renderMessages(_rmChat); // menü kapandı, şimdi güvenle çiz
+        }
+      }, 200);
       return;
     }
     renderMessages(_rmChat);
@@ -8841,17 +8849,20 @@ function toggleMsgMenu(ev){
   const acik=menu.classList.contains('open');
   // once tum acik menuleri kapat
   document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); });
+  // KRİTİK: Bekleyen render ertelemesini ANINDA iptal et. Yoksa önceki menüden kalan
+  // 400ms'lik erteleme, sen yeni mesaja bastığın anda araya girip ekranı yeniden çizer,
+  // yeni açtığın menüyü siler -> "diğer mesaja hemen tıklayamıyorsun" sorunu buydu.
+  try{ if(_rmTimer){ clearTimeout(_rmTimer); _rmTimer=null; } }catch(_){}
   if(!acik){
     menu.classList.add('open');
     // AKILLI YON: menu acilinca alttaki bos alani olc; yetmiyorsa YUKARI ac.
-    // (Alttaki mesajlarda menu tasmasin / kesilmesin.)
     const messagesBox=document.getElementById('messages');
     const btnRect=btn.getBoundingClientRect();
-    const menuYuksekligi=menu.offsetHeight || 220; // tahmini
+    const menuYuksekligi=menu.offsetHeight || 220;
     const boxAlt=messagesBox.getBoundingClientRect().bottom;
     const altBosluk=boxAlt - btnRect.bottom;
     if(altBosluk < menuYuksekligi + 10){
-      menu.classList.add('yukari'); // yukari ac
+      menu.classList.add('yukari');
     } else {
       menu.classList.remove('yukari');
     }
@@ -8863,9 +8874,10 @@ function toggleMsgMenu(ev){
 function menuKapatVe(fn, mid){
   // açık mesaj menülerini kapat
   document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); });
-  // render ertelemesini de iptal et (menü kapandı, artık güvenli)
+  // bekleyen render ertelemelerini iptal et (menü kapandı, temiz başla)
   try{ if(typeof _rmTimer!=='undefined' && _rmTimer){ clearTimeout(_rmTimer); _rmTimer=null; } }catch(_){}
-  // işlemi çalıştır (bir sonraki tick'te ki DOM kapanması otursun, ama iş GARANTİ çalışsın)
+  try{ if(typeof _rmMenuBekle!=='undefined' && _rmMenuBekle){ clearTimeout(_rmMenuBekle); _rmMenuBekle=null; } }catch(_){}
+  // işlemi çalıştır (garantili)
   if(typeof fn==='function'){
     try{ fn(mid); }catch(e){ console.error('menü işlemi hatası:', e); }
   }
