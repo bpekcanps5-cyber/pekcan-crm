@@ -8237,31 +8237,31 @@ function renderMessages(c, searchQ){
     // Aksiyon butonlari - WhatsApp gibi: kucuk ▾ butonu, basinca menu acilir
     let actions='';
     if(m.id){
-      let btns='<button onclick="startReply(\''+m.id+'\')">'+replySvg()+'<span>Yanıtla</span></button>';
+      let btns='<button onclick="menuKapatVe(startReply,\''+m.id+'\')">'+replySvg()+'<span>Yanıtla</span></button>';
       const sabitMi=!!(_mesajSabitler[activeJid]||[]).find(x=>x.mid===m.id);
-      btns+='<button onclick="mesajSabitleToggle(\''+m.id+'\')">📌<span>'+(sabitMi?'Sabitlemeyi kaldır':'Sabitle')+'</span></button>';
+      btns+='<button onclick="menuKapatVe(mesajSabitleToggle,\''+m.id+'\')">📌<span>'+(sabitMi?'Sabitlemeyi kaldır':'Sabitle')+'</span></button>';
       btns+='<button onclick="openReactPicker(event,\''+m.id+'\')">'+smileSvg()+'<span>Tepki ver</span></button>';
-      btns+='<button onclick="startForward(\''+m.id+'\')">'+forwardSvg()+'<span>İlet</span></button>';
+      btns+='<button onclick="menuKapatVe(startForward,\''+m.id+'\')">'+forwardSvg()+'<span>İlet</span></button>';
       if(c.isGroup && !m.fromMe && m.senderJid){
-        btns+='<button onclick="replyPrivate(\''+m.id+'\')">'+dmReplySvg()+'<span>Özelden yanıtla</span></button>';
+        btns+='<button onclick="menuKapatVe(replyPrivate,\''+m.id+'\')">'+dmReplySvg()+'<span>Özelden yanıtla</span></button>';
       }
       if(m.fromMe){
-        if(m.kind==='text') btns+='<button onclick="startEdit(\''+m.id+'\')">'+editSvg()+'<span>Düzenle</span></button>';
-        btns+='<button onclick="askDelete(\''+m.id+'\')" class="danger">'+trashSvg()+'<span>Sil</span></button>';
+        if(m.kind==='text') btns+='<button onclick="menuKapatVe(startEdit,\''+m.id+'\')">'+editSvg()+'<span>Düzenle</span></button>';
+        btns+='<button onclick="menuKapatVe(askDelete,\''+m.id+'\')" class="danger">'+trashSvg()+'<span>Sil</span></button>';
       }
       // Seç: coklu secim modunu baslatir (WhatsApp gibi). Sonra normal tik ile devam edilir.
-      btns+='<button onclick="startSelect(\''+m.id+'\')">'+selectSvg()+'<span>Seç</span></button>';
+      btns+='<button onclick="menuKapatVe(startSelect,\''+m.id+'\')">'+selectSvg()+'<span>Seç</span></button>';
       // İŞARETLE: foto/belge gibi medya işlerine "yapıldı" tiki (ortak — herkes görür)
       if(m.kind==='image' || m.kind==='document' || m.kind==='video'){
         const isaretliMi = m.isaretli;
-        btns+='<button onclick="isaretleToggle(\''+m.id+'\')">'+(isaretliMi?okSvg():tikSvg())+'<span>'+(isaretliMi?'İşareti kaldır':'İşaretle (✓)')+'</span></button>';
+        btns+='<button onclick="menuKapatVe(isaretleToggle,\''+m.id+'\')">'+(isaretliMi?okSvg():tikSvg())+'<span>'+(isaretliMi?'İşareti kaldır':'İşaretle (✓)')+'</span></button>';
       }
-      // tetikleyici ▾ + gizli menu
-      // ÖNEMLİ: menünün kendisine tıklama (butonlar dahil) global "dış tıklama kapatıcısına"
-      // ULAŞMASIN diye onclick'te stopPropagation. AYRICA herhangi bir butona basılınca menüyü
-      // KAPAT (setTimeout ile buton işlemi çalıştıktan sonra) -> render ertelemesi takılmaz,
-      // menü açık kalmaz. Bu ikisi "ilk denemede çalışmıyor" bug'ının kökünü çözer.
-      actions='<div class="msg-menu-wrap"><button class="msg-menu-btn" onclick="toggleMsgMenu(event)" aria-label="Menü"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button><div class="msg-actions" onclick="event.stopPropagation();var _mn=this;setTimeout(function(){_mn.classList.remove(\'open\');_mn.classList.remove(\'yukari\');},0)">'+btns+'</div></div>';
+      // tetikleyici ▾ + gizli menu.
+      // ÖNEMLİ: Menüye tıklama global "dış tıklama kapatıcısına" ULAŞMASIN diye stopPropagation.
+      // Menüyü KAPATMA işini artık BUTONLARIN KENDİSİ yapıyor (menuKapatVe) -> eskiden buradaki
+      // setTimeout ile erken kapatma, buton onclick'inden ÖNCE çalışıp "boş tıklama" yaratıyordu.
+      // Bu yarış durumu kaldırıldı; artık her tık %100 çalışır.
+      actions='<div class="msg-menu-wrap"><button class="msg-menu-btn" onclick="toggleMsgMenu(event)" aria-label="Menü"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button><div class="msg-actions" onclick="event.stopPropagation()">'+btns+'</div></div>';
     }
     const selCls = selectedMsgs.has(m.id) ? ' selected' : '';
     const menCls = m.mentionsMe ? ' mentions-me' : '';
@@ -8855,6 +8855,19 @@ function toggleMsgMenu(ev){
     } else {
       menu.classList.remove('yukari');
     }
+  }
+}
+// MENÜ BUTONU TIKLAMA — "boş tıklama" bug'ının kesin çözümü:
+// Önce açık menüleri kapat, SONRA istenen işlemi çalıştır. İşlem her zaman çalışır çünkü
+// fonksiyon referansı doğrudan elimizde (menü kapanması onu iptal edemez).
+function menuKapatVe(fn, mid){
+  // açık mesaj menülerini kapat
+  document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); });
+  // render ertelemesini de iptal et (menü kapandı, artık güvenli)
+  try{ if(typeof _rmTimer!=='undefined' && _rmTimer){ clearTimeout(_rmTimer); _rmTimer=null; } }catch(_){}
+  // işlemi çalıştır (bir sonraki tick'te ki DOM kapanması otursun, ama iş GARANTİ çalışsın)
+  if(typeof fn==='function'){
+    try{ fn(mid); }catch(e){ console.error('menü işlemi hatası:', e); }
   }
 }
 // baska yere tiklayinca menuyu kapat
