@@ -3545,15 +3545,12 @@ function connect(){
     else if(d.type==='typing'){ handleTyping(d); }
     else if(d.type==='openChat'){ setTimeout(()=>{ if(chats[d.jid]) openChat(d.jid); }, 250); }
     else if(d.type==='forwardResult'){
-      // İletilen sohbeti AC ki kullanici mesajin gittigini aninda gorsun (sadece TEK iletmede).
-      if(d.ok && d.acilacakJid && chats[d.acilacakJid] && _fwdSiraToplam<=1){
-        setTimeout(()=>{ if(chats[d.acilacakJid]) openChat(d.acilacakJid); }, 300);
-      }
-      // HIZLI SIRALI İLETME: bu dosyanın sonucunu işle, sonrakine geç (yeni sistem).
+      // NOT: Hedef grup iletim BAŞINDA açılıyor (fwdGo'da), burada tekrar açmıyoruz.
+      // Kullanıcı mesajın gidişini zaten o grupta canlı gördü.
+      // HIZLI SIRALI İLETME: bu dosyanın sonucunu işle, sonrakine geç.
       if(typeof _fwdAktifMid!=='undefined' && _fwdAktifMid){
         forwardSonuc(!!d.ok, _fwdAktifMid);
       } else if(_fwdSiraToplam<=1){
-        // TEK mesaj iletildi
         showToast(d.ok?('✓ '+(d.count||1)+' sohbete iletildi'):'İletilemedi');
       }
     }
@@ -9185,8 +9182,15 @@ document.getElementById('fwdGo').onclick=()=>{
   _fwdDeneme={};                       // mesaj id -> kaç kez denendi
   _fwdBasarisizAdlar=[];                // başarısız dosya adları (kullanıcı görsün)
   _fwdBasarisizIdler=[];                // başarısız dosya id'leri (tekrar dene için)
+  // ÖNCE HEDEF GRUBA GİT: iletim başlamadan o grubu aç ki mesajların gidişini CANLI gör.
+  // (Eskiden iletim bitince açılıyordu; artık önce açılıp orada izliyorsun.)
+  const _ilkHedefAc=(hedefler && hedefler.length)?hedefler[0]:null;
+  if(_ilkHedefAc && chats[_ilkHedefAc]){
+    openChat(_ilkHedefAc);
+  }
   if(sira.length>1) topluSayacGoster(0, sira.length, 0);
-  gonderSiradakiForward();
+  // grup açılışı otursun, sonra iletime başla (kısa gecikme)
+  setTimeout(()=>{ gonderSiradakiForward(); }, _ilkHedefAc?250:0);
 };
 // Hızlı sıralı iletme durumu
 let _fwdSira=[], _fwdSiraHedefler=[], _fwdSiraN=0, _fwdSiraToplam=0, _fwdSiraGonderilen=0, _fwdSiraBasarisiz=0;
@@ -9199,11 +9203,8 @@ function gonderSiradakiForward(){
       if(_fwdSiraBasarisiz>0) showToast('⚠️ '+_fwdSiraGonderilen+'/'+_fwdSiraToplam+' iletildi, '+_fwdSiraBasarisiz+' başarısız');
       else showToast('✓ '+_fwdSiraN+' sohbete '+_fwdSiraToplam+' dosya iletildi');
     } else showToast('✓ '+_fwdSiraN+' sohbete iletildi');
-    // İLETTİĞİN GRUBA GİT: iletme bitince ilk hedefi aç ki gittiğini gör (çoklu iletmede de).
-    const _ilkHedef=(_fwdSiraHedefler && _fwdSiraHedefler.length)?_fwdSiraHedefler[0]:null;
-    if(_ilkHedef && chats[_ilkHedef]){
-      setTimeout(()=>{ if(chats[_ilkHedef]) openChat(_ilkHedef); }, 300);
-    }
+    // NOT: Hedef grup iletim BAŞINDA açıldı (aşağıda fwdGo'da), burada tekrar açmıyoruz.
+    // Kullanıcı zaten o grupta mesajların gidişini canlı izledi.
     _fwdAktifMid=null;
     return;
   }
