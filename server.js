@@ -2029,6 +2029,27 @@ wss.on('connection', (ws) => {
       const SOCK = _line ? _line.sock : (_LID === 'ofis' ? waSock : null);
       const CONNECTED = _line ? !!_line.connected : (_LID === 'ofis' ? waConnected : false);
 
+      // ═══════════════════════════════════════════════════════════
+      // BAĞLANTI KORUMASI (kritik): WhatsApp kopukken bu işlemler eskiden SESSİZCE
+      // hiçbir şey yapmıyordu -> kullanıcı "uyarı gelmeden mesaj gitmiyor" diyordu.
+      // Artık her biri DÜRÜST uyarı veriyor. ('send' hariç: o kendi kırmızı mesajını gösteriyor)
+      // ═══════════════════════════════════════════════════════════
+      const _baglantiGerekli = ['edit', 'newChat', 'replyPrivate', 'markAllRead', 'forward', 'react'];
+      if (_baglantiGerekli.includes(msg.type) && (!SOCK || !CONNECTED)) {
+        const _islemAdi = {
+          edit: 'Mesaj düzenlenemedi', newChat: 'Sohbet açılamadı',
+          replyPrivate: 'Özel yanıt gönderilemedi', markAllRead: 'Okundu işaretlenemedi',
+          forward: 'İletilemedi', react: 'Tepki verilemedi',
+        }[msg.type] || 'İşlem yapılamadı';
+        console.log(`🔌 BAĞLANTI YOK — ${msg.type} reddedildi (hat=${_LID}) -> kullanıcı uyarıldı`);
+        ws.send(JSON.stringify({ type: 'opError', error: _islemAdi + ': WhatsApp bağlantısı yok. Bağlantı gelince tekrar deneyin.' }));
+        // iletme ise panel sırası takılmasın diye sonucu da bildir
+        if (msg.type === 'forward') {
+          ws.send(JSON.stringify({ type: 'forwardResult', ok: false, error: 'WhatsApp bağlantısı yok' }));
+        }
+        return;
+      }
+
       // 1) Metin / yanit gonderme
       if (msg.type === 'send' && SOCK && CONNECTED) {
         // ═══ ÇİFT GÖNDERİM KORUMASI (idempotency) ═══
@@ -3828,10 +3849,20 @@ function retryGroupName(jid) {
 //   başarısız olursa bağlantı ÖLÜDÜR -> kapat + yeniden bağlan. Böylece yarı-açık
 //   bağlantı en geç ~30-45 saniyede yakalanıp yenilenir, kayıp penceresi minimuma iner.
 // ════════════════════════════════════════════════════════════════════════════
-const KALP_PERIYOT = 12 * 1000;   // her 12 saniyede kalp atışı turu (15->12: daha sık kontrol)
-const KALP_SESSIZLIK = 20 * 1000; // 20sn veri yoksa test et (30->20: daha erken yakala)
-const KALP_TIMEOUT = 8 * 1000;    // sorgu yanıtı için bekleme (10->8: ölü bağlantıyı hızlı tespit)
-const KALP_MAX_BASARISIZ = 2;     // üst üste bu kadar başarısız -> yeniden bağlan
+// ────────────────────────────────────────────────────────────────────────────
+// AYAR NOTU (ÖNEMLİ — "bağlantı çok sık kopuyor" sorununun kökü):
+// Eski ayarlar AŞIRI agresifti: 20sn sessizlikte sorgu at, 8sn'de yanıt gelmezse
+// "ölü" say, 2 hatada bağlantıyı KES. Ağ bir an yavaşladığında veya WhatsApp
+// sunucusu meşgul olduğunda SAĞLAM bağlantı gereksiz yere kesiliyordu (yanlış
+// pozitif) -> yeniden bağlanma sırasında mesajlar gidemiyordu.
+// Baileys zaten kendi keep-alive'ını (25sn) yapıyor; bizimki YEDEK olmalı, ana
+// mekanizma değil. Yeni ayarlar: gerçek ölü bağlantıyı ~2 dk içinde yakalar ama
+// geçici yavaşlamada bağlantıya DOKUNMAZ.
+// ────────────────────────────────────────────────────────────────────────────
+const KALP_PERIYOT = 20 * 1000;   // her 20 saniyede tur (12->20: gereksiz yük azaldı)
+const KALP_SESSIZLIK = 60 * 1000; // 60sn hiç veri yoksa test et (20->60: Baileys keep-alive 25sn, 60sn sessizlik GERÇEKTEN anormal)
+const KALP_TIMEOUT = 15 * 1000;   // yanıt için 15sn bekle (8->15: yavaş ağa tolerans, yanlış "ölü" teşhisi yok)
+const KALP_MAX_BASARISIZ = 3;     // 3 kez üst üste başarısız -> gerçekten ölü (2->3: geçici sorunda kesme)
 
 async function kalpAtisiTuru() {
   for (const [lineId, line] of lines) {
@@ -5338,6 +5369,36 @@ async function startWA(lineId = 'ofis') {
       line.starting = false;
       _waStarting = false; // koptu, yeniden baslatilabilir
       const code = lastDisconnect?.error?.output?.statusCode;
+      // ═══ TEŞHİS: kopmanın GERÇEK sebebini yaz (tahmin değil, WhatsApp'ın verdiği kod) ═══
+      const _sebepler = {
+        401: '🔴 OTURUM KAPATILDI (telefondan çıkış yapıldı veya WhatsApp oturumu iptal etti)',
+        408: '🟡 ZAMAN AŞIMI (ağ yavaş/kesik — sunucu internet sorunu olabilir)',
+        411: '🔴 CİHAZ UYUŞMAZLIĞI (multi-device sorunu — yeni QR gerekir)',
+        428: '🟡 BAĞLANTI KAPANDI (WhatsApp bağlantıyı kesti — genelde ağ veya yoğunluk)',
+        440: '🔴 BAŞKA YERDE AÇILDI! (aynı oturum başka cihazda/panelde açıldı — ÇAKIŞMA)',
+        500: '🔴 BOZUK OTURUM (auth dosyaları bozulmuş — yeni QR gerekir)',
+        503: '🟡 WHATSAPP SERVİSİ MEŞGUL (WhatsApp tarafında geçici sorun)',
+        515: '🟢 YENİDEN BAŞLATMA GEREKLİ (normal — Baileys kendini tazeliyor)',
+      };
+      const _sebepYazi = _sebepler[code] || ('❓ BİLİNMEYEN KOD: ' + code + ' | mesaj: ' + (lastDisconnect?.error?.message || '-'));
+      // kopma geçmişi (son 1 saat) — desen görelim
+      if (!line.kopmaGecmisi) line.kopmaGecmisi = [];
+      line.kopmaGecmisi.push({ ts: Date.now(), code });
+      line.kopmaGecmisi = line.kopmaGecmisi.filter(k => Date.now() - k.ts < 3600000);
+      const _sonSaatKopma = line.kopmaGecmisi.length;
+      console.log('');
+      console.log('╔══════════════════════════════════════════════════════════');
+      console.log(`║ 🔌 BAĞLANTI KOPTU [${lineId}]`);
+      console.log(`║ Sebep: ${_sebepYazi}`);
+      console.log(`║ Son 1 saatte kopma sayısı: ${_sonSaatKopma}`);
+      if (_sonSaatKopma >= 5) {
+        console.log('║ ⚠️  ÇOK SIK KOPUYOR! Muhtemel sebepler:');
+        console.log('║    • Aynı numara telefonda/başka panelde aktif (çakışma)');
+        console.log('║    • Telefonda "Bağlı cihazlar" listesinde fazla cihaz var');
+        console.log('║    • Sunucu ağı dalgalı (VPS internet sorunu)');
+      }
+      console.log('╚══════════════════════════════════════════════════════════');
+      console.log('');
       broadcastHat(lineId, { type: 'status', connected: false });
       if (code === DisconnectReason.loggedOut) {
         // OTURUM GECERSIZ (telefondan cikis, baska cihaz cakismasi, 401/440).
@@ -5355,6 +5416,22 @@ async function startWA(lineId = 'ofis') {
         // panele bildir: baglanti gitti, yeni QR geliyor
         broadcastHat(lineId, { type: 'status', connected: false, loggedOut: true });
         if (!line.manualLogout) setTimeout(() => startWA(lineId), 2000); // bu HATTI yeniden baslat
+      } else if (code === 440) {
+        // ═══ ÇAKIŞMA: Aynı oturum BAŞKA bir yerde açıldı (telefonda WhatsApp Web,
+        //     başka panel, ya da ikinci bir sunucu). Hemen yeniden bağlanırsak iki taraf
+        //     birbirini SÜREKLİ atar (sonsuz savaş) -> bağlantı hiç oturmaz.
+        //     Bu yüzden UZUN bekle (30sn) ve tek sefer dene. ═══
+        console.log('⚔️  ÇAKIŞMA: Bu numara başka bir yerde açık! (telefonda WhatsApp Web veya başka panel)');
+        console.log('   → Sonsuz kopma savaşını önlemek için 30 saniye bekleniyor.');
+        console.log('   → ÇÖZÜM: Telefonda WhatsApp > Bağlı cihazlar > gereksiz cihazları çıkar.');
+        broadcastHat(lineId, { type: 'status', connected: false, cakisma: true });
+        _reconnectGecikme = 1500;
+        yenidenBaglanPlanla(lineId, 30000, line); // 30sn bekle, karşı taraf otursun
+      } else if (code === 515) {
+        // NORMAL: Baileys kendini tazeliyor (restartRequired). Hemen bağlan, bu bir hata değil.
+        console.log('🟢 Normal tazeleme (515) — hemen yeniden bağlanılıyor.');
+        _reconnectGecikme = 1500;
+        yenidenBaglanPlanla(lineId, 1000, line);
       } else {
         // Gecici kopma. GECE KOPMASI DUZELTMESI:
         //  - Bekleme tavani 60sn DEGIL 20sn (gece saatlerce "olu" beklemede kalmasin).

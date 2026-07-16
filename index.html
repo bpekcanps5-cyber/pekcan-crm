@@ -3229,6 +3229,11 @@ function connect(){
         hasConnectedOnce=true;   // en az bir kez baglandi
         hideQR();
       }
+      else if(d.cakisma){
+        // ÇAKIŞMA: aynı numara başka yerde açık (telefonda WhatsApp Web / başka panel).
+        // Kullanıcıya NE YAPACAĞINI söyle — yoksa kopma savaşı sürer.
+        showToast('⚔️ Bu numara başka bir yerde açık! Telefonda: WhatsApp > Bağlı cihazlar > fazla cihazları çıkar. 30sn sonra tekrar denenecek.');
+      }
       else if(d.oluBaglanti){
         // Sunucu, WhatsApp'in YANIT VERMEDIGINI tespit etti (yari-acik baglanti).
         // Kullaniciyi NET uyar: bagli gorunse de mesaj gitmez, yeniden baglaniyoruz.
