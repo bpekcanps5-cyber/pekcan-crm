@@ -944,17 +944,74 @@
   .msg.deleted{font-style:italic;color:var(--faint);opacity:.8}
   /* Mesaj menusu (▾): WhatsApp gibi HER ZAMAN sag ust kosede. */
   .msg-menu-wrap{position:absolute;top:1px;right:1px;z-index:6}
-  .msg-menu-btn{opacity:0;background:transparent;border:none;border-radius:6px;width:26px;height:22px;display:grid;place-items:center;cursor:pointer;color:var(--muted);padding:0;transition:opacity .15s,background .13s}
+  .msg-menu-btn{opacity:.42;background:transparent;border:none;border-radius:7px;width:30px;height:26px;display:grid;place-items:center;cursor:pointer;color:var(--muted);padding:0;transition:opacity .15s,background .13s,transform .1s}
+  .msg-menu-btn:active{transform:scale(.9)}
   /* gelen mesajda hafif acik zemin, giden (sag/renkli) mesajda beyazimsi zemin — buton balonun uzerinde okunur kalsin */
   .msg.in .msg-menu-btn:hover{background:rgba(0,0,0,.10)}
   .msg-menu-btn svg{width:18px;height:18px}
   .msg.out .msg-menu-btn{color:rgba(255,255,255,.8)}
   .msg.out .msg-menu-btn:hover{background:rgba(255,255,255,.18)}
   /* acilir menu - varsayilan gizli, .open ile gorunur. Sag kosedeki butonun altinda, sola dogru acilir. */
-  .msg-actions{display:none;position:absolute;top:24px;right:0;flex-direction:column;gap:1px;min-width:172px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:5px;box-shadow:var(--shadow-lg);z-index:60}
-  .msg-actions.open{display:flex}
-  /* Menu YUKARI acilir (alttaki mesajlarda tasmasin) */
-  .msg-actions.yukari{top:auto;bottom:24px}
+  /* ═══════════════════════════════════════════════════════════════════
+     GLOBAL MESAJ MENÜSÜ — yeni nesil tasarım
+     • <body> altında, position:fixed, en üst katman -> hiçbir şey üstüne binemez
+       (eski tasarımda menü mesajın içindeydi; komşu mesajlar üstüne binip tıklamayı
+        yutuyordu -> "5-10 kez basmak gerekiyor" sorununun kökü buydu)
+     • Cam efekti + hızlı emoji tepki satırı + renkli ikon kapsülleri
+     ═══════════════════════════════════════════════════════════════════ */
+  #globalMsgMenu{
+    display:none;position:fixed;flex-direction:column;min-width:212px;
+    background:color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter:blur(18px) saturate(1.5); -webkit-backdrop-filter:blur(18px) saturate(1.5);
+    border:1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    border-radius:18px;padding:7px;
+    box-shadow:0 24px 60px rgba(0,0,0,.30), 0 4px 14px rgba(0,0,0,.10), inset 0 1px 0 rgba(255,255,255,.14);
+    z-index:2147483000;
+    animation:gmmAc .16s cubic-bezier(.16,1,.3,1);
+    transform-origin:top right;
+  }
+  #globalMsgMenu.open{display:flex}
+  @keyframes gmmAc{from{opacity:0;transform:scale(.9) translateY(-6px)}to{opacity:1;transform:scale(1) translateY(0)}}
+  /* ── hızlı tepki satırı (üstte) ── */
+  .gmm-tepki{display:flex;align-items:center;gap:1px;padding:3px 2px 7px;margin-bottom:5px;border-bottom:1px solid color-mix(in srgb, var(--border) 60%, transparent)}
+  .gmm-tepki span{
+    font-size:20px;width:31px;height:31px;display:grid;place-items:center;border-radius:50%;
+    cursor:pointer;transition:transform .13s cubic-bezier(.2,1.6,.4,1), background .13s;
+    user-select:none;-webkit-user-select:none;
+  }
+  .gmm-tepki span:hover{transform:scale(1.32) translateY(-2px);background:var(--brand-soft)}
+  .gmm-tepki span:active{transform:scale(1.05)}
+  .gmm-tepki .gmm-arti{font-size:15px;color:var(--muted);font-weight:800}
+  .gmm-tepki .gmm-arti:hover{color:var(--brand)}
+  /* ── işlem butonları ── */
+  #globalMsgMenu button{
+    display:flex;align-items:center;gap:11px;width:100%;background:none;border:none;
+    border-radius:11px;padding:9px 10px;cursor:pointer;color:var(--text);
+    font-size:14px;font-weight:600;text-align:left;min-height:40px;
+    transition:background .12s, transform .1s, padding-left .14s;
+  }
+  #globalMsgMenu button:hover{background:var(--brand-soft);color:var(--brand);padding-left:14px}
+  #globalMsgMenu button:active{transform:scale(.975)}
+  /* ikon kapsülü: her işlemin kendi rengi (yenilikçi dokunuş) */
+  #globalMsgMenu .gmm-ikon{
+    width:29px;height:29px;border-radius:9px;display:grid;place-items:center;flex-shrink:0;
+    background:var(--panel-2);transition:background .12s, transform .12s;
+  }
+  #globalMsgMenu button:hover .gmm-ikon{transform:scale(1.08) rotate(-4deg)}
+  #globalMsgMenu .gmm-ikon svg{width:16px;height:16px}
+  #globalMsgMenu .i-yanit .gmm-ikon{background:rgba(59,130,246,.14);color:#3b82f6}
+  #globalMsgMenu .i-sabit .gmm-ikon{background:rgba(245,158,11,.14);color:#f59e0b}
+  #globalMsgMenu .i-ilet .gmm-ikon{background:rgba(139,92,246,.14);color:#8b5cf6}
+  #globalMsgMenu .i-ozel .gmm-ikon{background:rgba(236,72,153,.14);color:#ec4899}
+  #globalMsgMenu .i-sec .gmm-ikon{background:rgba(100,116,139,.14);color:#64748b}
+  #globalMsgMenu .i-isaret .gmm-ikon{background:rgba(34,197,94,.14);color:#22c55e}
+  #globalMsgMenu .i-duzenle .gmm-ikon{background:rgba(20,184,166,.14);color:#14b8a6}
+  #globalMsgMenu button.danger{color:#dc2626}
+  #globalMsgMenu button.danger .gmm-ikon{background:rgba(220,38,38,.13);color:#dc2626}
+  #globalMsgMenu button.danger:hover{background:rgba(220,38,38,.10);color:#dc2626}
+  #globalMsgMenu .gmm-ayrac{height:1px;background:color-mix(in srgb, var(--border) 60%, transparent);margin:5px 8px}
+  /* eski gömülü menü (kullanılmıyor — geriye uyumluluk) */
+  .msg-actions{display:none}
   .msg-actions button{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;border-radius:8px;padding:9px 11px;cursor:pointer;color:var(--text);font-size:13.5px;font-weight:500;text-align:left;transition:background .12s}
   .msg-actions button:hover{background:var(--brand-soft);color:var(--brand)}
   .msg-actions button.danger{color:#dc2626}
@@ -6173,7 +6230,7 @@ function odemeSayacGuncelle(n){
 let _odemeSecBelgeler=[];   // {url, ad, tip, kaynak:'mesaj'|'dosya', file?} — seçilenler
 let _odemeSecAdaylar=[];    // gruptaki tüm foto/belgeler (işaretlenebilir aday listesi)
 function odemeyeEkleMesaj(msgId){
-  document.querySelectorAll('.msg-actions.open').forEach(m=>m.classList.remove('open'));
+  globalMenuKapat();
   odemeSecModalAc(msgId ? [msgId] : []);
 }
 function odemelereTopluEkle(){
@@ -6712,7 +6769,7 @@ function startWhatsApp(){
 let _confirmAction=null;
 function askConfirm(title, text, okLabel, onOk){
   // Onay penceresi açılmadan önce: açık mesaj menülerini kapat (temiz başlangıç).
-  try{ document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); }); }catch(_){}
+  try{ globalMenuKapat(); }catch(_){}
   try{
     document.getElementById('cfTitle').textContent=title;
     document.getElementById('cfText').textContent=text;
@@ -7145,7 +7202,7 @@ function buradayimYoneticiKaldir(jid){
 let _mesajSabitler={}; // { jid: [ {mid,text,sender,ts,sabitleyen} ] }
 function mesajSabitleToggle(mid){
   if(!activeJid||!connected) return;
-  document.querySelectorAll('.msg-actions.open').forEach(x=>x.classList.remove('open'));
+  globalMenuKapat();
   const c=chats[activeJid]; if(!c) return;
   const m=(c.messages||[]).find(x=>x.id===mid);
   const metin=m?(m.text||m.caption||(m.type==='image'?'📷 Fotoğraf':m.type==='document'?'📄 Belge':'Mesaj')):'Mesaj';
@@ -7959,6 +8016,11 @@ function tikHtml(durum){
   return '<span class="tik bekliyor" title="Gönderiliyor">🕐</span>';
 }
 let _rmTimer=null, _rmChat=null, _rmMenuBekle=null;
+// Global mesaj menüsü açık mı? (liste yenilemesi menü açıkken beklesin diye)
+function _globalMenuAcikMi(){
+  const el=document.getElementById('globalMsgMenu');
+  return !!(el && el.classList.contains('open'));
+}
 function renderMessages(c, searchQ){
   // KALICI İŞARET: localStorage'daki işaretleri bu sohbetin mesajlarına uygula (her render'da).
   // Böylece sohbet değişse/F5/server restart olsa bile işaretler kaybolmaz.
@@ -7966,11 +8028,11 @@ function renderMessages(c, searchQ){
   // KORUMA: Bir mesaj menüsü açıkken (kullanıcı Sil/İlet/Seç'e basmak üzereyken) listeyi
   // yeniden çizersek menü+butonlar yok olur -> ilk tıklama boşa gider. Bu yüzden menü açıksa
   // çizimi ERTELE (menü kapanınca yapılır). searchQ ile arama çizimi hariç (o kullanıcı isteği).
-  if(!searchQ && document.querySelector('.msg-actions.open')){
+  if(!searchQ && _globalMenuAcikMi()){
     _rmChat=c;
     clearTimeout(_rmMenuBekle);
     _rmMenuBekle=setTimeout(function bekle(){
-      if(document.querySelector('.msg-actions.open')){ _rmMenuBekle=setTimeout(bekle,200); }
+      if(_globalMenuAcikMi()){ _rmMenuBekle=setTimeout(bekle,200); }
       else if(_rmChat){ renderMessages(_rmChat); }
     }, 200);
     return;
@@ -8259,34 +8321,12 @@ function renderMessages(c, searchQ){
       const benimAttr = benimTepki ? '1' : '';
       reaction = '<div class="msg-reaction" onclick="reaksiyonBilgiAc(event,\''+esc(m.id||'')+'\',\''+by+'\','+(benimTepki?'true':'false')+')" data-by="'+by+'" data-mine="'+benimAttr+'" title="Tepki detayı">'+reactEmoji+'</div>';
     }
-    // Aksiyon butonlari - WhatsApp gibi: kucuk ▾ butonu, basinca menu acilir
+    // Aksiyon butonu — WhatsApp gibi ▾. Menü ARTIK MESAJIN İÇİNDE DEĞİL:
+    // tek bir global menü (body'de, en üst katmanda) açılıyor. Böylece komşu mesajlar
+    // menünün üstüne binemiyor ve liste yenilense bile menü kaybolmuyor.
     let actions='';
     if(m.id){
-      let btns='<button onclick="menuKapatVe(startReply,\''+m.id+'\')">'+replySvg()+'<span>Yanıtla</span></button>';
-      const sabitMi=!!(_mesajSabitler[activeJid]||[]).find(x=>x.mid===m.id);
-      btns+='<button onclick="menuKapatVe(mesajSabitleToggle,\''+m.id+'\')">📌<span>'+(sabitMi?'Sabitlemeyi kaldır':'Sabitle')+'</span></button>';
-      btns+='<button onclick="openReactPicker(event,\''+m.id+'\')">'+smileSvg()+'<span>Tepki ver</span></button>';
-      btns+='<button onclick="menuKapatVe(startForward,\''+m.id+'\')">'+forwardSvg()+'<span>İlet</span></button>';
-      if(c.isGroup && !m.fromMe && m.senderJid){
-        btns+='<button onclick="menuKapatVe(replyPrivate,\''+m.id+'\')">'+dmReplySvg()+'<span>Özelden yanıtla</span></button>';
-      }
-      if(m.fromMe){
-        if(m.kind==='text') btns+='<button onclick="menuKapatVe(startEdit,\''+m.id+'\')">'+editSvg()+'<span>Düzenle</span></button>';
-        btns+='<button onclick="menuKapatVe(askDelete,\''+m.id+'\')" class="danger">'+trashSvg()+'<span>Sil</span></button>';
-      }
-      // Seç: coklu secim modunu baslatir (WhatsApp gibi). Sonra normal tik ile devam edilir.
-      btns+='<button onclick="menuKapatVe(startSelect,\''+m.id+'\')">'+selectSvg()+'<span>Seç</span></button>';
-      // İŞARETLE: foto/belge gibi medya işlerine "yapıldı" tiki (ortak — herkes görür)
-      if(m.kind==='image' || m.kind==='document' || m.kind==='video'){
-        const isaretliMi = m.isaretli;
-        btns+='<button onclick="menuKapatVe(isaretleToggle,\''+m.id+'\')">'+(isaretliMi?okSvg():tikSvg())+'<span>'+(isaretliMi?'İşareti kaldır':'İşaretle (✓)')+'</span></button>';
-      }
-      // tetikleyici ▾ + gizli menu.
-      // ÖNEMLİ: Menüye tıklama global "dış tıklama kapatıcısına" ULAŞMASIN diye stopPropagation.
-      // Menüyü KAPATMA işini artık BUTONLARIN KENDİSİ yapıyor (menuKapatVe) -> eskiden buradaki
-      // setTimeout ile erken kapatma, buton onclick'inden ÖNCE çalışıp "boş tıklama" yaratıyordu.
-      // Bu yarış durumu kaldırıldı; artık her tık %100 çalışır.
-      actions='<div class="msg-menu-wrap"><button class="msg-menu-btn" onclick="toggleMsgMenu(event)" aria-label="Menü"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button><div class="msg-actions" onclick="event.stopPropagation()">'+btns+'</div></div>';
+      actions='<div class="msg-menu-wrap"><button class="msg-menu-btn" onclick="toggleMsgMenu(event,\''+esc(m.id)+'\')" aria-label="Menü"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button></div>';
     }
     const selCls = selectedMsgs.has(m.id) ? ' selected' : '';
     const menCls = m.mentionsMe ? ' mentions-me' : '';
@@ -8364,10 +8404,10 @@ function renderMessagesDebounced(c){
     // KRİTİK: Bir mesaj menüsü AÇIKSA listeyi yeniden çizme! Çizersek menü+butonlar DOM'dan
     // silinir, kullanıcının bastığı buton yok olur. Menü açıkken çizimi TEK bir bekleyene
     // bağla (üst üste erteleme YIĞMA) -> menü kapanır kapanmaz bir kez çiz.
-    if(document.querySelector('.msg-actions.open')){
+    if(_globalMenuAcikMi()){
       clearTimeout(_rmMenuBekle);
       _rmMenuBekle=setTimeout(function bekle(){
-        if(document.querySelector('.msg-actions.open')){
+        if(_globalMenuAcikMi()){
           // hâlâ açık -> kısa aralıkla tekrar bak (yığılma yok, tek zamanlayıcı)
           _rmMenuBekle=setTimeout(bekle, 200);
         } else if(_rmChat){
@@ -8430,22 +8470,22 @@ document.getElementById('messages').addEventListener('contextmenu',e=>{
   }
   if(!msgEl) return;            // mesaj yoksa tarayıcı menüsü normal çıksın
   if(selectedMsgs && selectedMsgs.size>0) return; // seçim modunda karışmasın
-  const menu=msgEl.querySelector('.msg-actions');
-  const btn=msgEl.querySelector('.msg-menu-btn');
-  if(!menu || !btn) return;     // menüsü olmayan mesaj (silinmiş vs.) -> normal
+  const mid=msgEl.getAttribute('data-mid');
+  if(!mid) return;              // menüsü olmayan mesaj -> normal
   e.preventDefault();           // tarayıcının kendi menüsünü ENGELLE
-  // bizim menüyü aç (toggleMsgMenu mantığı: önce hepsini kapat, sonra bunu aç + yön ayarla)
-  const acik=menu.classList.contains('open');
-  document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); });
-  if(!acik){
-    menu.classList.add('open');
-    const messagesBox=document.getElementById('messages');
-    const btnRect=btn.getBoundingClientRect();
-    const menuYuksekligi=menu.offsetHeight || 220;
-    const boxAlt=messagesBox.getBoundingClientRect().bottom;
-    if((boxAlt - btnRect.bottom) < menuYuksekligi + 10) menu.classList.add('yukari');
-    else menu.classList.remove('yukari');
-  }
+  // GLOBAL menüyü FARE KONUMUNDA aç (mesajın içinde değil -> hiçbir şey üstüne binemez)
+  const el=_globalMenuEl();
+  if(el.classList.contains('open') && el._mid===mid){ globalMenuKapat(); return; }
+  el._mid=mid;
+  el.innerHTML=msgMenuButonlariUret(mid);
+  if(!el.innerHTML){ globalMenuKapat(); return; }
+  el.classList.add('open');
+  const mw=el.offsetWidth||200, mh=el.offsetHeight||260;
+  let top=e.clientY+4, left=e.clientX+4;
+  if(top+mh > window.innerHeight-10) top=Math.max(10, e.clientY-mh-4);
+  if(left+mw > window.innerWidth-8) left=Math.max(8, e.clientX-mw-4);
+  el.style.top=top+'px';
+  el.style.left=left+'px';
 });
 document.getElementById('messages').addEventListener('dblclick',e=>{
   // 1) Dogrudan balona mi cift tiklandi?
@@ -8863,48 +8903,105 @@ function yanitAlintiTikla(id, text){
 }
 
 // Mesaj aksiyon menusunu ac/kapat (WhatsApp gibi ▾ butonu)
-function toggleMsgMenu(ev){
-  ev.stopPropagation();
-  const btn=ev.currentTarget;
-  const menu=btn.parentElement.querySelector('.msg-actions');
-  const acik=menu.classList.contains('open');
-  // once tum acik menuleri kapat
-  document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); });
-  // KRİTİK: Bekleyen render ertelemesini ANINDA iptal et. Yoksa önceki menüden kalan
-  // 400ms'lik erteleme, sen yeni mesaja bastığın anda araya girip ekranı yeniden çizer,
-  // yeni açtığın menüyü siler -> "diğer mesaja hemen tıklayamıyorsun" sorunu buydu.
-  try{ if(_rmTimer){ clearTimeout(_rmTimer); _rmTimer=null; } }catch(_){}
-  if(!acik){
-    menu.classList.add('open');
-    // AKILLI YON: menu acilinca alttaki bos alani olc; yetmiyorsa YUKARI ac.
-    const messagesBox=document.getElementById('messages');
-    const btnRect=btn.getBoundingClientRect();
-    const menuYuksekligi=menu.offsetHeight || 220;
-    const boxAlt=messagesBox.getBoundingClientRect().bottom;
-    const altBosluk=boxAlt - btnRect.bottom;
-    if(altBosluk < menuYuksekligi + 10){
-      menu.classList.add('yukari');
-    } else {
-      menu.classList.remove('yukari');
-    }
+// ═══════════════════════════════════════════════════════════════════════
+// GLOBAL MESAJ MENÜSÜ — "bir kere basmak yetmiyor" sorununun kök çözümü
+// Menü artık mesajın içinde DEĞİL: <body> altında tek bir element, position:fixed,
+// en üst katmanda. Komşu mesajlar üstüne binemez, liste yenilense de silinemez.
+// ═══════════════════════════════════════════════════════════════════════
+function _globalMenuEl(){
+  let el=document.getElementById('globalMsgMenu');
+  if(!el){
+    el=document.createElement('div');
+    el.id='globalMsgMenu';
+    // menüye tıklama, "dışarı tıklandı -> kapat" dinleyicisine ULAŞMASIN
+    el.addEventListener('click',(e)=>e.stopPropagation());
+    document.body.appendChild(el);
   }
+  return el;
 }
-// MENÜ BUTONU TIKLAMA — "boş tıklama" bug'ının kesin çözümü:
-// Önce açık menüleri kapat, SONRA istenen işlemi çalıştır. İşlem her zaman çalışır çünkü
-// fonksiyon referansı doğrudan elimizde (menü kapanması onu iptal edemez).
+function globalMenuKapat(){
+  const el=document.getElementById('globalMsgMenu');
+  if(el){ el.classList.remove('open'); el._mid=null; }
+}
+// Bir mesajın menü içeriğini üret (hızlı tepki satırı + işlem butonları)
+function msgMenuButonlariUret(mid){
+  const c=chats[activeJid];
+  if(!c||!c.messages) return '';
+  const m=c.messages.find(x=>x.id===mid);
+  if(!m) return '';
+  const id=esc(mid);
+  // ── ÜST: hızlı tepki satırı (tek tıkla tepki — ayrı pencere açmaya gerek yok) ──
+  let html='<div class="gmm-tepki">';
+  ['👍','❤️','😂','😮','😢','🙏'].forEach(e=>{
+    html+='<span onclick="hizliTepki(\''+id+'\',\''+e+'\')" title="'+e+'">'+e+'</span>';
+  });
+  html+='<span class="gmm-arti" onclick="openReactPicker(event,\''+id+'\')" title="Diğer tepkiler">➕</span>';
+  html+='</div>';
+  // ── ALT: işlemler (her biri kendi renginde ikon kapsülüyle) ──
+  html+='<button class="i-yanit" onclick="menuKapatVe(startReply,\''+id+'\')"><span class="gmm-ikon">'+replySvg()+'</span><span>Yanıtla</span></button>';
+  const sabitMi=!!(_mesajSabitler[activeJid]||[]).find(x=>x.mid===mid);
+  html+='<button class="i-sabit" onclick="menuKapatVe(mesajSabitleToggle,\''+id+'\')"><span class="gmm-ikon">📌</span><span>'+(sabitMi?'Sabitlemeyi kaldır':'Sabitle')+'</span></button>';
+  html+='<button class="i-ilet" onclick="menuKapatVe(startForward,\''+id+'\')"><span class="gmm-ikon">'+forwardSvg()+'</span><span>İlet</span></button>';
+  if(c.isGroup && !m.fromMe && m.senderJid){
+    html+='<button class="i-ozel" onclick="menuKapatVe(replyPrivate,\''+id+'\')"><span class="gmm-ikon">'+dmReplySvg()+'</span><span>Özelden yanıtla</span></button>';
+  }
+  html+='<button class="i-sec" onclick="menuKapatVe(startSelect,\''+id+'\')"><span class="gmm-ikon">'+selectSvg()+'</span><span>Seç</span></button>';
+  if(m.kind==='image'||m.kind==='document'||m.kind==='video'){
+    html+='<button class="i-isaret" onclick="menuKapatVe(isaretleToggle,\''+id+'\')"><span class="gmm-ikon">'+(m.isaretli?okSvg():tikSvg())+'</span><span>'+(m.isaretli?'İşareti kaldır':'İşaretle (✓)')+'</span></button>';
+  }
+  if(m.fromMe){
+    html+='<div class="gmm-ayrac"></div>';
+    if(m.kind==='text') html+='<button class="i-duzenle" onclick="menuKapatVe(startEdit,\''+id+'\')"><span class="gmm-ikon">'+editSvg()+'</span><span>Düzenle</span></button>';
+    html+='<button class="danger" onclick="menuKapatVe(askDelete,\''+id+'\')"><span class="gmm-ikon">'+trashSvg()+'</span><span>Sil</span></button>';
+  }
+  return html;
+}
+// Hızlı tepki: menüdeki emojiye tek tık -> anında gönder
+function hizliTepki(mid, emoji){
+  globalMenuKapat();
+  reactTargetId=mid;
+  sendReact(emoji);
+}
+function toggleMsgMenu(ev, mid){
+  ev.stopPropagation();
+  ev.preventDefault();
+  const el=_globalMenuEl();
+  // aynı mesajın menüsü açıksa -> kapat (aç/kapa davranışı)
+  if(el.classList.contains('open') && el._mid===mid){ globalMenuKapat(); return; }
+  // bekleyen liste yenilemelerini iptal et (menü açıkken ekran zıplamasın)
+  try{ if(typeof _rmTimer!=='undefined' && _rmTimer){ clearTimeout(_rmTimer); _rmTimer=null; } }catch(_){}
+  el._mid=mid;
+  el.innerHTML=msgMenuButonlariUret(mid);
+  if(!el.innerHTML){ globalMenuKapat(); return; }
+  el.classList.add('open');
+  // AKILLI KONUM: butonun yanına aç, ekran dışına taşarsa kendini toparla
+  const btn=ev.currentTarget;
+  const r=btn.getBoundingClientRect();
+  const mw=el.offsetWidth||200, mh=el.offsetHeight||260;
+  let top=r.bottom+5;
+  let left=r.right-mw;
+  if(top+mh > window.innerHeight-10) top=Math.max(10, r.top-mh-5); // aşağı sığmazsa yukarı aç
+  if(left < 8) left=8;
+  if(left+mw > window.innerWidth-8) left=window.innerWidth-mw-8;
+  el.style.top=top+'px';
+  el.style.left=left+'px';
+}
+// MENÜ BUTONU TIKLAMA — önce menüyü kapat, SONRA işlemi garantili çalıştır
 function menuKapatVe(fn, mid){
-  // açık mesaj menülerini kapat
-  document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); });
-  // bekleyen render ertelemelerini iptal et (menü kapandı, temiz başla)
+  globalMenuKapat();
   try{ if(typeof _rmTimer!=='undefined' && _rmTimer){ clearTimeout(_rmTimer); _rmTimer=null; } }catch(_){}
   try{ if(typeof _rmMenuBekle!=='undefined' && _rmMenuBekle){ clearTimeout(_rmMenuBekle); _rmMenuBekle=null; } }catch(_){}
-  // işlemi çalıştır (garantili)
   if(typeof fn==='function'){
     try{ fn(mid); }catch(e){ console.error('menü işlemi hatası:', e); }
   }
 }
+// dışarı tıklayınca / kaydırınca / ESC ile kapan
+document.addEventListener('click',()=>globalMenuKapat());
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') globalMenuKapat(); });
+window.addEventListener('resize',()=>globalMenuKapat());
+document.addEventListener('scroll',()=>globalMenuKapat(),true);
 // baska yere tiklayinca menuyu kapat
-document.addEventListener('click',()=>{ document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); }); });
+
 
 // ═══ MODAL KİLİTLENME GÜVENLİĞİ ═══ (ekran asla kilitli kalmasın)
 // Bir modal (onay penceresi, ilet, ödeme vb.) bir sebeple açık kalırsa görünmez katman
@@ -8921,7 +9018,7 @@ document.addEventListener('keydown',(e)=>{
   if(e.key==='Escape'){
     let kapandi=false;
     document.querySelectorAll('.modal-bg.show').forEach(m=>{ m.classList.remove('show'); kapandi=true; });
-    document.querySelectorAll('.msg-actions.open').forEach(m=>{ m.classList.remove('open'); m.classList.remove('yukari'); });
+    globalMenuKapat();
     if(kapandi) _confirmAction=null;
   }
 });
@@ -8948,7 +9045,7 @@ let _secimModuAcik=false;
 function startSelect(id){
   _secimModuAcik=true;
   // açık menüleri kapat
-  document.querySelectorAll('.msg-actions.open').forEach(m=>m.classList.remove('open'));
+  globalMenuKapat();
   // mesajları yeniden çiz ki tüm daireler görünsün (mesaj SEÇİLMEZ)
   const c=chats[activeJid];
   if(c) renderMessagesDebounced(c);
@@ -8973,7 +9070,7 @@ function isaretleriUygula(c){
   for(const m of c.messages){ if(m.id && _isaretliIdler.has(m.id)) m.isaretli=true; }
 }
 function isaretleToggle(id){
-  document.querySelectorAll('.msg-actions.open').forEach(m=>m.classList.remove('open'));
+  globalMenuKapat();
   const c=chats[activeJid];
   if(!c)return;
   const m=(c.messages||[]).find(x=>x.id===id);
@@ -9081,13 +9178,14 @@ let reactTargetId=null;
 function openReactPicker(ev, id){
   ev.stopPropagation();
   reactTargetId=id;
+  // konumu ÖNCE al (menü kapanınca element kaybolabilir)
+  const r=ev.currentTarget.getBoundingClientRect();
+  globalMenuKapat(); // menü kapansın, picker tek başına görünsün
   const p=document.getElementById('reactPicker');
   p.innerHTML=reactEmojis.map(e=>'<span onclick="sendReact(\''+e+'\')">'+e+'</span>').join('')+
     '<span onclick="sendReact(\'\')" title="Kaldir" style="font-size:18px;opacity:.6">✕</span>';
-  // konumu butonun yanina ayarla
-  const r=ev.currentTarget.getBoundingClientRect();
-  p.style.left=Math.min(r.left, window.innerWidth-330)+'px';
-  p.style.top=(r.top-52)+'px';
+  p.style.left=Math.min(Math.max(8, r.left-120), window.innerWidth-330)+'px';
+  p.style.top=Math.max(8, r.top-52)+'px';
   p.classList.add('show');
 }
 function sendReact(emoji){
@@ -9097,7 +9195,7 @@ function sendReact(emoji){
 }
 document.addEventListener('click',e=>{
   const p=document.getElementById('reactPicker');
-  if(p.classList.contains('show') && !p.contains(e.target) && !e.target.closest('.msg-actions')) p.classList.remove('show');
+  if(p.classList.contains('show') && !p.contains(e.target) && !e.target.closest('#globalMsgMenu')) p.classList.remove('show');
 });
 
 // ---- Reaksiyon baloncuğuna tıklayınca: KİM ATTI + (kendi tepkimizse) KALDIR ----
@@ -9156,7 +9254,7 @@ let fwdMsgIds=[], fwdFromJid=null;
 const fwdSelected=new Set();
 function startForward(id){
   // Menüyü kapat
-  document.querySelectorAll('.msg-actions.open').forEach(m=>m.classList.remove('open'));
+  globalMenuKapat();
   // WhatsApp gibi: "İlet" önce bu mesajı SEÇER + seçim modunu başlatır.
   // Kullanıcı birkaç mesaj daha seçip, üstteki "İlet" butonuyla hepsini birden iletir.
   _secimModuAcik=true;                 // seçim modu AÇIK -> tüm mesajlarda seçim dairesi görünür
