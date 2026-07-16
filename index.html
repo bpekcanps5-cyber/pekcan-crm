@@ -3184,6 +3184,20 @@ function connect(){
     if(d.type==='pong'){ _sonPong=Date.now(); return; }
     // GEÇİCİ MESAJ EŞLEŞTİ: panelde anında gösterdiğimiz mesajın gerçek WhatsApp kimliği geldi.
     // Geçiciyi gerçeğe çevir (id ver, _gecici işaretini kaldır) -> ekranda ÇİFT görünmez.
+    // ŞİFRELEME OTURUMU BOZUK: mesajlar "gitti" görünüp aslında gitmeyebilir!
+    // Bu ÇOK ciddi -> kalıcı kırmızı bant göster (kullanıcı kapatana kadar durur).
+    if(d.type==='sifrelemeUyari'){
+      let bant=document.getElementById('sifrelemeBandi');
+      if(!bant){
+        bant=document.createElement('div');
+        bant.id='sifrelemeBandi';
+        bant.style.cssText='position:fixed;top:0;left:0;right:0;z-index:999998;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;padding:11px 16px;font-size:13.5px;font-weight:650;text-align:center;box-shadow:0 4px 20px rgba(220,38,38,.4);display:flex;align-items:center;justify-content:center;gap:12px';
+        bant.innerHTML='<span>🔐 <b>DİKKAT:</b> WhatsApp şifreleme oturumu bozuk! Mesajlar gönderilmiş görünse bile karşı tarafa ULAŞMAYABİLİR. Yöneticiye bildirin — oturum tazelenmeli (QR yenileme).</span>'+
+          '<button onclick="this.parentElement.remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0">Kapat</button>';
+        document.body.appendChild(bant);
+      }
+      return;
+    }
     if(d.type==='geciciEslesti'){
       const cc=chats[d.jid];
       if(cc&&cc.messages){

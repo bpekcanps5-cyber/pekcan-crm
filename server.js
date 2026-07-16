@@ -71,6 +71,50 @@ const _gurultuKaliplari = [
   'incoming prekey bundle', 'chainKey', 'ephemeralKeyPair', 'currentRatchet',
   'remoteIdentityKey', 'registrationId', 'rootKey', '_chains',
 ];
+// ═══════════════════════════════════════════════════════════════════════
+// ŞİFRELEME HATASI SAYACI (KRİTİK — "mesaj gitti göründü ama gitmemiş" sorunu)
+// "Bad MAC" / "Failed to decrypt" = WhatsApp şifreleme oturumu bozulmuş demek.
+// Bu bozukken: mesaj gönderilir, makbuz bile gelir (çift tik!), AMA karşı taraf
+// mesajın şifresini çözemez -> mesaj HİÇ GÖRÜNMEZ. Panel "gitti" sanır.
+// Bu yüzden bu hataları gizlemeye devam ediyoruz (ekranı doldurmasın) ama SAYIYORUZ.
+// Eşik aşılırsa NET uyarı veriyoruz: oturum tazelenmeli (QR yenile).
+// ═══════════════════════════════════════════════════════════════════════
+const _sifrelemeHatalari = { sayac: 0, ilkZaman: 0, sonUyari: 0 };
+const SIFRELEME_ESIK = 15;              // son 10 dk'da bu kadar hata -> ciddi sorun
+const SIFRELEME_PENCERE = 10 * 60 * 1000; // 10 dakika
+function _sifrelemeHatasiSay(metin) {
+  const kritikMi = /Bad MAC|Failed to decrypt|Session error|No session found|MessageCounterError/i.test(metin);
+  if (!kritikMi) return;
+  const simdi = Date.now();
+  // pencere dışındaysa sıfırla
+  if (!_sifrelemeHatalari.ilkZaman || simdi - _sifrelemeHatalari.ilkZaman > SIFRELEME_PENCERE) {
+    _sifrelemeHatalari.sayac = 0;
+    _sifrelemeHatalari.ilkZaman = simdi;
+  }
+  _sifrelemeHatalari.sayac++;
+  // eşik aşıldı + son uyarıdan 10dk geçti -> UYAR
+  if (_sifrelemeHatalari.sayac >= SIFRELEME_ESIK && simdi - _sifrelemeHatalari.sonUyari > SIFRELEME_PENCERE) {
+    _sifrelemeHatalari.sonUyari = simdi;
+    _origLog('');
+    _origLog('╔══════════════════════════════════════════════════════════════');
+    _origLog('║ 🔐 ŞİFRELEME OTURUMU BOZUK! (ciddi)');
+    _origLog(`║ Son 10 dakikada ${_sifrelemeHatalari.sayac} şifreleme hatası.`);
+    _origLog('║');
+    _origLog('║ BU NE DEMEK: Mesajlar gönderilmiş GİBİ görünebilir (çift tik bile');
+    _origLog('║ gelebilir) ama karşı taraf şifresini çözemediği için GÖREMEZ.');
+    _origLog('║ Yani panel "gitti" der, WhatsApp\'ta mesaj YOKTUR.');
+    _origLog('║');
+    _origLog('║ ÇÖZÜM: WhatsApp oturumunu tazele (QR yeniden okut):');
+    _origLog('║   pm2 stop pekcan && rm -rf auth* && pm2 start pekcan');
+    _origLog('║   Sonra panelde çıkan QR\'ı telefonla okut.');
+    _origLog('╚══════════════════════════════════════════════════════════════');
+    _origLog('');
+    // panellere de bildir (yöneticiler görsün)
+    try {
+      if (global._sifrelemeUyariYayinla) global._sifrelemeUyariYayinla(_sifrelemeHatalari.sayac);
+    } catch (_) {}
+  }
+}
 function _gurultuMu(args) {
   try {
     // Tum argumanlari (string + nesne) tek metne cevirip kaliplari ara.
@@ -84,6 +128,8 @@ function _gurultuMu(args) {
         try { s += ' ' + Object.keys(a).join(' '); } catch (_) {}
       }
     }
+    // ŞİFRELEME HATASI SAYACI: gizlemeden ÖNCE say (mesaj gitmeme sorununun habercisi)
+    try { _sifrelemeHatasiSay(s); } catch (_) {}
     return _gurultuKaliplari.some(k => s.includes(k));
   } catch (e) { return false; }
 }
@@ -148,6 +194,56 @@ const chats = new Map();   // GECICI: artik her hattin kendi chats'i var; bu bos
 let waSock = null;         // GECICI kopru
 let waConnected = false;   // GECICI kopru
 let _sonWaAktivite = 0;    // WhatsApp'tan en son ne zaman veri/olay geldi (canlilik kontrolu icin)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GÖNDERİM TRAFİK KONTROLÜ (KRİTİK — "mesaj gitti göründü ama gitmemiş" kökü)
+// SORUN: 48 kullanıcı aynı ofis hattından yazıyor. Herkes AYNI ANDA gönderince
+//   WhatsApp'a aynı milisaniyede 20-40 istek düşüyordu -> WhatsApp boğulup mesajları
+//   SESSİZCE düşürüyor (makbuz dönüyor ama iletilmiyor) -> panel "gitti" sanıyor.
+//
+// ÇÖZÜM FELSEFESİ: Mesajı YAVAŞLATMA. Sadece "aynı anda kaç tane" sınırla.
+//   Mesajlar art arda ANINDA gider; sadece 48'i aynı milisaniyede gitmez.
+//   Bir gönderim biter bitmez sıradaki HEMEN başlar — bekleme YOK.
+//   Tipik gönderim ~150-300ms sürer -> 6 kanal = saniyede ~20-40 mesaj (çok hızlı)
+//   ama WhatsApp'a aynı anda en fazla 6 istek düşer (insan gibi, bot gibi değil).
+//
+// EK KORUMA: WhatsApp "yavaşla" derse (rate-overlimit/429) kanal sayısı geçici düşer,
+//   sorun geçince otomatik normale döner. Yani hem hızlı hem güvenli.
+// ═══════════════════════════════════════════════════════════════════════════
+const ESZAMANLI_KANAL = 6;        // aynı anda en fazla bu kadar gönderim (bekleme YOK)
+const ESZAMANLI_KISITLI = 2;      // WhatsApp şikayet ederse geçici olarak bu kadar
+const _gonderimDurum = new Map(); // lineId -> { aktif:0, bekleyen:[], kisitliBitis:0 }
+
+function _gd(lineId) {
+  let d = _gonderimDurum.get(lineId);
+  if (!d) { d = { aktif: 0, bekleyen: [], kisitliBitis: 0 }; _gonderimDurum.set(lineId, d); }
+  return d;
+}
+async function kuyrukluGonder(lineId, gonderFn, medyaMi = false) {
+  const d = _gd(lineId);
+  const limit = (Date.now() < d.kisitliBitis) ? ESZAMANLI_KISITLI : ESZAMANLI_KANAL;
+  // kanal doluysa SIRADA bekle (sabit gecikme yok — biri biter bitmez uyanır)
+  if (d.aktif >= limit) {
+    await new Promise((r) => d.bekleyen.push(r));
+  }
+  d.aktif++;
+  try {
+    const sonuc = await gonderFn();
+    return sonuc;
+  } catch (e) {
+    // WhatsApp "çok hızlısın" dediyse -> 20sn boyunca kanal sayısını düşür (otomatik toparlanır)
+    const m = (e && e.message ? e.message : '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
+    if (/rate.?overlimit|429|too many|rate.?limit/i.test(m)) {
+      d.kisitliBitis = Date.now() + 20000;
+      console.log(`🐢 WhatsApp "yavaşla" dedi [${lineId}] -> 20sn boyunca daha az eşzamanlı gönderim (otomatik normale dönecek)`);
+    }
+    throw e;
+  } finally {
+    d.aktif--;
+    const sonraki = d.bekleyen.shift();
+    if (sonraki) sonraki(); // sıradakini HEMEN uyandır (bekleme yok)
+  }
+}
 // MESAJ ÖNCELİĞİ: en son ne zaman mesaj gönderildi/alındı. Ağır arka plan işleri
 // (açıklama motoru, avatar taraması, grup senkronu) mesaj trafiği varken duraklar ki
 // soket tıkanmasın -> mesajlar gecikmesin/kaybolmasın (özellikle yoğun ofis hattında).
@@ -1395,16 +1491,19 @@ app.post('/upload', express.raw({ type: '*/*', limit: '64mb' }), async (req, res
           }
         } catch (e) { /* yanit bulunamazsa normal gonder */ }
       }
-      let gonderP;
-      try {
-        gonderP = upSock.sendMessage(jid, waMsg, gonderOpt);
-      } catch (qErr) {
-        // quoted ile gonderim ANINDA patlarsa (bozuk quoted): alintisiz tekrar dene
-        console.log('   ⚠️  alintili gonderim hata verdi, alintisiz deneniyor:', qErr.message);
-        gonderP = upSock.sendMessage(jid, waMsg, {});
-      }
-      const timeoutP = new Promise((_, rej) => setTimeout(() => rej(new Error('dosya yukleme zaman asimi (cok buyuk olabilir)')), 90000));
-      sent = await Promise.race([gonderP, timeoutP]);
+      // KUYRUK: medya gönderimi de sıraya girer (WhatsApp hız limitine takılmamak için)
+      const medyaTimeout = () => new Promise((_, rej) => setTimeout(() => rej(new Error('dosya yukleme zaman asimi (cok buyuk olabilir)')), 90000));
+      sent = await kuyrukluGonder(upLineId, async () => {
+        let gonderP;
+        try {
+          gonderP = upSock.sendMessage(jid, waMsg, gonderOpt);
+        } catch (qErr) {
+          // quoted ile gonderim ANINDA patlarsa (bozuk quoted): alintisiz tekrar dene
+          console.log('   ⚠️  alintili gonderim hata verdi, alintisiz deneniyor:', qErr.message);
+          gonderP = upSock.sendMessage(jid, waMsg, {});
+        }
+        return await Promise.race([gonderP, medyaTimeout()]);
+      }, true); // true = medya (daha uzun aralık)
     } catch (gonderHata) {
       console.error(`⚠️  Dosya gonderilemedi (${fileName}, ${boyutMB} MB):`, gonderHata.message);
       return res.status(502).json({ error: `Dosya gönderilemedi (${boyutMB} MB). Çok büyük olabilir veya bağlantı sorunu. Tekrar deneyin.` });
@@ -1620,6 +1719,16 @@ app.post('/upload-group-photo', express.raw({ type: '*/*', limit: '16mb' }), asy
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
+// ŞİFRELEME UYARISI: oturum bozulunca panellere bildir (mesajlar gitmeyebilir!)
+global._sifrelemeUyariYayinla = (sayi) => {
+  try {
+    wss.clients.forEach((c) => {
+      if (c.readyState === 1) {
+        c.send(JSON.stringify({ type: 'sifrelemeUyari', sayi }));
+      }
+    });
+  } catch (_) {}
+};
 
 // ============================================================
 // ZOMBI BAGLANTI TEMIZLEME (sabah "mesaj dusmuyor" sorununun ANA cozumu)
@@ -2098,8 +2207,30 @@ wss.on('connection', (ws) => {
           }
         }
         const content = { text: msg.text };
-        const mentionJids = (msg.text.match(/@(\d{10,15})/g) || []).map(t => t.slice(1) + '@s.whatsapp.net');
-        if (mentionJids.length) content.mentions = mentionJids;
+        // ═══ İŞARETLEME (MENTION) — KRİTİK DÜZELTME ═══
+        // ESKİ HATA: metindeki @numara'ya HER ZAMAN '@s.whatsapp.net' ekleniyordu.
+        // Ama WhatsApp artık bazı kişilerde LID sistemi kullanıyor (jid: xxxx@lid).
+        // LID'li birini '@s.whatsapp.net' ile etiketleyince jid YANLIŞ oluyor ->
+        // WhatsApp mesajı bozuk sayıp KARŞIYA İLETMİYOR (ama bize makbuz dönüyor!).
+        // Patronun dediği "işaretleme yapınca çıkmıyor" sorununun kökü tam olarak buydu.
+        // ÇÖZÜM: numarayı grup üyeleri içinde ara, üyenin GERÇEK jid'ini kullan.
+        const _mChat = C.get(msg.jid);
+        const _mUyeler = (_mChat && Array.isArray(_mChat.members)) ? _mChat.members : [];
+        const mentionJids = [];
+        for (const t of (msg.text.match(/@(\d{10,15})/g) || [])) {
+          const num = t.slice(1);
+          const uye = _mUyeler.find(mb => mb && (mb.number === num || String(mb.jid || '').startsWith(num + '@')));
+          if (uye && uye.jid) {
+            mentionJids.push(uye.jid); // GERÇEK jid (LID ise @lid, normalse @s.whatsapp.net)
+          } else {
+            mentionJids.push(num + '@s.whatsapp.net'); // üye listesinde yok -> varsayılan
+          }
+        }
+        if (mentionJids.length) {
+          content.mentions = mentionJids;
+          const lidSayisi = mentionJids.filter(j => j.endsWith('@lid')).length;
+          console.log(`   @ İşaretleme: ${mentionJids.length} kişi${lidSayisi ? ` (${lidSayisi} tanesi LID — doğru jid kullanıldı)` : ''}`);
+        }
         // GONDERIMI try-catch ile SAR: basarisiz olursa panele "gonderilemedi" bildir.
         _sonMesajTrafigi = Date.now(); // MESAJ ÖNCELİĞİ: ağır arka plan işleri kısa süre duraklasın
         try {
@@ -2112,16 +2243,16 @@ wss.on('connection', (ws) => {
           if (quotedOpt) {
             try {
               console.log(`   ↩️  YANIT gönderiliyor (alıntılı) -> ${(msg.jid||'').split('@')[0]}`);
-              sent = await Promise.race([SOCK.sendMessage(msg.jid, content, quotedOpt), timeoutP()]);
+              sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(msg.jid, content, quotedOpt), timeoutP()]));
               console.log(`   ✓ YANIT gönderildi, key=${sent?.key?.id ? sent.key.id.slice(0,12) : 'YOK'}`);
             } catch (alintiHatasi) {
               console.error('   ↳ alintili gonderim basarisiz, alintisiz deneniyor:', alintiHatasi.message);
-              sent = await Promise.race([SOCK.sendMessage(msg.jid, content), timeoutP()]);
+              sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(msg.jid, content), timeoutP()]));
               console.log(`   ✓ YANIT alıntısız gönderildi, key=${sent?.key?.id ? sent.key.id.slice(0,12) : 'YOK'}`);
               replyTo = null; // alinti gitmedi, panelde de alinti gosterme
             }
           } else {
-            sent = await Promise.race([SOCK.sendMessage(msg.jid, content), timeoutP()]);
+            sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(msg.jid, content), timeoutP()]));
           }
           if (!sent || !sent.key) throw new Error('WhatsApp gonderimi onaylamadi');
           // TEŞHİS: gönderim ne kadar sürdü? (yavaşlama/tıkanma tespiti için)
@@ -2585,10 +2716,10 @@ wss.on('connection', (ws) => {
               if (fs.existsSync(fp)) {
                 const buf = fs.readFileSync(fp);
                 const cap = orig.caption || (orig.kind !== 'document' ? orig.text : '') || '';
-                if (orig.kind === 'image') sent = await Promise.race([SOCK.sendMessage(tjid, { image: buf, caption: cap || undefined }), _iletTimeout()]);
-                else if (orig.kind === 'video') sent = await Promise.race([SOCK.sendMessage(tjid, { video: buf, caption: cap || undefined }), _iletTimeout()]);
-                else if (orig.kind === 'audio') sent = await Promise.race([SOCK.sendMessage(tjid, { audio: buf, mimetype: orig.mime || 'audio/mp4' }), _iletTimeout()]);
-                else if (orig.kind === 'sticker') sent = await Promise.race([SOCK.sendMessage(tjid, { sticker: buf }), _iletTimeout()]);
+                if (orig.kind === 'image') sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(tjid, { image: buf, caption: cap || undefined }), _iletTimeout()]), true);
+                else if (orig.kind === 'video') sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(tjid, { video: buf, caption: cap || undefined }), _iletTimeout()]), true);
+                else if (orig.kind === 'audio') sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(tjid, { audio: buf, mimetype: orig.mime || 'audio/mp4' }), _iletTimeout()]), true);
+                else if (orig.kind === 'sticker') sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(tjid, { sticker: buf }), _iletTimeout()]), true);
                 else {
                   // BELGE: fileName + mime SART. Eksikse dosya yolundan/mime'dan tamamla.
                   let fn = orig.fileName || orig.text || '';
@@ -2597,20 +2728,20 @@ wss.on('connection', (ws) => {
                     const uz = _mimedenUzanti[mm] || (orig.mediaUrl.split('.').pop()) || 'pdf';
                     fn = (fn || 'belge') + '.' + uz;
                   }
-                  sent = await Promise.race([SOCK.sendMessage(tjid, { document: buf, fileName: fn, mimetype: mm }), _iletTimeout()]);
+                  sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(tjid, { document: buf, fileName: fn, mimetype: mm }), _iletTimeout()]), true);
                 }
               } else if (orig.raw) {
                 // dosya diskte yok ama raw varsa son care: raw ile ilet
-                sent = await Promise.race([SOCK.sendMessage(tjid, { forward: orig.raw }), _iletTimeout()]);
+                sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(tjid, { forward: orig.raw }), _iletTimeout()]), true);
               } else {
-                sent = await Promise.race([SOCK.sendMessage(tjid, { text: orig.text || '(iletilen mesaj)' }), _iletTimeout()]);
+                sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(tjid, { text: orig.text || '(iletilen mesaj)' }), _iletTimeout()]), true);
               }
             } else if (orig.raw) {
               // METIN mesaji: raw ile forward (etiket/bicim korunur)
-              sent = await Promise.race([SOCK.sendMessage(tjid, { forward: orig.raw }), _iletTimeout()]);
+              sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(tjid, { forward: orig.raw }), _iletTimeout()]), true);
             } else {
               // sadece metin, raw yok
-              sent = await Promise.race([SOCK.sendMessage(tjid, { text: orig.text || '' }), _iletTimeout()]);
+              sent = await kuyrukluGonder(_LID, () => Promise.race([SOCK.sendMessage(tjid, { text: orig.text || '' }), _iletTimeout()]), true);
             }
             // GONDERIM ONAYI: sent.key yoksa WhatsApp kabul etmemis -> basarisiz say
             if (!sent || !sent.key) throw new Error('WhatsApp iletimi onaylamadi');
@@ -4017,7 +4148,15 @@ async function iletimZamanAsimi(msgId) {
       if (mm && (mm.durum || 0) >= 2) return; // WhatsApp aldı, tekrar gönderme
       try {
         const content = { text: veri.text };
-        const mentionJids = (veri.text.match(/@(\d{10,15})/g) || []).map(t => t.slice(1) + '@s.whatsapp.net');
+        // MENTION: burada da GERÇEK jid kullan (LID sorunu — yukarıdaki send ile aynı mantık)
+        const _rChat = chat;
+        const _rUyeler = (_rChat && Array.isArray(_rChat.members)) ? _rChat.members : [];
+        const mentionJids = [];
+        for (const t of (veri.text.match(/@(\d{10,15})/g) || [])) {
+          const num = t.slice(1);
+          const uye = _rUyeler.find(mb => mb && (mb.number === num || String(mb.jid || '').startsWith(num + '@')));
+          mentionJids.push(uye && uye.jid ? uye.jid : num + '@s.whatsapp.net');
+        }
         if (mentionJids.length) content.mentions = mentionJids;
         const sent = await Promise.race([
           l.sock.sendMessage(jid, content),
