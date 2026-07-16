@@ -219,7 +219,7 @@ function _gd(lineId) {
   if (!d) { d = { aktif: 0, bekleyen: [], kisitliBitis: 0 }; _gonderimDurum.set(lineId, d); }
   return d;
 }
-async function kuyrukluGonder(lineId, gonderFn, medyaMi = false) {
+async function kuyrukluGonder(lineId, gonderFn, medyaMi = false, _deneme = 0) {
   const d = _gd(lineId);
   const limit = (Date.now() < d.kisitliBitis) ? ESZAMANLI_KISITLI : ESZAMANLI_KANAL;
   // kanal doluysa SIRADA bekle (sabit gecikme yok — biri biter bitmez uyanır)
@@ -227,21 +227,39 @@ async function kuyrukluGonder(lineId, gonderFn, medyaMi = false) {
     await new Promise((r) => d.bekleyen.push(r));
   }
   d.aktif++;
-  try {
-    const sonuc = await gonderFn();
-    return sonuc;
-  } catch (e) {
-    // WhatsApp "çok hızlısın" dediyse -> 20sn boyunca kanal sayısını düşür (otomatik toparlanır)
-    const m = (e && e.message ? e.message : '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
-    if (/rate.?overlimit|429|too many|rate.?limit/i.test(m)) {
-      d.kisitliBitis = Date.now() + 20000;
-      console.log(`🐢 WhatsApp "yavaşla" dedi [${lineId}] -> 20sn boyunca daha az eşzamanlı gönderim (otomatik normale dönecek)`);
-    }
-    throw e;
-  } finally {
+  let birakildi = false;
+  const kanalBirak = () => {
+    if (birakildi) return;
+    birakildi = true;
     d.aktif--;
+    if (d.aktif < 0) d.aktif = 0;
     const sonraki = d.bekleyen.shift();
     if (sonraki) sonraki(); // sıradakini HEMEN uyandır (bekleme yok)
+  };
+  try {
+    const sonuc = await gonderFn();
+    kanalBirak();
+    return sonuc;
+  } catch (e) {
+    const m = (e && e.message ? e.message : '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
+    const rateMi = /rate.?overlimit|429|too many|rate.?limit/i.test(m);
+    kanalBirak(); // her durumda kanalı bırak
+    if (rateMi) {
+      // WhatsApp "çok hızlısın" dedi -> kanal sayısını 20sn geçici düşür
+      d.kisitliBitis = Date.now() + 20000;
+      // ═══ OTOMATİK YENİDEN DENEME (KRİTİK) ═══
+      // Log kanıtladı: WhatsApp "rate-overlimit" deyip mesajı REDDEDİYOR.
+      // Eskiden mesaj burada KAYBOLUYORDU (kullanıcı "gitti sandım" diyordu).
+      // Artık kısa bekleyip TEKRAR deniyoruz -> mesaj gidene kadar peşini bırakmıyoruz.
+      if (_deneme < 3) {
+        const bekle = 800 * Math.pow(2, _deneme); // 0.8sn -> 1.6sn -> 3.2sn
+        console.log(`🔄 WhatsApp hız limiti -> ${bekle}ms sonra tekrar denenecek (deneme ${_deneme + 1}/3)`);
+        await new Promise((r) => setTimeout(r, bekle));
+        return kuyrukluGonder(lineId, gonderFn, medyaMi, _deneme + 1); // TEKRAR DENE
+      }
+      console.log('❌ WhatsApp hız limiti: 3 denemede de gönderilemedi -> mesaj kırmızı işaretlenecek');
+    }
+    throw e;
   }
 }
 // MESAJ ÖNCELİĞİ: en son ne zaman mesaj gönderildi/alındı. Ağır arka plan işleri
@@ -1719,11 +1737,13 @@ app.post('/upload-group-photo', express.raw({ type: '*/*', limit: '16mb' }), asy
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
-// ŞİFRELEME UYARISI: oturum bozulunca panellere bildir (mesajlar gitmeyebilir!)
+// ŞİFRELEME UYARISI: oturum bozulunca bildir.
+// SADECE YÖNETİCİLERE gider — normal kullanıcıyı teknik uyarıyla meşgul etmeye gerek yok,
+// zaten müdahale edecek kişi yönetici (QR tazeleme vb.).
 global._sifrelemeUyariYayinla = (sayi) => {
   try {
     wss.clients.forEach((c) => {
-      if (c.readyState === 1) {
+      if (c.readyState === 1 && c._role === 'admin') {
         c.send(JSON.stringify({ type: 'sifrelemeUyari', sayi }));
       }
     });

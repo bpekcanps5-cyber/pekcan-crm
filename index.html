@@ -3244,9 +3244,11 @@ function connect(){
         hideQR();
       }
       else if(d.cakisma){
-        // ÇAKIŞMA: aynı numara başka yerde açık (telefonda WhatsApp Web / başka panel).
-        // Kullanıcıya NE YAPACAĞINI söyle — yoksa kopma savaşı sürer.
-        showToast('⚔️ Bu numara başka bir yerde açık! Telefonda: WhatsApp > Bağlı cihazlar > fazla cihazları çıkar. 30sn sonra tekrar denenecek.');
+        // ÇAKIŞMA: aynı numara başka yerde açık. Çözümü YÖNETİCİ yapar (telefonda cihaz temizleme),
+        // o yüzden bu teknik uyarıyı sadece yöneticiye göster.
+        if(currentUser && currentUser.role==='admin'){
+          showToast('⚔️ Bu numara başka bir yerde açık! Telefonda: WhatsApp > Bağlı cihazlar > fazla cihazları çıkar. 30sn sonra tekrar denenecek.');
+        }
       }
       else if(d.oluBaglanti){
         // Sunucu, WhatsApp'in YANIT VERMEDIGINI tespit etti (yari-acik baglanti).
