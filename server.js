@@ -3886,6 +3886,16 @@ async function metaQueueRun() {
   if (metaBusy) return;
   metaBusy = true;
   while (metaQueue.length) {
+    // ═══ MESAJ ÖNCELİĞİ (KRİTİK) ═══
+    // 3370 grubun bilgisini çekmek WhatsApp'ı yoruyor. Kullanıcılar mesaj atarken bu iş
+    // aynı bağlantıda yarışıyordu -> WhatsApp "rate-overlimit" deyip MESAJLARI reddediyordu.
+    // Çözüm: ekip mesaj atarken grup bilgisi çekmeyi duraklat. Mesaj her zaman önceliklidir;
+    // grup ismi/üye listesi birkaç saniye geç gelse hiçbir şey olmaz.
+    let mesajBeklemesi = 0;
+    while (mesajTrafigiVar() && mesajBeklemesi < 60) { // en fazla 60sn bekle (sonsuz döngü olmasın)
+      await new Promise(r => setTimeout(r, 1000));
+      mesajBeklemesi++;
+    }
     // rate limit yediyse, suresi gecene kadar bekle
     const now = Date.now();
     if (now < rateLimitUntil) {
@@ -3929,7 +3939,7 @@ async function metaQueueRun() {
     }));
     if (rateLimitYendi) {
       rateLimitUntil = Date.now() + 60000;
-      console.log('   ⏸️  WhatsApp hiz siniri (rate-overlimit) — 60 sn istekleri durduruyorum');
+      console.log('   ⏸️  GRUP BİLGİSİ çekme 60sn duraklatıldı (WhatsApp "yavaşla" dedi). ✓ Mesajlar ETKİLENMİYOR — normal gidip geliyor.');
       continue; // basa don, rate limit bitene kadar bekleyecek
     }
     await new Promise(r => setTimeout(r, META_GAP)); // turlar arasi kisa bekleme
