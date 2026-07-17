@@ -2475,12 +2475,12 @@
 
 <div class="modal-bg" id="userMgmtModal">
   <div class="modal um-modal">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
-      <div style="flex:1">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px">
         <h3 style="margin-bottom:6px">Kullanıcı Yönetimi</h3>
         <p style="color:var(--muted);font-size:13px;margin-bottom:18px">Ekibine kullanıcı aç, rol ver ya da sil. Herkes kendi kullanıcı adı ve şifresiyle girer.</p>
       </div>
-      <button class="btn ghost" onclick="sifreListeAc()" style="white-space:nowrap;font-size:13px;flex-shrink:0">🔑 Şifre listesi</button>
+      <button class="btn ghost" onclick="sifreListeAc()" style="white-space:nowrap;font-size:12.5px;flex:0 0 auto;padding:7px 13px;height:34px;align-self:flex-start">🔑 Şifre listesi</button>
     </div>
 
     <div class="um-grid">
@@ -9276,7 +9276,7 @@ async function girisBilgilerimAc(){
   m.classList.add('show');
   try{
     const r=await fetch('/api/me/password',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token:localStorage.getItem('token')})}).then(x=>x.json());
+      body:JSON.stringify({token:authToken})}).then(x=>x.json());
     if(!r.ok){ showToast(r.error||'Bilgiler alınamadı'); m.classList.remove('show'); return; }
     document.getElementById('gbKullanici').textContent=r.username||'—';
     _gbSifreMetin=r.password||'';
@@ -9308,7 +9308,7 @@ async function sifreListeAc(){
   m.classList.add('show');
   try{
     const r=await fetch('/api/users/passwords',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token:localStorage.getItem('token')})}).then(x=>x.json());
+      body:JSON.stringify({token:authToken})}).then(x=>x.json());
     if(!r.ok){ showToast(r.error||'Liste alınamadı'); m.classList.remove('show'); return; }
     _sifreKullanicilar=r.users||[];
     sifreListeCiz();
@@ -9370,7 +9370,7 @@ async function sifreDegistirKaydet(i){
   if(yeni.length<4){ showToast('Şifre en az 4 karakter olmalı'); return; }
   try{
     const r=await fetch('/api/users/update',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token:localStorage.getItem('token'), id:u.id, password:yeni})}).then(x=>x.json());
+      body:JSON.stringify({token:authToken, id:u.id, password:yeni})}).then(x=>x.json());
     if(!r.ok){ showToast(r.error||'Değiştirilemedi'); return; }
     _sifreKullanicilar[i].password=yeni;  // listede de güncelle
     _sifreHepsiAcik=true;                 // yeni şifreyi görsün
