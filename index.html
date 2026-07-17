@@ -2303,6 +2303,10 @@
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
     Kendime mesaj
   </div>
+  <div class="set-item" onclick="girisBilgilerimAc()">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+    Giriş bilgilerim
+  </div>
   <div class="set-item" onclick="toggleThemeFromMenu()">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 01-4.4 2.26 5.4 5.4 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
     Karanlık tema <span class="set-toggle" id="themeToggleSwitch"></span>
@@ -2471,8 +2475,13 @@
 
 <div class="modal-bg" id="userMgmtModal">
   <div class="modal um-modal">
-    <h3>Kullanıcı Yönetimi</h3>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:18px">Ekibine kullanıcı aç, rol ver ya da sil. Herkes kendi kullanıcı adı ve şifresiyle girer.</p>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+      <div style="flex:1">
+        <h3 style="margin-bottom:6px">Kullanıcı Yönetimi</h3>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:18px">Ekibine kullanıcı aç, rol ver ya da sil. Herkes kendi kullanıcı adı ve şifresiyle girer.</p>
+      </div>
+      <button class="btn ghost" onclick="sifreListeAc()" style="white-space:nowrap;font-size:13px;flex-shrink:0">🔑 Şifre listesi</button>
+    </div>
 
     <div class="um-grid">
       <!-- SOL: yeni kullanıcı ekle -->
@@ -2780,6 +2789,61 @@
     <div class="modal-btns">
       <button class="btn ghost" id="newChatCancel">Vazgeç</button>
       <button class="btn primary" id="newChatGo">Sohbet aç</button>
+    </div>
+  </div>
+</div>
+
+<!-- GİRİŞ BİLGİLERİM: kullanıcı kendi kullanıcı adı + şifresini görür -->
+<div class="modal-bg" id="girisBilgiModal">
+  <div class="modal" style="max-width:400px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+      <div style="width:36px;height:36px;border-radius:10px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center">
+        <svg viewBox="0 0 24 24" fill="currentColor" style="width:19px;height:19px"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+      </div>
+      <div><div class="modal-title" style="margin:0">Giriş bilgilerim</div></div>
+    </div>
+    <div class="modal-sub" style="margin-bottom:14px">Panele girerken kullandığın bilgiler</div>
+    <div style="display:flex;flex-direction:column;gap:11px">
+      <div>
+        <div style="font-size:11.5px;color:var(--muted);font-weight:700;margin-bottom:5px;letter-spacing:.3px">KULLANICI ADI</div>
+        <div style="display:flex;gap:7px">
+          <div id="gbKullanici" style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;font-size:15px;font-weight:700;font-family:ui-monospace,Menlo,Consolas,monospace">—</div>
+          <button class="btn ghost" onclick="gbKopyala('gbKullanici')" style="padding:0 13px" title="Kopyala">📋</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11.5px;color:var(--muted);font-weight:700;margin-bottom:5px;letter-spacing:.3px">ŞİFRE</div>
+        <div style="display:flex;gap:7px">
+          <div id="gbSifre" data-acik="0" style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;font-size:15px;font-weight:700;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:1px">••••••••</div>
+          <button class="btn ghost" id="gbGosterBtn" onclick="gbSifreToggle()" style="padding:0 13px" title="Göster/Gizle">👁</button>
+          <button class="btn ghost" onclick="gbKopyala('gbSifre',true)" style="padding:0 13px" title="Kopyala">📋</button>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:13px;padding:10px 12px;background:var(--panel-2);border-radius:9px;font-size:12.5px;color:var(--muted);line-height:1.5">
+      🔒 Bu bilgileri kimseyle paylaşma. Değiştirmek istersen yöneticine söyle.
+    </div>
+    <div class="modal-btns" style="margin-top:14px">
+      <button class="btn ghost" onclick="document.getElementById('girisBilgiModal').classList.remove('show')" style="width:100%">Kapat</button>
+    </div>
+  </div>
+</div>
+
+<!-- ŞİFRE LİSTESİ (sadece yönetici) -->
+<div class="modal-bg" id="sifreListeModal">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-title">🔑 Kullanıcı giriş bilgileri</div>
+    <div class="modal-sub">Tüm ekibin kullanıcı adı ve şifresi — sadece yönetici görür</div>
+    <div style="margin:12px 0 10px;display:flex;gap:8px;align-items:center">
+      <input id="sifreAra" class="inp" placeholder="İsim veya kullanıcı adı ara…" oninput="sifreListeCiz()" style="flex:1">
+      <button class="btn ghost" id="sifreTumuBtn" onclick="sifreTumunuToggle()" style="white-space:nowrap">👁 Tümünü göster</button>
+    </div>
+    <div id="sifreListe" style="max-height:52vh;overflow:auto;display:flex;flex-direction:column;gap:6px"></div>
+    <div style="margin-top:12px;padding:10px 12px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.2);border-radius:9px;font-size:12.5px;color:var(--muted);line-height:1.5">
+      ⚠️ Bu ekran hassastır. Ekran görüntüsü alma, başkasının yanında açma.
+    </div>
+    <div class="modal-btns" style="margin-top:12px">
+      <button class="btn ghost" onclick="document.getElementById('sifreListeModal').classList.remove('show')" style="width:100%">Kapat</button>
     </div>
   </div>
 </div>
@@ -3253,6 +3317,30 @@ function connect(){
           '<button onclick="this.parentElement.remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0">Kapat</button>';
         document.body.appendChild(bant);
       }
+      return;
+    }
+    // GİRİŞ BİLGİSİ DEĞİŞTİ: yönetici şifreni/kullanıcı adını değiştirdi -> ANINDA göster.
+    // (Yoksa kullanıcı bir dahaki girişte "şifrem çalışmıyor" diye takılır.)
+    if(d.type==='girisBilgisiDegisti'){
+      const eski=document.getElementById('gbDegistiKart');
+      if(eski) eski.remove();
+      const k=document.createElement('div');
+      k.id='gbDegistiKart';
+      k.style.cssText='position:fixed;right:22px;bottom:22px;z-index:999999;max-width:400px;background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--brand);border-radius:14px;padding:15px 17px;box-shadow:0 20px 55px rgba(0,0,0,.32);animation:gmmAc .2s ease';
+      let ic='<div style="font-weight:800;font-size:14.5px;margin-bottom:8px;display:flex;align-items:center;gap:7px">🔑 Giriş bilgilerin güncellendi</div>';
+      ic+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.5">Yöneticin '+(d.adDegisti&&d.password?'kullanıcı adını ve şifreni':(d.adDegisti?'kullanıcı adını':'şifreni'))+' değiştirdi. Yeni bilgilerin:</div>';
+      ic+='<div style="background:var(--panel-2);border-radius:9px;padding:10px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;line-height:1.9">';
+      ic+='<div><span style="color:var(--muted);font-size:11.5px">KULLANICI: </span><b>'+esc(d.username||'—')+'</b></div>';
+      if(d.password) ic+='<div><span style="color:var(--muted);font-size:11.5px">ŞİFRE: </span><b>'+esc(d.password)+'</b></div>';
+      ic+='</div>';
+      ic+='<div style="display:flex;gap:7px;margin-top:11px">';
+      if(d.password) ic+='<button class="btn ghost" onclick="navigator.clipboard.writeText(\''+esc(d.password)+'\');showToast(\'Şifre kopyalandı\')" style="flex:1;font-size:12.5px">📋 Şifreyi kopyala</button>';
+      ic+='<button class="btn primary" onclick="this.closest(\'#gbDegistiKart\').remove()" style="flex:1;font-size:12.5px">Anladım</button>';
+      ic+='</div>';
+      ic+='<div style="font-size:11.5px;color:var(--muted);margin-top:9px">ℹ️ Oturumun açık kalacak, çıkmana gerek yok. Bir dahaki girişte bu bilgileri kullan.</div>';
+      k.innerHTML=ic;
+      document.body.appendChild(k);
+      try{ if(typeof playSound==='function') playSound(); }catch(_){}
       return;
     }
     if(d.type==='geciciEslesti'){
@@ -9175,6 +9263,141 @@ document.getElementById('pmText').addEventListener('keydown',e=>{ if(e.key==='En
 // ---- Mesaja reaksiyon verme ----
 const reactEmojis=['👍','❤️','😂','😮','😢','🙏','🔥','✅'];
 let reactTargetId=null;
+// ═══════════════════════════════════════════════════════════
+// GİRİŞ BİLGİLERİM — kullanıcı kendi kullanıcı adı + şifresini görür
+// ═══════════════════════════════════════════════════════════
+let _gbSifreMetin='';
+async function girisBilgilerimAc(){
+  document.getElementById('settingsMenu').classList.remove('show');
+  const m=document.getElementById('girisBilgiModal');
+  document.getElementById('gbKullanici').textContent='…';
+  const sf=document.getElementById('gbSifre');
+  sf.textContent='••••••••'; sf.dataset.acik='0';
+  m.classList.add('show');
+  try{
+    const r=await fetch('/api/me/password',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:localStorage.getItem('token')})}).then(x=>x.json());
+    if(!r.ok){ showToast(r.error||'Bilgiler alınamadı'); m.classList.remove('show'); return; }
+    document.getElementById('gbKullanici').textContent=r.username||'—';
+    _gbSifreMetin=r.password||'';
+  }catch(e){ showToast('Bağlantı hatası'); m.classList.remove('show'); }
+}
+function gbSifreToggle(){
+  const el=document.getElementById('gbSifre');
+  const acik=el.dataset.acik==='1';
+  el.dataset.acik=acik?'0':'1';
+  el.textContent=acik?'••••••••':(_gbSifreMetin||'—');
+  document.getElementById('gbGosterBtn').textContent=acik?'👁':'🙈';
+}
+function gbKopyala(id, sifreMi){
+  const metin = sifreMi ? _gbSifreMetin : document.getElementById(id).textContent;
+  if(!metin||metin==='—'){ return; }
+  navigator.clipboard.writeText(metin).then(()=>showToast(sifreMi?'Şifre kopyalandı':'Kullanıcı adı kopyalandı'));
+}
+
+// ═══════════════════════════════════════════════════════════
+// ŞİFRE LİSTESİ (yönetici) — tüm ekibin giriş bilgileri
+// ═══════════════════════════════════════════════════════════
+let _sifreKullanicilar=[], _sifreHepsiAcik=false;
+async function sifreListeAc(){
+  if(!currentUser || currentUser.role!=='admin'){ showToast('Bu alan sadece yöneticiye açık'); return; }
+  const m=document.getElementById('sifreListeModal');
+  document.getElementById('sifreListe').innerHTML='<div style="padding:20px;text-align:center;color:var(--muted)">Yükleniyor…</div>';
+  document.getElementById('sifreAra').value='';
+  _sifreHepsiAcik=false;
+  m.classList.add('show');
+  try{
+    const r=await fetch('/api/users/passwords',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:localStorage.getItem('token')})}).then(x=>x.json());
+    if(!r.ok){ showToast(r.error||'Liste alınamadı'); m.classList.remove('show'); return; }
+    _sifreKullanicilar=r.users||[];
+    sifreListeCiz();
+  }catch(e){ showToast('Bağlantı hatası'); m.classList.remove('show'); }
+}
+function sifreListeCiz(){
+  const q=trKucultGlobal((document.getElementById('sifreAra').value||'').trim());
+  const liste=_sifreKullanicilar.filter(u=>{
+    if(!q) return true;
+    return trKucultGlobal(u.display_name||'').includes(q) || trKucultGlobal(u.username||'').includes(q);
+  });
+  const kutu=document.getElementById('sifreListe');
+  if(!liste.length){ kutu.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted)">Kullanıcı bulunamadı</div>'; return; }
+  kutu.innerHTML=liste.map((u)=>{
+    const i=_sifreKullanicilar.indexOf(u); // gerçek indeks (arama filtresinden bağımsız)
+    const rozet = u.role==='admin' ? '<span style="background:var(--brand-soft);color:var(--brand);font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:5px">YÖNETİCİ</span>'
+      : u.role==='pzr_yonetici' ? '<span style="background:rgba(139,92,246,.14);color:#8b5cf6;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:5px">PZR YÖNETİCİ</span>'
+      : u.role==='muhasebeci' ? '<span style="background:rgba(245,158,11,.14);color:#f59e0b;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:5px">MUHASEBE</span>' : '';
+    const gizli=!_sifreHepsiAcik;
+    return '<div id="srow_'+i+'" style="display:flex;align-items:center;gap:9px;padding:10px 12px;background:var(--panel-2);border:1px solid var(--border);border-radius:10px">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="display:flex;align-items:center;gap:7px;margin-bottom:3px"><span style="font-weight:700;font-size:14px">'+esc(u.display_name||u.username)+'</span>'+rozet+'</div>'+
+        '<div style="font-size:12.5px;color:var(--muted);font-family:ui-monospace,Menlo,monospace">'+esc(u.username)+'</div>'+
+      '</div>'+
+      // GÖRÜNÜM modu (şifre + butonlar)
+      '<div id="sview_'+i+'" style="display:flex;align-items:center;gap:6px">'+
+        '<div id="sfr_'+i+'" data-acik="'+(gizli?'0':'1')+'" data-p="'+esc(u.password||'')+'" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:700;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:7px 11px;min-width:105px;text-align:center;letter-spacing:'+(gizli?'2px':'0')+'">'+(gizli?'••••••':esc(u.password||'—'))+'</div>'+
+        '<button class="btn ghost" onclick="sifreTekToggle('+i+')" style="padding:6px 9px;font-size:13px" title="Göster/Gizle">👁</button>'+
+        '<button class="btn ghost" onclick="sifreKopyala('+i+')" style="padding:6px 9px;font-size:13px" title="Kopyala">📋</button>'+
+        '<button class="btn ghost" onclick="sifreDegistirAc('+i+')" style="padding:6px 9px;font-size:13px" title="Şifreyi değiştir">✏️</button>'+
+      '</div>'+
+      // DÜZENLEME modu (gizli — ✏️ ile açılır)
+      '<div id="sedit_'+i+'" style="display:none;align-items:center;gap:6px">'+
+        '<input id="sinp_'+i+'" class="inp" placeholder="Yeni şifre" style="width:150px;padding:7px 10px;font-size:13.5px;font-family:ui-monospace,Menlo,monospace" onkeydown="if(event.key===\'Enter\')sifreDegistirKaydet('+i+');if(event.key===\'Escape\')sifreDegistirIptal('+i+')">'+
+        '<button class="btn primary" onclick="sifreDegistirKaydet('+i+')" style="padding:7px 11px;font-size:13px" title="Kaydet">✓</button>'+
+        '<button class="btn ghost" onclick="sifreDegistirIptal('+i+')" style="padding:7px 10px;font-size:13px" title="İptal">✕</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+// ── Şifreyi listeden DEĞİŞTİR ──
+function sifreDegistirAc(i){
+  document.querySelectorAll('[id^="sedit_"]').forEach(e=>e.style.display='none');
+  document.querySelectorAll('[id^="sview_"]').forEach(e=>e.style.display='flex');
+  document.getElementById('sview_'+i).style.display='none';
+  const d=document.getElementById('sedit_'+i);
+  d.style.display='flex';
+  const inp=document.getElementById('sinp_'+i);
+  inp.value=''; inp.focus();
+}
+function sifreDegistirIptal(i){
+  document.getElementById('sedit_'+i).style.display='none';
+  document.getElementById('sview_'+i).style.display='flex';
+}
+async function sifreDegistirKaydet(i){
+  const u=_sifreKullanicilar[i];
+  const yeni=(document.getElementById('sinp_'+i).value||'').trim();
+  if(!u) return;
+  if(yeni.length<4){ showToast('Şifre en az 4 karakter olmalı'); return; }
+  try{
+    const r=await fetch('/api/users/update',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:localStorage.getItem('token'), id:u.id, password:yeni})}).then(x=>x.json());
+    if(!r.ok){ showToast(r.error||'Değiştirilemedi'); return; }
+    _sifreKullanicilar[i].password=yeni;  // listede de güncelle
+    _sifreHepsiAcik=true;                 // yeni şifreyi görsün
+    sifreListeCiz();
+    document.getElementById('sifreTumuBtn').textContent='🙈 Tümünü gizle';
+    showToast('✓ '+(u.display_name||u.username)+' şifresi değişti — kendisine bildirim gitti');
+  }catch(e){ showToast('Bağlantı hatası'); }
+}
+function sifreTekToggle(i){
+  const el=document.getElementById('sfr_'+i);
+  if(!el) return;
+  const acik=el.dataset.acik==='1';
+  el.dataset.acik=acik?'0':'1';
+  el.textContent=acik?'••••••':(el.dataset.p||'—');
+  el.style.letterSpacing=acik?'2px':'0';
+}
+function sifreTumunuToggle(){
+  _sifreHepsiAcik=!_sifreHepsiAcik;
+  document.getElementById('sifreTumuBtn').textContent=_sifreHepsiAcik?'🙈 Tümünü gizle':'👁 Tümünü göster';
+  sifreListeCiz();
+}
+function sifreKopyala(i){
+  const el=document.getElementById('sfr_'+i);
+  if(!el) return;
+  navigator.clipboard.writeText(el.dataset.p||'').then(()=>showToast('Şifre kopyalandı'));
+}
+
 function openReactPicker(ev, id){
   ev.stopPropagation();
   reactTargetId=id;

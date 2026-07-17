@@ -772,6 +772,26 @@ app.post('/api/users/active', express.json(), async (req, res) => {
 });
 
 // Yeni kullanici ekle (sadece yonetici)
+// ── KENDİ ŞİFREM: giriş yapmış kullanıcı kendi bilgilerini görür ──
+// Sadece KENDİ şifresini döner; başkasınınkini asla.
+app.post('/api/me/password', express.json(), async (req, res) => {
+  const s = req.body?.token && sessions.get(req.body.token);
+  if (!s) return res.json({ ok: false, error: 'Oturum geçersiz' });
+  const u = await db.getOwnPassword(s.username);
+  if (!u) return res.json({ ok: false, error: 'Kullanıcı bulunamadı' });
+  res.json({ ok: true, username: u.username, password: u.password, displayName: u.display_name });
+});
+
+// ── ŞİFRE LİSTESİ (yönetici): tüm kullanıcı adı + şifreler ──
+// SADECE admin. Panelde varsayılan GİZLİ, kullanıcı "Göster"e basınca açılır.
+app.post('/api/users/passwords', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  const users = await db.listUsersWithPasswords();
+  const s = sessions.get(req.body.token);
+  console.log(`🔑 Şifre listesi görüntülendi | yönetici: ${s ? s.username : '?'} | ${users.length} kullanıcı`);
+  res.json({ ok: true, users });
+});
+
 app.post('/api/users/add', express.json(), async (req, res) => {
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
   const { username, password, displayName, role, tip } = req.body || {};
@@ -829,6 +849,25 @@ app.post('/api/users/update', express.json(), async (req, res) => {
     console.log(`✏️  Kullanici guncellendi: ${r.eskiUsername} -> ${r.username}`);
   } else if (r.ok) {
     console.log(`✏️  Kullanici bilgileri guncellendi (id: ${id})`);
+  }
+  // ── ANLIK BİLDİRİM: giriş bilgisi değişen kullanıcıya HEMEN haber ver ──
+  // Yönetici şifreyi/kullanıcı adını değiştirdiğinde o kişi ekranında anında görsün,
+  // yoksa bir dahaki girişte "şifrem çalışmıyor" diye takılır.
+  if (r.ok && (req.body?.password || (r.username && r.eskiUsername && r.username !== r.eskiUsername))) {
+    const hedefKullanici = r.username || r.eskiUsername;
+    try {
+      wss.clients.forEach((c) => {
+        if (c.readyState === 1 && c._username === hedefKullanici) {
+          c.send(JSON.stringify({
+            type: 'girisBilgisiDegisti',
+            username: hedefKullanici,
+            password: req.body?.password || null, // şifre değişmediyse null
+            adDegisti: !!(r.username && r.eskiUsername && r.username !== r.eskiUsername),
+          }));
+        }
+      });
+      console.log(`   📢 "${hedefKullanici}" bilgilendirildi (giriş bilgisi değişti)`);
+    } catch (_) {}
   }
   res.json(r);
 });

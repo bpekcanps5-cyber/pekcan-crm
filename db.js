@@ -633,6 +633,36 @@ async function listUsers() {
   }
 }
 
+// KENDI SIFRESINI GETIR — giris yapmis kullanici kendi sifresini gorebilir.
+// (Sifreler bu sistemde duz metin saklaniyor; bu yuzden okunabiliyor.)
+async function getOwnPassword(username) {
+  if (!aktif) return null;
+  try {
+    const r = await pool.query('SELECT username, password, display_name FROM users WHERE username=$1', [username]);
+    return r.rows[0] || null;
+  } catch (e) { return null; }
+}
+
+// TUM KULLANICILAR + SIFRELERI — SADECE yonetici icin.
+// Cagiran taraf (server.js) yetki kontrolunu YAPMAK ZORUNDA.
+async function listUsersWithPasswords() {
+  if (!aktif) return [];
+  try {
+    const r = await pool.query(`
+      SELECT u.id, u.username, u.password, u.display_name, u.role, u.created_at,
+             COALESCE(kh.tip, 'ofis') AS tip
+      FROM users u
+      LEFT JOIN kullanici_hatlari kh ON kh.username = u.username
+      ORDER BY u.role DESC, u.display_name`);
+    return r.rows;
+  } catch (e) {
+    try {
+      const r2 = await pool.query('SELECT id, username, password, display_name, role, created_at FROM users ORDER BY created_at');
+      return r2.rows.map(u => ({ ...u, tip: 'ofis' }));
+    } catch (e2) { return []; }
+  }
+}
+
 // ============================================================
 // IC MESAJLAR (internal_messages) — ekip uyeleri arasi birebir
 // WhatsApp'tan BAGIMSIZ; sadece panel kullanicilari arasinda.
@@ -1602,6 +1632,7 @@ module.exports = {
   loadAll, loadMessages, deleteMessage, wipeAll, wipeGroups, searchMessages,
   cleanupOld, startCleanup,
   ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, updateUser,
+  getOwnPassword, listUsersWithPasswords,
   saveInternalMessage, loadInternalConversation, listInternalConversations,
   markInternalRead, internalUnreadCount,
   deleteInternalMessage, editInternalMessage, deleteInternalConversation,
