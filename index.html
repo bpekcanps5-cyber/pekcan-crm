@@ -9342,10 +9342,10 @@ async function sifreListeAc(){
   }
 }
 function sifreListeCiz(){
-  const q=trKucultGlobal((document.getElementById('sifreAra').value||'').trim());
+  const q=(document.getElementById('sifreAra').value||'').trim().toLocaleLowerCase('tr');
   const liste=_sifreKullanicilar.filter(u=>{
     if(!q) return true;
-    return trKucultGlobal(u.display_name||'').includes(q) || trKucultGlobal(u.username||'').includes(q);
+    return (u.display_name||'').toLocaleLowerCase('tr').includes(q) || (u.username||'').toLocaleLowerCase('tr').includes(q);
   });
   const kutu=document.getElementById('sifreListe');
   if(!liste.length){ kutu.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted)">Kullanıcı bulunamadı</div>'; return; }
