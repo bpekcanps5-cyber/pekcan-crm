@@ -8335,7 +8335,18 @@ function renderMessages(c, searchQ){
         yHtml+='</div>';
         body+=yHtml;
       }
-    } else if(m.kind==='image'&&(m.mediaUrl||m.thumb)){
+    } else if(m.kind==='image'){
+      // NOT: '(m.mediaUrl||m.thumb)' koşulu KALDIRILDI. İkisi de yoksa eskiden foto
+      // BALONU HİÇ çizilmiyordu -> ruhsat/görsel panelde kayboluyordu. Artık
+      // inmemişse bile balon çıkar, "yeniden indir" denebilir.
+      if(!m.mediaUrl && !m.thumb){
+        body='<div class="foto-inmedi" onclick="medyaYenidenIndir(\''+esc(m.id||'')+'\')" style="display:flex;align-items:center;gap:11px;padding:14px 16px;background:rgba(245,158,11,.10);border:1px dashed rgba(245,158,11,.45);border-radius:12px;cursor:pointer;min-width:210px">'+
+          '<span style="font-size:26px">🖼️</span>'+
+          '<span style="display:flex;flex-direction:column;gap:2px">'+
+            '<b style="font-size:13.5px;color:#f59e0b">Fotoğraf inmedi</b>'+
+            '<span style="font-size:12px;color:var(--muted)">Tıkla, yeniden indirilsin</span>'+
+          '</span></div>';
+      } else {
       // Tam cozunurluk indiyse onu, inmediyse ONIZLEMEYI (thumb) goster -> foto ANINDA gorunur.
       const fotoSrc = m.mediaUrl || m.thumb;
       const tiklaSrc = m.mediaUrl || m.thumb;
@@ -8343,6 +8354,7 @@ function renderMessages(c, searchQ){
       const yukleniyorCls = (!m.mediaUrl && m.thumb) ? ' loading-thumb' : '';
       const tikEt = m.isaretli ? '<div class="foto-isaret" title="İşaretlendi">'+okSvg()+'</div>' : '';
       body='<div class="foto-sarmal"><img class="photo'+yukleniyorCls+'" src="'+esc(fotoSrc)+'" loading="lazy" decoding="async" onclick="openLightbox(\''+esc(tiklaSrc)+'\')">'+tikEt+'</div>';
+      }
       if(m.text)body+='<div class="caption">'+hlight(m.text,searchQ,m.mentions)+'</div>';
     } else if(m.kind==='video'&&m.mediaUrl){
       const vsrc = m._videoTazele ? (m.mediaUrl+'?v='+m._videoTazele) : m.mediaUrl;
@@ -8357,10 +8369,12 @@ function renderMessages(c, searchQ){
         '<audio src="'+esc(m.mediaUrl)+'" preload="metadata" style="display:none"></audio></div>';
     } else if(m.kind==='sticker'&&m.mediaUrl){
       body='<img class="sticker-img" src="'+esc(m.mediaUrl)+'">';
-    } else if(m.kind==='document'&&m.mediaUrl){
+    } else if(m.kind==='document'){
+      // NOT: 'm.mediaUrl' koşulu KALDIRILDI. Eskiden dosya inmemişse bu blok hiç
+      // çalışmaz, mesaj SADECE METİN olarak düşerdi (kullanıcı "sadece ismi geldi"
+      // diyordu). Artık balon her zaman çizilir; inmediyse "Yeniden indir" butonu çıkar.
       const fname=m.text||'Belge';
       const ext=(fname.split('.').pop()||'').toLowerCase();
-      // dosya turune gore renk + etiket
       let dcolor='#5b8def', dlabel='DOSYA';
       if(ext==='pdf'){ dcolor='#e2574c'; dlabel='PDF'; }
       else if(['doc','docx'].includes(ext)){ dcolor='#2b7cd3'; dlabel='WORD'; }
@@ -8369,16 +8383,19 @@ function renderMessages(c, searchQ){
       else if(ext) dlabel=ext.toUpperCase().slice(0,4);
       const icon = m.thumb
         ? '<span class="doc-thumb" style="background-image:url('+esc(m.thumb)+')"></span>'
-        : '<span class="doc-icon" style="background:'+dcolor+'">'+docSvg()+'<span class="doc-ext">'+dlabel+'</span></span>';
-      const dlUrl = esc(m.mediaUrl) + '?name=' + encodeURIComponent(fname);
-      const indirUrl = esc(m.mediaUrl) + '?name=' + encodeURIComponent(fname) + '&download=1';
-      // Belgeye TIKLAYINCA: dosya inmisse ic icerigi yeni sekmede ac (PDF/resim icini gor),
-      // inmemisse "henuz indirilmedi" uyari. Alt satirda ayri "indir" baglantisi.
+        : '<span class="doc-icon" style="background:'+(m.mediaUrl?dcolor:'#64748b')+'">'+docSvg()+'<span class="doc-ext">'+dlabel+'</span></span>';
+      const dlUrl = m.mediaUrl ? (esc(m.mediaUrl) + '?name=' + encodeURIComponent(fname)) : '#';
+      const indirUrl = m.mediaUrl ? (esc(m.mediaUrl) + '?name=' + encodeURIComponent(fname) + '&download=1') : '#';
       const acHandler = m.mediaUrl
         ? 'onclick="event.preventDefault();belgeOnizle(\''+esc(m.mediaUrl)+'\',\''+esc(ext)+'\',\''+esc(m.thumb||'')+'\',\''+esc(fname)+'\')"'
-        : 'onclick="event.preventDefault();showToast(\'Belge henüz indirilmedi, birazdan tekrar deneyin.\')"';
-      const altYazi = m.mediaUrl ? 'Görüntülemek için tıkla' : 'İndiriliyor…';
-      body='<a class="msg-doc'+(m.thumb?' has-thumb':'')+'" href="'+dlUrl+'" '+acHandler+' style="cursor:pointer">'+icon+'<span class="doc-info"><span class="dn">'+hlight(fname,searchQ)+'</span><span class="dm">'+altYazi+'</span>'+(m.mediaUrl?'<a class="doc-indir" href="'+indirUrl+'" download="'+esc(fname)+'" onclick="event.stopPropagation()" style="font-size:11.5px;color:var(--accent);text-decoration:none;display:inline-block;margin-top:2px">⬇ İndir</a>':'')+'</span></a>';
+        : 'onclick="event.preventDefault();medyaYenidenIndir(\''+esc(m.id||'')+'\')"';
+      const altYazi = m.mediaUrl
+        ? 'Görüntülemek için tıkla'
+        : '<span style="color:#f59e0b">⚠️ Dosya inmedi — tıkla, yeniden indir</span>';
+      const altLink = m.mediaUrl
+        ? '<a class="doc-indir" href="'+indirUrl+'" download="'+esc(fname)+'" onclick="event.stopPropagation()" style="font-size:11.5px;color:var(--accent);text-decoration:none;display:inline-block;margin-top:2px">⬇ İndir</a>'
+        : '<a class="doc-indir" href="#" onclick="event.preventDefault();event.stopPropagation();medyaYenidenIndir(\''+esc(m.id||'')+'\')" style="font-size:11.5px;color:#f59e0b;text-decoration:none;display:inline-block;margin-top:2px">🔄 Yeniden indir</a>';
+      body='<a class="msg-doc'+(m.thumb?' has-thumb':'')+(m.mediaUrl?'':' inmedi')+'" href="'+dlUrl+'" '+acHandler+' style="cursor:pointer">'+icon+'<span class="doc-info"><span class="dn">'+hlight(fname,searchQ)+'</span><span class="dm">'+altYazi+'</span>'+altLink+'</span></a>';
       // belgeye yazilan ACIKLAMA (caption) varsa dosyanin altinda goster
       if(m.caption){ body+='<div class="caption">'+hlight(m.caption,searchQ,m.mentions)+'</div>'; }
     } else if(m.kind==='contact'&&m.contact){
@@ -9423,6 +9440,16 @@ function sifreKopyala(i){
   const el=document.getElementById('sfr_'+i);
   if(!el) return;
   navigator.clipboard.writeText(el.dataset.p||'').then(()=>showToast('Şifre kopyalandı'));
+}
+
+// ── MEDYA YENİDEN İNDİR ──
+// Dosya inmemişse kullanıcı balona/butona basar; sunucu hemen tekrar dener.
+// Olmazsa sunucu onu kalıcı kuyruğa alır ve arka planda ısrar eder.
+function medyaYenidenIndir(mid){
+  if(!mid || !activeJid){ return; }
+  if(!ws || ws.readyState!==1){ showToast('Bağlantı yok — birazdan tekrar deneyin'); return; }
+  showToast('🔄 Dosya yeniden indiriliyor…');
+  ws.send(JSON.stringify({ type:'medyaYenidenIndir', jid:activeJid, id:mid }));
 }
 
 function openReactPicker(ev, id){

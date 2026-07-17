@@ -2864,6 +2864,32 @@ wss.on('connection', (ws) => {
       // Tek bir sohbetin (grup/kisi) kendi avatarini cek (baslik icin).
       // ARTIK her zaman GUNCEL cekiyoruz: WhatsApp'ta logo degismisse panelde de degissin.
       // (Eskiden sadece avatar YOKSA cekiyordu -> degisen logolar guncellenmiyordu.)
+      // ── MEDYAYI YENİDEN İNDİR (panelden elle tetiklenir) ──
+      // Dosya inmemişse kullanıcı butona basar, hemen yeniden denenir.
+      else if (msg.type === 'medyaYenidenIndir' && SOCK && CONNECTED) {
+        const chat = C.get(msg.jid);
+        const mesaj = chat?.messages.find(x => x.id === msg.id);
+        if (!mesaj || !mesaj.raw) {
+          ws.send(JSON.stringify({ type: 'opError', error: 'Bu mesajın kaynağı artık yok — gönderenden tekrar iletmesini isteyin.' }));
+        } else {
+          console.log(`   🔄 Elle yeniden indirme isteği: ${String(msg.id).slice(0, 10)} (${mesaj.kind})`);
+          try {
+            const url = await saveMedia(mesaj.raw, mesaj.kind, SOCK);
+            if (url) {
+              addMessage(msg.jid, { id: msg.id, mediaUrl: url, fromMe: !!mesaj.fromMe }, {}, _LID);
+              _medyaKuyruk.delete(msg.id);
+              ws.send(JSON.stringify({ type: 'opOk', mesaj: 'Dosya indirildi ✓' }));
+            } else {
+              // inmedi -> kalıcı kuyruğa al, ısrar etsin
+              medyaKuyrugaEkle(mesaj.raw, mesaj.kind, msg.jid, _LID, SOCK);
+              ws.send(JSON.stringify({ type: 'opError', error: 'Şu an inmedi — sıraya alındı, arka planda denenecek.' }));
+            }
+          } catch (e) {
+            medyaKuyrugaEkle(mesaj.raw, mesaj.kind, msg.jid, _LID, SOCK);
+            ws.send(JSON.stringify({ type: 'opError', error: 'İndirilemedi: ' + e.message + ' — sıraya alındı.' }));
+          }
+        }
+      }
       else if (msg.type === 'getChatAvatar' && SOCK && CONNECTED) {
         const chat = C.get(msg.jid);
         if (chat) {
@@ -5256,6 +5282,66 @@ async function getAvatar(jid, taze = false, sock = null) {
   return result;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// KALICI MEDYA İNDİRME KUYRUĞU (KRİTİK — "PDF/ruhsat panele düşmedi" sorunu)
+// SORUN: Medya indirme 4 kez denenip (toplam ~28sn) VAZGEÇİYORDU. WhatsApp o an
+//   yoğunsa (rate-overlimit) veya bağlantı kopuksa 4 deneme de başarısız oluyor
+//   -> dosya KALICI kayboluyor, panelde sadece ismi kalıyordu.
+// ÇÖZÜM: İnmeyen medya kalıcı kuyruğa girer. Bağlantı/yoğunluk düzelince otomatik
+//   iner. WhatsApp medyayı ~14 gün sunucusunda tutar; o yüzden ısrar etmek işe yarar.
+//   Kuyruk her 45sn'de işlenir, mesaj trafiği varsa bekler (mesaj önceliği).
+// ═══════════════════════════════════════════════════════════════════════════
+const _medyaKuyruk = new Map(); // msgId -> { m, kind, jid, lineId, sock, deneme, ekleme, oncelik }
+const MEDYA_MAX_DENEME = 40;    // ~20+ dakika ısrar (WhatsApp medyayı günlerce tutar)
+
+// ÖNCELİK: küçük sayı = önce iner
+//  1 = GRUP medyası (poliçe/ruhsat/dekont — iş kritik, ekip bekliyor)
+//  2 = kişisel sohbet medyası
+function _medyaOncelik(jid) {
+  return String(jid || '').endsWith('@g.us') ? 1 : 2;
+}
+
+function medyaKuyrugaEkle(m, kind, jid, lineId, sock) {
+  const id = m?.key?.id;
+  if (!id || _medyaKuyruk.has(id)) return;
+  const oncelik = _medyaOncelik(jid);
+  _medyaKuyruk.set(id, { m, kind, jid, lineId, sock, deneme: 0, ekleme: Date.now(), oncelik });
+  console.log(`   📥 Medya kuyruğa alındı: ${String(id).slice(0, 10)} | ${kind} | ${oncelik === 1 ? 'GRUP (öncelikli)' : 'kişisel'} | kuyruk: ${_medyaKuyruk.size}`);
+}
+
+async function medyaKuyrukIsle() {
+  if (!_medyaKuyruk.size) return;
+  // MESAJ ÖNCELİĞİ: ekip yazarken indirme yapıp WhatsApp'ı yorma
+  if (mesajTrafigiVar()) return;
+  // SIRALAMA: önce GRUP medyası, aynı öncelikte YENİ gelen önce (ekip onu bekliyor)
+  const sirali = Array.from(_medyaKuyruk.entries()).sort((a, b) => {
+    if (a[1].oncelik !== b[1].oncelik) return a[1].oncelik - b[1].oncelik; // grup önce
+    return b[1].ekleme - a[1].ekleme;                                       // yeni önce
+  });
+  for (const [id, is] of sirali) {
+    const line = lines.get(is.lineId);
+    if (!line || !line.connected) continue; // hat kopuk -> sıradaki tura bırak
+    is.deneme++;
+    try {
+      const url = await saveMedia(is.m, is.kind, line.sock || is.sock);
+      if (url) {
+        addMessage(is.jid, { id, mediaUrl: url, fromMe: !!is.m.key.fromMe }, {}, is.lineId);
+        _medyaKuyruk.delete(id);
+        const gecen = ((Date.now() - is.ekleme) / 1000).toFixed(0);
+        console.log(`   ✅ Medya SONUNDA indi (${is.deneme}. denemede, ${gecen}sn sonra): ${String(id).slice(0, 10)} | ${is.kind}${is.oncelik === 1 ? ' | GRUP' : ''}`);
+        return; // bu turda iş bitti, WhatsApp'ı yorma
+      }
+    } catch (_) { /* aşağıda değerlendirilir */ }
+    if (is.deneme >= MEDYA_MAX_DENEME) {
+      _medyaKuyruk.delete(id);
+      console.error(`   ❌ Medya ${MEDYA_MAX_DENEME} denemede inmedi, bırakıldı: ${String(id).slice(0, 10)} (${is.kind}) — panelden "yeniden indir" denenebilir`);
+      try { broadcastHat(is.lineId, { type: 'medyaInmedi', jid: is.jid, id }); } catch (_) {}
+    }
+    return; // her turda TEK indirme denemesi (WhatsApp'ı yorma)
+  }
+}
+setInterval(medyaKuyrukIsle, 30000); // her 30 saniyede bir dene (45->30: daha hızlı kurtarma)
+
 // Medyayi indir, public/media'ya kaydet, web yolunu dondur.
 // 30 sn icinde inmezse veya hata olursa null doner — sunucu ASLA cokmemeli.
 async function saveMedia(m, kind, sock = waSock) {
@@ -5265,8 +5351,9 @@ async function saveMedia(m, kind, sock = waSock) {
       m, 'buffer', {},
       { logger: silentLogger, reuploadRequest: (sock || waSock).updateMediaMessage }
     );
-    // zaman asimi: 30 sn icinde inmezse vazgec
-    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('indirme zaman asimi')), 30000));
+    // zaman asimi: 60 sn (30->60). Buyuk PDF'ler ve WhatsApp yogun oldugunda 30sn
+    // yetmiyordu -> dosya inmiyordu. Artik daha sabirli.
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('indirme zaman asimi')), 60000));
     const buffer = await Promise.race([downloadPromise, timeout]);
 
     let ext = extMap[kind] || 'bin';
@@ -6351,9 +6438,11 @@ async function startWA(lineId = 'ofis') {
       // Medya indip diske yazilinca addMessage'i ayni id ile tekrar cagiririz;
       // addMessage var olan mesajin mediaUrl'unu doldurup panele + DB'ye yansitir.
       if (hasMedia) {
-        // RETRY'LI medya indirme: ilk denemede inmezse (ag/zaman asimi) birkac kez
-        // tekrar dene. Eskiden tek deneme vardi -> inmeyen GORSEL/medya KALICI eksik
-        // kaliyordu (kullanici "eksik gorsel" sikayeti). Artik 4 deneme + artan bekleme.
+        // HIZLI DENEME: çoğu medya ilk saniyelerde iner.
+        // GRUP medyası (poliçe/ruhsat/dekont) iş kritik -> daha ısrarcı (4 deneme).
+        // İnmezse VAZGEÇMEZ -> kalıcı kuyruğa devreder (grup medyası orada da öncelikli).
+        const grupMedyasi = String(jid || '').endsWith('@g.us');
+        const hizliMax = grupMedyasi ? 4 : 3;
         const medyaIndirRetry = async (deneme = 1) => {
           try {
             const url = await saveMedia(m, info.kind, sock);
@@ -6362,13 +6451,13 @@ async function startWA(lineId = 'ofis') {
               return; // basarili
             }
           } catch (e) { /* asagida tekrar denenecek */ }
-          // basarisiz: en fazla 4 deneme, her seferinde biraz daha bekle (4s, 8s, 16s)
-          if (deneme < 4) {
-            const bekle = 4000 * Math.pow(2, deneme - 1); // 4s, 8s, 16s
-            console.log(`   ⏳ medya inmedi (deneme ${deneme}/4), ${bekle/1000}sn sonra tekrar: ${String(m.key.id).slice(0,10)}`);
+          if (deneme < hizliMax) {
+            const bekle = 3000 * Math.pow(2, deneme - 1); // 3s, 6s, 12s
+            console.log(`   ⏳ medya inmedi (hızlı ${deneme}/${hizliMax}${grupMedyasi ? ', GRUP' : ''}), ${bekle / 1000}sn sonra tekrar: ${String(m.key.id).slice(0, 10)}`);
             setTimeout(() => medyaIndirRetry(deneme + 1), bekle);
           } else {
-            console.error(`   ❌ medya 4 denemede inmedi, vazgecildi: ${String(m.key.id).slice(0,10)} (${info.kind})`);
+            // ARTIK PES ETMİYORUZ: kalıcı kuyruğa al (grup medyası orada öncelikli işlenir)
+            medyaKuyrugaEkle(m, info.kind, jid, lineId, sock);
           }
         };
         medyaIndirRetry(1);
@@ -6403,35 +6492,56 @@ server.listen(PORT, async () => {
   db.startKeepAlive(15);
   // Eski mesaj temizligi: 30 gunden eski mesajlari gunde bir Supabase'den sil
   db.startCleanup();
-  if (dbOk) {
-    // Ilk yoneticiyi olustur (Burak Pekcan) - .env'den okur, yoksa varsayilan
-    const adminUser = process.env.ADMIN_USER || 'burak';
-    const adminPass = process.env.ADMIN_PASS || 'pekcan';
-    await db.ensureAdmin(adminUser, adminPass, 'Burak Pekcan');
-    // 2) Kayitli veriyi bellege yukle (WhatsApp'tan once - hizli acilis + kalicilik)
-    await loadFromDB();
-    await izinliIpleriYukle(); // izinli IP listesini bellege al
-  } else {
-    console.log('   ⚠️  Supabase kapali — veriler sadece bellekte tutulacak (eskisi gibi).');
-  }
-  console.log('   (WhatsApp baglantisi baslatiliyor...)\n');
-  // Otomatik baglan: kayitli oturum varsa ona, yoksa yeni QR uretir.
-  // (Demo/kullanim kolayligi: panel acilinca WhatsApp da hazirlanir)
+
+  // ═══════════════════════════════════════════════════════════════════
+  // WHATSAPP'I HEMEN BAŞLAT (kesinti azaltma — restart'ta ekip beklemesin)
+  // ESKİ: önce 3754 sohbet Supabase'den yüklenirdi, WhatsApp EN SON bağlanırdı
+  //   -> her güncellemede gereksiz uzun kesinti.
+  // YENİ: WhatsApp bağlantısı ile veri yükleme AYNI ANDA çalışır. WhatsApp
+  //   veritabanını beklemez -> restart kesintisi belirgin kısalır.
+  // Güvenlik: loadFromDB, WhatsApp'tan gelmiş sohbeti EZMEZ (aşağıda kontrol var).
+  // ═══════════════════════════════════════════════════════════════════
   const credsPath = path.join(__dirname, 'auth', 'creds.json');
   if (fs.existsSync(credsPath)) {
-    console.log('   🔁 Kayitli oturum bulundu, otomatik baglaniliyor...');
+    console.log('   🔁 Kayitli oturum bulundu — WhatsApp HEMEN baglaniyor (veri yuklemesi paralel devam edecek)');
   } else {
     console.log('   📱 Oturum yok — QR uretiliyor, panelden okutun.');
   }
-  startWA();
+  startWA(); // <-- beklemeden başlat
+
+  // 2) Veri yüklemesi PARALEL devam etsin (WhatsApp'ı bekletmiyor)
+  if (dbOk) {
+    const adminUser = process.env.ADMIN_USER || 'burak';
+    const adminPass = process.env.ADMIN_PASS || 'pekcan';
+    await db.ensureAdmin(adminUser, adminPass, 'Burak Pekcan');
+    const t0 = Date.now();
+    await loadFromDB();
+    await izinliIpleriYukle();
+    console.log(`   📦 Veri yuklendi (${((Date.now() - t0) / 1000).toFixed(1)}sn) — WhatsApp bu sure boyunca ZATEN baglaniyordu ✓`);
+  } else {
+    console.log('   ⚠️  Supabase kapali — veriler sadece bellekte tutulacak (eskisi gibi).');
+  }
 });
 
 // Supabase'den tum veriyi bellege yukle (acilista)
+// NOT: Artik WhatsApp ile PARALEL calisiyor. Bu yuzden WhatsApp'tan bu sirada gelmis
+// TAZE sohbetleri EZMEMELIYIZ (yoksa yeni gelen mesaj kaybolur). Varolan sohbette
+// mesaj varsa sadece EKSIK bilgileri (isim/avatar vb.) tamamlariz.
 async function loadFromDB() {
   try {
     const data = await db.loadAll();
     let n = 0;
     for (const row of data.chats) {
+      const mevcut = chats.get(row.jid);
+      if (mevcut && Array.isArray(mevcut.messages) && mevcut.messages.length) {
+        // WhatsApp bu sohbete zaten mesaj yazmış -> EZME, sadece eksikleri doldur
+        if (!mevcut.name || mevcut.name === row.jid.split('@')[0]) mevcut.name = row.custom_name || row.name || mevcut.name;
+        if (!mevcut.avatar && row.avatar) mevcut.avatar = row.avatar;
+        if (!mevcut.description && row.description) mevcut.description = row.description;
+        if ((!mevcut.members || !mevcut.members.length) && row.members) mevcut.members = row.members;
+        if (!mevcut.memberCount && row.member_count) mevcut.memberCount = row.member_count;
+        continue;
+      }
       chats.set(row.jid, {
         jid: row.jid,
         name: row.custom_name || row.name || row.jid.split('@')[0],
