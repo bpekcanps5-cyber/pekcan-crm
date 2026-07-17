@@ -2473,7 +2473,7 @@
   </div>
 </div>
 
-<div class="modal-bg" id="userMgmtModal">
+<div class="modal-bg" id="userMgmtModal" data-kapanmaz="1">
   <div class="modal um-modal">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap">
       <div style="flex:1;min-width:220px">
@@ -2699,7 +2699,7 @@
 </div>
 
 <!-- KULLANICI DÜZENLE: isim / giriş adı / şifre -->
-<div class="modal-bg" id="userEditModal">
+<div class="modal-bg" id="userEditModal" data-kapanmaz="1">
   <div class="modal" style="width:440px;max-width:94vw">
     <h3>Kullanıcıyı Düzenle</h3>
     <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Değiştirmek istediğin alanları doldur. <b>Şifreyi boş bırakırsan değişmez.</b></p>
@@ -2794,7 +2794,7 @@
 </div>
 
 <!-- GİRİŞ BİLGİLERİM: kullanıcı kendi kullanıcı adı + şifresini görür -->
-<div class="modal-bg" id="girisBilgiModal">
+<div class="modal-bg" id="girisBilgiModal" data-kapanmaz="1">
   <div class="modal" style="max-width:400px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
       <div style="width:36px;height:36px;border-radius:10px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center">
@@ -2830,7 +2830,7 @@
 </div>
 
 <!-- ŞİFRE LİSTESİ (sadece yönetici) -->
-<div class="modal-bg" id="sifreListeModal">
+<div class="modal-bg" id="sifreListeModal" data-kapanmaz="1">
   <div class="modal" style="max-width:620px">
     <div class="modal-title">🔑 Kullanıcı giriş bilgileri</div>
     <div class="modal-sub">Tüm ekibin kullanıcı adı ve şifresi — sadece yönetici görür</div>
@@ -9092,12 +9092,14 @@ document.addEventListener('scroll',()=>globalMenuKapat(),true);
 
 
 // ═══ MODAL KİLİTLENME GÜVENLİĞİ ═══ (ekran asla kilitli kalmasın)
-// Bir modal (onay penceresi, ilet, ödeme vb.) bir sebeple açık kalırsa görünmez katman
-// tüm ekranı kilitler, hiçbir tuşa basılamaz. Bunu ÖNLE: modal ARKAPLANINA tıklama VEYA
-// ESC tuşu, açık olan modal-bg'leri KAPATIR. Böylece kilitlenme imkansız.
+// Bir modal açık kalırsa görünmez katman ekranı kilitler. Bunu ÖNLE: arkaplana tıklama
+// VEYA ESC açık modal'ları kapatır.
+// AMA: içinde FORM olan pencereler (kullanıcı düzenle, şifre listesi vb.) yanlışlıkla
+// kenara tıklayınca KAPANMAMALI — yazdıkların uçmasın. Onlar sadece Vazgeç/Kapat/ESC
+// ile kapanır. (data-kapanmaz="1" olanlar korumalı; ESC yine çalışır -> kilitlenme yok.)
 document.addEventListener('click',(e)=>{
-  // doğrudan modal arkaplanına (içteki .modal'a değil) tıklandıysa kapat
   if(e.target.classList && e.target.classList.contains('modal-bg') && e.target.classList.contains('show')){
+    if(e.target.dataset && e.target.dataset.kapanmaz==='1') return; // form penceresi -> kazara kapanmasın
     e.target.classList.remove('show');
     if(e.target.id==='confirmModal') _confirmAction=null; // bekleyen onay iptal
   }
