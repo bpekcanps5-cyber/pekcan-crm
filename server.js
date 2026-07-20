@@ -135,6 +135,15 @@ function _gurultuMu(args) {
 }
 console.log = (...args) => { if (!_gurultuMu(args)) _origLog(...args); };
 console.error = (...args) => { if (!_gurultuMu(args)) _origErr(...args); };
+// EK: Baileys/libsignal bazı gürültüyü (özellikle "Closing open session in favor of
+// incoming prekey bundle") console.info/warn/debug ile basıyordu -> filtreye takılmıyordu,
+// terminali dolduruyordu. Artık bunlar da süzülüyor.
+const _origInfo = console.info ? console.info.bind(console) : _origLog;
+const _origWarn = console.warn ? console.warn.bind(console) : _origLog;
+const _origDebug = console.debug ? console.debug.bind(console) : _origLog;
+console.info = (...args) => { if (!_gurultuMu(args)) _origInfo(...args); };
+console.warn = (...args) => { if (!_gurultuMu(args)) _origWarn(...args); };
+console.debug = (...args) => { if (!_gurultuMu(args)) _origDebug(...args); };
 
 const PORT = 3000;
 // Mesaj saklama suresi: bundan eski mesajlar panele dusmez, DB'ye yazilmaz ve periyodik silinir.
@@ -5454,7 +5463,18 @@ async function startWA(lineId = 'ofis') {
 
   // her hattin KENDI auth klasoru: auth/<lineId>
   const { state, saveCreds } = await useMultiFileAuthState(line.authDir);
-  const { version } = await fetchLatestBaileysVersion();
+  // SÜRÜM: fetchLatestBaileysVersion() her açılışta internete çıkıp 2-3sn bekletiyordu
+  // (restart kesintisini uzatan sebeplerden biri). Sürümü hızlıca almayı dene, takılırsa
+  // gömülü sürümle DEVAM ET -> açılış belirgin hızlanır, kesinti kısalır.
+  let version;
+  try {
+    const vP = fetchLatestBaileysVersion();
+    const zaman = new Promise((_, r) => setTimeout(() => r(new Error('surum sorgu timeout')), 2500));
+    version = (await Promise.race([vP, zaman])).version;
+  } catch (_) {
+    version = [2, 3000, 1023223821]; // gömülü güncel sürüm — internet beklemeden bağlan
+    console.log('   ⏩ Surum sorgusu atlandi (gomulu surumle hizli baglaniliyor)');
+  }
 
   const sock = makeWASocket({
     version, auth: state,
@@ -6488,60 +6508,48 @@ server.listen(PORT, async () => {
   // 1) Supabase'i baslat ve test et
   db.init();
   const dbOk = await db.test();
-  // DB koparsa otomatik yeniden baglanmayi dene (15sn'de bir, sessizce)
   db.startKeepAlive(15);
-  // Eski mesaj temizligi: 30 gunden eski mesajlari gunde bir Supabase'den sil
   db.startCleanup();
 
   // ═══════════════════════════════════════════════════════════════════
-  // WHATSAPP'I HEMEN BAŞLAT (kesinti azaltma — restart'ta ekip beklemesin)
-  // ESKİ: önce 3754 sohbet Supabase'den yüklenirdi, WhatsApp EN SON bağlanırdı
-  //   -> her güncellemede gereksiz uzun kesinti.
-  // YENİ: WhatsApp bağlantısı ile veri yükleme AYNI ANDA çalışır. WhatsApp
-  //   veritabanını beklemez -> restart kesintisi belirgin kısalır.
-  // Güvenlik: loadFromDB, WhatsApp'tan gelmiş sohbeti EZMEZ (aşağıda kontrol var).
+  // SIRA: ÖNCE tüm veri yüklenir, SONRA WhatsApp bağlanır.
+  // ⚠️ ÖNEMLİ DERS: Bir ara "kesintiyi azaltmak için" WhatsApp'ı paralel başlatmıştım.
+  //   Ama bu SOHBET KAYBINA yol açtı: WhatsApp bağlanınca gördüğü ~800 sohbeti belleğe
+  //   yazıyor, sonra Supabase'den gelen 3800+ sohbet "bellekte var, ezmeyeyim" diye
+  //   ATLANIYORDU -> panelde 3800 yerine 800 sohbet kalıyordu ("kendini sıfırlıyor").
+  //   Doğru sıra: önce TÜM eski veri yüklensin, üstüne WhatsApp gelsin. Birkaç saniye
+  //   ekstra kesinti, veri kaybından çok daha iyidir.
   // ═══════════════════════════════════════════════════════════════════
-  const credsPath = path.join(__dirname, 'auth', 'creds.json');
-  if (fs.existsSync(credsPath)) {
-    console.log('   🔁 Kayitli oturum bulundu — WhatsApp HEMEN baglaniyor (veri yuklemesi paralel devam edecek)');
-  } else {
-    console.log('   📱 Oturum yok — QR uretiliyor, panelden okutun.');
-  }
-  startWA(); // <-- beklemeden başlat
-
-  // 2) Veri yüklemesi PARALEL devam etsin (WhatsApp'ı bekletmiyor)
   if (dbOk) {
     const adminUser = process.env.ADMIN_USER || 'burak';
     const adminPass = process.env.ADMIN_PASS || 'pekcan';
     await db.ensureAdmin(adminUser, adminPass, 'Burak Pekcan');
     const t0 = Date.now();
-    await loadFromDB();
+    await loadFromDB();          // TÜM sohbetler önce yüklensin
     await izinliIpleriYukle();
-    console.log(`   📦 Veri yuklendi (${((Date.now() - t0) / 1000).toFixed(1)}sn) — WhatsApp bu sure boyunca ZATEN baglaniyordu ✓`);
+    console.log(`   📦 ${chats.size} sohbet yuklendi (${((Date.now() - t0) / 1000).toFixed(1)}sn). Simdi WhatsApp baglanacak.`);
   } else {
     console.log('   ⚠️  Supabase kapali — veriler sadece bellekte tutulacak (eskisi gibi).');
   }
+
+  console.log('   (WhatsApp baglantisi baslatiliyor...)');
+  const credsPath = path.join(__dirname, 'auth', 'creds.json');
+  if (fs.existsSync(credsPath)) {
+    console.log('   🔁 Kayitli oturum bulundu, otomatik baglaniliyor...');
+  } else {
+    console.log('   📱 Oturum yok — QR uretiliyor, panelden okutun.');
+  }
+  startWA(); // <-- veri yüklendikten SONRA
 });
 
 // Supabase'den tum veriyi bellege yukle (acilista)
-// NOT: Artik WhatsApp ile PARALEL calisiyor. Bu yuzden WhatsApp'tan bu sirada gelmis
-// TAZE sohbetleri EZMEMELIYIZ (yoksa yeni gelen mesaj kaybolur). Varolan sohbette
-// mesaj varsa sadece EKSIK bilgileri (isim/avatar vb.) tamamlariz.
+// Supabase'den tum veriyi bellege yukle (acilista).
+// WhatsApp'tan ÖNCE calisir -> tum sohbetler eksiksiz yuklenir, sonra WhatsApp ustune gelir.
 async function loadFromDB() {
   try {
     const data = await db.loadAll();
     let n = 0;
     for (const row of data.chats) {
-      const mevcut = chats.get(row.jid);
-      if (mevcut && Array.isArray(mevcut.messages) && mevcut.messages.length) {
-        // WhatsApp bu sohbete zaten mesaj yazmış -> EZME, sadece eksikleri doldur
-        if (!mevcut.name || mevcut.name === row.jid.split('@')[0]) mevcut.name = row.custom_name || row.name || mevcut.name;
-        if (!mevcut.avatar && row.avatar) mevcut.avatar = row.avatar;
-        if (!mevcut.description && row.description) mevcut.description = row.description;
-        if ((!mevcut.members || !mevcut.members.length) && row.members) mevcut.members = row.members;
-        if (!mevcut.memberCount && row.member_count) mevcut.memberCount = row.member_count;
-        continue;
-      }
       chats.set(row.jid, {
         jid: row.jid,
         name: row.custom_name || row.name || row.jid.split('@')[0],
