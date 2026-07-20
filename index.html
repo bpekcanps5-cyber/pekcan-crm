@@ -9232,6 +9232,9 @@ function startEdit(id){
   editTarget=id; replyTarget=null;
   const inp=document.getElementById('msgInput');
   inp.value=m.text; inp.focus();
+  autoGrow(inp); // uzun mesajı düzenlerken kutu büyüsün, metin tam görünsün
+  // imleci metnin SONUNA al (düzenlemeye kolay devam et)
+  inp.setSelectionRange(inp.value.length, inp.value.length);
   document.getElementById('rpSender').textContent='Mesajı düzenliyorsun';
   document.getElementById('rpText').textContent=m.text;
   document.getElementById('replyPreview').classList.add('show');
@@ -9748,6 +9751,7 @@ function insertEmoji(e){
   inp.value=inp.value.slice(0,start)+e+inp.value.slice(inp.selectionEnd||start);
   inp.focus();
   const pos=start+e.length; inp.setSelectionRange(pos,pos);
+  autoGrow(inp);
 }
 document.getElementById('emojiBtn').onclick=(ev)=>{
   ev.stopPropagation();
