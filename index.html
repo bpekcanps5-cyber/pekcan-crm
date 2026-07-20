@@ -3416,30 +3416,29 @@ function connect(){
       }
     }
     else if(d.type==='chats'){
-      // PARÇALI GELİŞ: sunucu artık listeyi 400'erlik hafif parçalar halinde yollar
-      // (takılma önleme). İlk parça listeyi sıfırlar, append'li parçalar üstüne ekler.
+      // PARÇALI GELİŞ: sunucu listeyi 400'erlik parçalar halinde yollar.
+      // ⚠️ ÖNEMLİ: Eskiden ilk parça listeyi TAMAMEN sıfırlıyordu (chats={}). WhatsApp
+      // geçmiş senkronizasyonu (history sync) sık geldiğinden liste durmadan sıfırlanıp
+      // 400-400 yeniden doluyordu -> "gruplar 0'a düştü, yeniden yükleniyor" sorunu buydu.
+      // ÇÖZÜM: Sıfırlamıyoruz. Gelen veriyi mevcut listenin ÜSTÜNE yazıyoruz (birleştirme).
+      // Böylece liste asla 0'a düşmez, ekran titremez.
       const old=chats;
-      if(!d.append) chats={};
       d.chats.forEach(c=>{
-        const prev=old[c.jid]||chats[c.jid];
-        // gelen veride avatar/uye yoksa eskisini koru
+        const prev=old[c.jid];
         if(prev){
           if(!c.avatar && prev.avatar) c.avatar=prev.avatar;
           if((!c.members||!c.members.length) && prev.members) c.members=prev.members;
           if(prev.customName){ c.customName=prev.customName; c.name=prev.customName; }
-          // Aciklama: SADECE veri hic gelmediyse (undefined/null) eskisini koru.
-          // Bos string ('') ise grup gercekten aciklamasiz/silinmis demektir -> bos birak.
           if((c.description===undefined||c.description===null) && prev.description) c.description=prev.description;
           // HAFİF paket (son 1 mesaj), eldeki TAM mesaj listesini EZMESİN
-          // (kullanıcı o an sohbete bakıyor olabilir — mesajları kaybolmasın)
           if(c._hafif && prev.messages && prev.messages.length>(c.messages?c.messages.length:0)){
             c.messages=prev.messages; c._hafif=false;
           }
         }
         chats[c.jid]=c;
       });
-      renderList();
-      // acik sohbet varsa basligini tazele
+      // Not: Artık silme yok. Bir grup gerçekten silinirse ayrı 'chatSilindi' olayı gelir.
+      renderListDebounced();
       if(activeJid&&chats[activeJid]) updateConvHeader(chats[activeJid], activeJid);
     }
     else if(d.type==='searchMessagesResult'){
@@ -7064,6 +7063,13 @@ function toggleLimitOpts(){
 // renderList'i debounce et: art arda cagrilar tek seferde calissin (kasma onleme)
 // Sure DUSURULDU (80->25ms): mesaj/liste daha hizli dussun ama yine art arda gelenleri grupla.
 let _renderListRaw=null;
+let _rlTimer=null;
+// Liste çizimini geciktir/topla: history sync gibi art arda gelen güncellemelerde
+// listeyi her seferinde çizmek yerine 150ms'de bir kez çiz -> titreme/zıplama olmaz.
+function renderListDebounced(){
+  clearTimeout(_rlTimer);
+  _rlTimer=setTimeout(()=>{ renderList(); }, 150);
+}
 function renderList(){
   if(!_renderListRaw)return;
   clearTimeout(renderList._t);

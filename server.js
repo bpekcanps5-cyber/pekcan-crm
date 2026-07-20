@@ -5840,8 +5840,15 @@ async function startWA(lineId = 'ofis') {
         }
       }
       // panele guncel listeyi gonder (ofis gecmisi -> sadece ofis panellerine)
-      hafifChatsYayinla('ofis', chats);
-      console.log(`📚 Gecmis yuklendi: ${histChats?.length || 0} sohbet, ${histMessages?.length || 0} mesaj`);
+      // ⚠️ GECIKTIRME: WhatsApp history sync'i art arda BIRCOK paket halinde gonderebiliyor.
+      // Her pakette listeyi yayinlarsak panel surekli yenilenip TITRIYOR ("gruplar 0'a dustu").
+      // Bu yuzden yayini 2sn geciktiriyoruz -> art arda gelen paketler TEK yayinda toplanir.
+      clearTimeout(global._histYayinTimer);
+      global._histYayinTimer = setTimeout(() => {
+        hafifChatsYayinla('ofis', chats);
+        console.log(`📚 Gecmis islendi, liste guncellendi (${chats.size} sohbet)`);
+      }, 2000);
+      console.log(`📚 Gecmis paketi alindi: ${histChats?.length || 0} sohbet, ${histMessages?.length || 0} mesaj (yayin 2sn beklemede)`);
     } catch (e) { console.error('Gecmis yukleme hatasi:', e.message); }
   });
 
