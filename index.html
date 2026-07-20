@@ -1175,7 +1175,7 @@
   .emoji-btn,.attach-btn,.qr-btn{background:none;border:none;color:var(--muted);cursor:pointer;display:grid;place-items:center;padding:7px;border-radius:11px;transition:all .14s;flex-shrink:0}
   .emoji-btn:hover,.attach-btn:hover,.qr-btn:hover{color:var(--brand);background:var(--brand-soft)}
   .emoji-btn svg,.attach-btn svg,.qr-btn svg{width:22px;height:22px}
-  .composer textarea{flex:1 1 auto;min-width:120px;padding:13px 18px;border-radius:14px;border:1.5px solid transparent;background:var(--panel-2);color:var(--text);font-size:14.5px;outline:none;transition:border .15s,background .15s;font-family:inherit;resize:none;line-height:1.4;max-height:130px;overflow-y:auto;-webkit-appearance:none;appearance:none}
+  .composer textarea{flex:1 1 auto;min-width:120px;padding:13px 18px;border-radius:14px;border:1.5px solid transparent;background:var(--panel-2);color:var(--text);font-size:14.5px;outline:none;transition:border .15s,background .15s;font-family:inherit;resize:none;line-height:1.45;max-height:300px;overflow-y:auto;-webkit-appearance:none;appearance:none}
   .composer textarea:focus{border-color:var(--brand);background:var(--panel)}
   .composer textarea::placeholder{color:var(--faint)}
   /* textarea scrollbar'i ince ve sade (beyaz oklar gitsin) */
@@ -10486,7 +10486,14 @@ document.getElementById('msgInput').addEventListener('keydown',e=>{
   }
 });
 // textarea icerik arttikca otomatik buyusun
-function autoGrow(t){ t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,130)+'px'; }
+function autoGrow(t){
+  t.style.height='auto';
+  // Uzun mesajı tam görebilmek için textarea daha çok büyüyebilsin.
+  // Sınır: ekran yüksekliğinin ~%40'ı (en fazla 300px) — hem uzun yazı görünür,
+  // hem de yazma alanı tüm ekranı kaplamaz. Aşınca kendi içinde kaydırılır.
+  const enFazla = Math.min(300, Math.floor(window.innerHeight * 0.40));
+  t.style.height = Math.min(t.scrollHeight, enFazla) + 'px';
+}
 document.getElementById('msgInput').addEventListener('input',e=>{ autoGrow(e.target); });
 document.getElementById('msgInput').addEventListener('input',checkMention);
 // CTRL+V: panodan resim/dosya yapistirinca gonderim onizlemesini ac (WhatsApp Web gibi)
