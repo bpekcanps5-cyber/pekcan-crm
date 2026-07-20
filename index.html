@@ -1619,6 +1619,7 @@
   .um-badge.pazarlama{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;box-shadow:0 2px 6px rgba(139,92,246,.3)}
   .um-badge.pzryonetici{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;box-shadow:0 2px 6px rgba(245,158,11,.3)}
   .um-badge.muhasebeci{background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;box-shadow:0 2px 6px rgba(14,165,233,.3)}
+  .um-badge.hatsorumlusu{background:linear-gradient(135deg,#10b981,#059669);color:#fff;box-shadow:0 2px 6px rgba(16,185,129,.3)}
   /* ── SONRADAN ÖDEMELER ── */
   .odeme-modal{width:680px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column}
   .odeme-alan{flex:1;display:flex;flex-direction:column;min-height:0;overflow-y:auto;padding:18px 20px 24px}
@@ -2498,6 +2499,7 @@
               <label class="um-tip-card"><input type="radio" name="userTip" value="pazarlama"> <span><b>📱 Pazarlama</b><small>Kendi numarasını bağlar, sadece kendi sohbetlerini görür</small></span></label>
               <label class="um-tip-card"><input type="radio" name="userTip" value="pzr_yonetici"> <span><b>📊 Pazarlama Yöneticisi</b><small>Sadece pazarlama satışlarını görür ve kontrol eder</small></span></label>
               <label class="um-tip-card"><input type="radio" name="userTip" value="muhasebeci"> <span><b>💳 Muhasebeci</b><small>Temsilci gibi çalışır + sonradan ödemeleri onaylar</small></span></label>
+              <label class="um-tip-card"><input type="radio" name="userTip" value="hat_sorumlusu"> <span><b>🔌 Hat Sorumlusu</b><small>Temsilci gibi çalışır + WhatsApp bağlayıp çıkış yapabilir</small></span></label>
             </div>
             <label class="um-check" id="newUserAdminWrap">
               <input type="checkbox" id="newUserAdmin"> Yönetici yap (kullanıcı açabilir)
@@ -5886,10 +5888,11 @@ function applyUser(){
   // "WhatsApp cikis / Numara degistir":
   //  - YÖNETİCİ: görür (ofis ortak hattını yönetir).
   //  - PAZARLAMACI: görür (KENDİ hattını kullanır, kendi WhatsApp'ından çıkabilmeli).
+  //  - HAT SORUMLUSU: görür (bu iş için açılmış özel rol — WhatsApp bağlar/çıkar).
   //  - Ofis TEMSİLCİSİ: GÖRMEZ (ortak hattı kesemez, korunur).
   const wac=document.getElementById('waCikisItem');
   if(wac){
-    const waCikabilir = (currentUser.role==='admin') || (currentUser.lineTip==='pazarlama');
+    const waCikabilir = (currentUser.role==='admin') || (currentUser.lineTip==='pazarlama') || (currentUser.role==='hat_sorumlusu');
     wac.style.display = waCikabilir ? 'flex' : 'none';
   }
   // "Tehlikeli islemler" (grup sifirlama) SADECE yoneticide gorunur.
@@ -6514,6 +6517,7 @@ function userListeCiz(){
     if(u.role==='admin') rozet='<span class="um-badge">Yönetici</span>';
     else if(u.role==='pzr_yonetici') rozet='<span class="um-badge pzryonetici">Pzr. Yöneticisi</span>';
     else if(u.role==='muhasebeci') rozet='<span class="um-badge muhasebeci">Muhasebeci</span>';
+    else if(u.role==='hat_sorumlusu') rozet='<span class="um-badge hatsorumlusu">Hat Sorumlusu</span>';
     else if(u.tip==='pazarlama') rozet='<span class="um-badge pazarlama">Pazarlama</span>';
     else rozet='<span class="um-badge agent">Temsilci</span>';
     let actions='';
@@ -6536,6 +6540,7 @@ function rolMenuAc(ev, id, suankiRol){
     {rol:'admin', ad:'👑 Yönetici yap'},
     {rol:'pzr_yonetici', ad:'📊 Pazarlama Yöneticisi yap'},
     {rol:'muhasebeci', ad:'💳 Muhasebeci yap'},
+    {rol:'hat_sorumlusu', ad:'🔌 Hat Sorumlusu yap'},
     {rol:'agent', ad:'👤 Normal kullanıcı yap'},
   ].filter(s=>s.rol!==suankiRol);
   // mevcut menüyü kaldır
@@ -6562,6 +6567,7 @@ async function addNewUser(){
   let rol='agent';
   if(tip==='pzr_yonetici') rol='pzr_yonetici';
   else if(tip==='muhasebeci') rol='muhasebeci';
+  else if(tip==='hat_sorumlusu') rol='hat_sorumlusu';
   else if(isAdmin) rol='admin';
   const msg=document.getElementById('addUserMsg');
   const btn=document.getElementById('addUserBtn');
@@ -6575,6 +6581,7 @@ async function addNewUser(){
       let basariMsg='✓ Kullanıcı oluşturuldu';
       if(tip==='pazarlama') basariMsg='✓ Pazarlamacı oluşturuldu (ilk girişte kendi QR\'ını okutacak)';
       else if(tip==='pzr_yonetici') basariMsg='✓ Pazarlama yöneticisi oluşturuldu (sadece satış kontrol görür)';
+      else if(tip==='hat_sorumlusu') basariMsg='✓ Hat sorumlusu oluşturuldu (WhatsApp bağlayıp çıkış yapabilir)';
       msg.style.color='var(--brand)'; msg.textContent=basariMsg;
       document.getElementById('newUserName').value='';
       document.getElementById('newUserLogin').value='';
@@ -6593,6 +6600,7 @@ function setRole(id,role){
         if(role==='admin') msg='👑 Yönetici yapıldı';
         else if(role==='pzr_yonetici') msg='📊 Pazarlama Yöneticisi yapıldı';
         else if(role==='muhasebeci') msg='💳 Muhasebeci yapıldı';
+        else if(role==='hat_sorumlusu') msg='🔌 Hat Sorumlusu yapıldı';
         else if(role==='agent') msg='👤 Normal kullanıcı yapıldı';
         showToast(msg); loadUserList();
       } else showToast(d.error||'İşlem başarısız');

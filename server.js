@@ -766,14 +766,17 @@ app.post('/api/users/add', express.json(), async (req, res) => {
   const { username, password, displayName, role, tip } = req.body || {};
   if (!username || !password) return res.json({ ok: false, error: 'Kullanıcı adı ve şifre gerekli' });
   const uname = username.trim();
-  // Rol: admin, pzr_yonetici (pazarlama yöneticisi), muhasebeci veya agent (normal)
+  // Rol: admin, pzr_yonetici (pazarlama yöneticisi), muhasebeci, hat_sorumlusu veya agent (normal)
+  // hat_sorumlusu = normal temsilci (agent) ile AYNI, tek farkı WhatsApp bağlayıp/çıkış yapabilmesi.
   let gecerliRol = 'agent';
   if (role === 'admin') gecerliRol = 'admin';
   else if (role === 'pzr_yonetici') gecerliRol = 'pzr_yonetici';
   else if (role === 'muhasebeci') gecerliRol = 'muhasebeci';
+  else if (role === 'hat_sorumlusu') gecerliRol = 'hat_sorumlusu';
   const r = await db.addUser(uname, password, displayName, gecerliRol);
   if (r.ok) {
     // Pazarlama yöneticisi + Muhasebeci: hat gerekmez, ofis hattına bağla (zararsız).
+    // hat_sorumlusu: normal kullanıcı gibi davranır (aşağıdaki tip mantığına düşer).
     if (gecerliRol === 'pzr_yonetici' || gecerliRol === 'muhasebeci') {
       await db.setUserLine(uname, 'ofis', 'ofis');
     } else {
@@ -1335,11 +1338,12 @@ app.post('/api/police/duzelt', express.json(), async (req, res) => {
 // Rol degistir - yonetici yap/geri al (sadece yonetici)
 app.post('/api/users/role', express.json(), async (req, res) => {
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
-  // Geçerli roller: admin, pzr_yonetici (pazarlama yöneticisi), muhasebeci, agent (normal)
+  // Geçerli roller: admin, pzr_yonetici, muhasebeci, hat_sorumlusu, agent (normal)
   let yeniRol = 'agent';
   if (req.body?.role === 'admin') yeniRol = 'admin';
   else if (req.body?.role === 'pzr_yonetici') yeniRol = 'pzr_yonetici';
   else if (req.body?.role === 'muhasebeci') yeniRol = 'muhasebeci';
+  else if (req.body?.role === 'hat_sorumlusu') yeniRol = 'hat_sorumlusu';
   try {
     const users = await db.listUsers();
     const u = users.find(x => String(x.id) === String(req.body?.id));
@@ -1858,6 +1862,7 @@ wss.on('connection', (ws) => {
         ws._lineId = lineId;
         ws._username = s ? s.username : null;
         ws._role = s ? s.role : null; // wipeAll gibi yonetici-only islemler icin
+        ws._lineTip = s ? (s.lineTip || 'ofis') : 'ofis'; // WhatsApp cikis/baglama yetkisi icin
         ws._displayName = s ? (s.displayName || s.username) : null; // "buradayim" isareti icin ad
         if (ws._username && !ws._girisTs) ws._girisTs = Date.now(); // aktif kullanicilar panelinde giris saati
         console.log(`   🔗 merhaba: token ${msg.token ? 'var' : 'YOK'} | kullanici=${ws._username||'-'} | hat=${lineId}`);
@@ -3426,7 +3431,20 @@ wss.on('connection', (ws) => {
 
       // Panelden CIKIS YAP (WhatsApp baglantisini kes, oturumu sil, yeni QR uret)
       else if (msg.type === 'logout') {
-        console.log(`🚪 Panelden cikis istendi... [hat: ${_LID}]`);
+        // YETKİ: WhatsApp bağlantısını kesmek ciddi bir iştir. Sadece:
+        //  - admin (yönetici)
+        //  - pazarlamacı (KENDİ hattını yönetir)
+        //  - hat_sorumlusu (bu iş için açılmış özel rol)
+        // Normal temsilci (agent) ortak ofis hattını KESEMEZ.
+        const _rol = ws._role;
+        const _pzr = (ws._lineTip === 'pazarlama');
+        const cikisYetkisi = (_rol === 'admin') || _pzr || (_rol === 'hat_sorumlusu');
+        if (!cikisYetkisi) {
+          console.log(`⛔ WhatsApp cikis reddedildi (yetki yok): ${ws._username || '?'} [rol: ${_rol}]`);
+          ws.send(JSON.stringify({ type: 'opError', error: 'WhatsApp bağlantısını kesme yetkiniz yok.' }));
+          return;
+        }
+        console.log(`🚪 Panelden cikis istendi... [hat: ${_LID}, kullanici: ${ws._username}]`);
         if (_LID === 'ofis') {
           // OFIS: mevcut davranis (global ofis hatti)
           manualLogout = true;
@@ -3469,6 +3487,14 @@ wss.on('connection', (ws) => {
 
       // Panelden YENI QR iste (baglanmadan once QR gelmezse)
       else if (msg.type === 'requestQR') {
+        // YETKİ: yeni WhatsApp bağlamak = çıkış ile aynı yetki grubu.
+        const _rol = ws._role;
+        const _pzr = (ws._lineTip === 'pazarlama');
+        const qrYetkisi = (_rol === 'admin') || _pzr || (_rol === 'hat_sorumlusu');
+        if (!qrYetkisi) {
+          ws.send(JSON.stringify({ type: 'opError', error: 'WhatsApp bağlama yetkiniz yok.' }));
+          return;
+        }
         if (_LID === 'ofis') {
           if (!waConnected) {
             if (lastQR) { ws.send(JSON.stringify({ type: 'status', connected: false, qr: true, qrImage: lastQR })); }
