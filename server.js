@@ -2569,7 +2569,9 @@ wss.on('connection', (ws) => {
           // KİM AÇTI TAKİBİ: okunmamış mesaj VARKEN açan kişiyi kaydet (ekip takibi).
           // "Bu grupla en son kim ilgilendi" belli olsun. Sadece gerçekten okunmamış varken
           // açıldıysa güncelle (boşuna her tıklamada değişmesin).
-          if (oncekiUnread > 0) {
+          // KİM OKUDU bilgisi: (3) rol sahibi okuyunca adı YAZILMAZ; (4) renkli etiket filtresinden
+          // açıldıysa YAZILMAZ — sadece "Tümü"den açılınca yazılsın.
+          if (oncekiUnread > 0 && !bagimsizOkumaKullanicilar.has(ws._username) && !msg.etiketFiltrede) {
             const acanAd = ws._displayName || ws._username || 'Biri';
             chat.sonAcan = acanAd;
             chat.sonAcanTs = Date.now();

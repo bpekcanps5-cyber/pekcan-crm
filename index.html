@@ -1730,10 +1730,10 @@
   .um-input{width:100%;padding:12px 14px;border-radius:11px;border:1.5px solid var(--border);background:var(--panel);color:var(--text);font-size:14px;outline:none;transition:border-color .15s, box-shadow .15s}
   .um-input::placeholder{color:var(--faint)}
   .um-input:focus{border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb, var(--brand) 15%, transparent)}
-  .um-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;background:var(--panel-2);border-radius:13px;border:1px solid var(--border-soft);transition:border-color .15s, transform .1s}
+  .um-row{display:flex;flex-direction:column;align-items:stretch;gap:9px;padding:13px 15px;background:var(--panel-2);border-radius:13px;border:1px solid var(--border-soft);transition:border-color .15s, transform .1s}
   .um-row:hover{border-color:var(--border)}
   .um-row .um-info{display:flex;flex-direction:column;gap:3px;min-width:0}
-  .um-row .um-name{font-size:14px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px}
+  .um-row .um-name{font-size:14px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .um-row .um-meta{font-size:12px;color:var(--muted)}
   .um-btn.aktif{background:var(--brand)!important;color:#fff!important;border-color:var(--brand)!important}
   .um-badge{font-size:9.5px;font-weight:800;padding:3px 9px;border-radius:20px;background:linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 70%, #000));color:#fff;text-transform:uppercase;letter-spacing:.5px;box-shadow:0 2px 6px color-mix(in srgb, var(--brand) 30%, transparent)}
@@ -1801,7 +1801,7 @@
   .rol-menu{position:fixed;z-index:400;background:var(--panel);border:1px solid var(--border-soft);border-radius:11px;box-shadow:var(--shadow-lg);padding:5px;display:flex;flex-direction:column;gap:2px;min-width:190px}
   .rol-menu button{text-align:left;padding:9px 12px;border:none;background:transparent;color:var(--text);font-size:13px;border-radius:8px;cursor:pointer;white-space:nowrap}
   .rol-menu button:hover{background:var(--panel-2)}
-  .um-actions{display:flex;gap:7px;flex-shrink:0}
+  .um-actions{display:flex;flex-wrap:wrap;gap:7px}
   .um-btn{font-size:12px;font-weight:600;padding:7px 13px;border-radius:9px;border:1.5px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer;transition:all .14s}
   .um-btn:hover{background:var(--brand);border-color:var(--brand);color:#fff;transform:translateY(-1px)}
   .um-btn.danger{color:#ef4444;border-color:color-mix(in srgb, #ef4444 40%, transparent)}
@@ -3740,7 +3740,7 @@ function connect(){
       const incoming=last && !last.fromMe && last.id!==prevLastId;
       if(incoming && d.jid!==activeJid){ playPing(); }
       if(d.jid===activeJid){
-        chats[d.jid].unread=0; if(currentUser&&currentUser.bagimsizOkuma) chats[d.jid].ozelUnread=0; chats[d.jid].hasMention=false;
+        chats[d.jid].unread=0; chats[d.jid].hasMention=false;
         updateConvHeader(chats[d.jid], d.jid);
         // ACIK sohbete her guncelleme gelince yeniden ciz: yeni mesaj, EMOJI REAKSIYONU,
         // duzenleme, silme, durum (tik) — hepsi ANINDA gorunsun. Debounce (20ms) sayesinde
@@ -3749,7 +3749,7 @@ function connect(){
         if(!box_sonMesajSayisi) box_sonMesajSayisi={};
         box_sonMesajSayisi[d.jid]=chats[d.jid].messages.length;
         if(document.getElementById('infoPanel').classList.contains('show')) openInfo();
-        if(d.chat.hasMention) ws.send(JSON.stringify({type:'markRead', jid:d.jid}));
+        if(d.chat.hasMention) ws.send(JSON.stringify({type:'markRead', jid:d.jid, etiketFiltrede: !!_aktifEtiketFiltre}));
       }
       renderList(); updateTitle();
     }
@@ -7442,7 +7442,7 @@ function chatRow(c){
   // EN SON KİM AÇTI: bir grubu ekipten biri açıp okunmamışı sıfırladıysa göster (ekip takibi).
   // "Bu grupla en son kim ilgilendi" belli olur. Okunmamış YOKKEN ve son 12 saat içinde açılmışsa.
   let acanSub='';
-  if(c.isGroup && c.sonAcan && !etkinUnread(c) && c.sonAcanTs && (Date.now()-c.sonAcanTs)<12*60*60*1000){
+  if(c.isGroup && c.sonAcan && c.sonAcanTs && (Date.now()-c.sonAcanTs)<12*60*60*1000 && ((currentUser&&currentUser.bagimsizOkuma) || !etkinUnread(c))){
     acanSub='<div class="chat-acan" title="Bu grubu en son açan kişi">👁 '+esc(c.sonAcan)+'</div>';
   }
   return `<div class="chat ${c.jid===activeJid?'active':''} ${etkinUnread(c)?'unread':''}" onclick="openChat('${c.jid}')" oncontextmenu="openCtxMenu(event,'${c.jid}');return false;">
@@ -7845,7 +7845,7 @@ function openChat(jid){
   guncelleAtamaBilgisi();
   // ONCE mesajlari iste (EN kritik — sohbet acilir acilmaz mesaj gelsin).
   ws.send(JSON.stringify({type:'loadMessages', jid}));
-  ws.send(JSON.stringify({type:'markRead', jid}));
+  ws.send(JSON.stringify({type:'markRead', jid, etiketFiltrede: !!_aktifEtiketFiltre}));
   if(currentUser&&currentUser.bagimsizOkuma&&chats[jid]) chats[jid].ozelUnread=0; // bağımsız okuma: kendi açınca kendinde kalksın
   // Yan istekleri (avatar, grup adi, presence) KISA gecikmeyle gonder ki loadMessages
   // cevabiyla yarismasin -> mesajlar daha hizli gelir. Bunlar acil degil.
@@ -9172,7 +9172,7 @@ function handleMsgAppend(d){
     c.unread=0; c.hasMention=false;
     updateConvHeader(c, jid);
     renderMessagesDebounced(c);
-    if(m && !m.fromMe && connected) ws.send(JSON.stringify({type:'markRead', jid}));
+    if(m && !m.fromMe && connected && !(currentUser&&currentUser.bagimsizOkuma)) ws.send(JSON.stringify({type:'markRead', jid, etiketFiltrede: !!_aktifEtiketFiltre}));
     if(document.getElementById('infoPanel').classList.contains('show')) openInfo();
   }
   renderList(); updateTitle();
