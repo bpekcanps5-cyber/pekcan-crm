@@ -308,6 +308,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ---- GIRIS SISTEMI (login + kullanici yonetimi) ----
 // Basit oturum: giris yapan kullaniciya bir token verilir, panel bunu saklar.
 const sessions = new Map(); // token -> { username, displayName, role, ts }
+// BAĞIMSIZ OKUMA yan-rolü olan kullanıcı adları (bellek-içi; açılışta DB'den dolar, restart'a dayanıklı).
+let bagimsizOkumaKullanicilar = new Set();
+async function bagimsizOkumaYukle() {
+  try { const us = await db.listUsers(); bagimsizOkumaKullanicilar = new Set(us.filter(u => u.bagimsiz_okuma).map(u => u.username)); }
+  catch (e) { /* db henüz hazır değilse boş kalır, sonra tekrar yüklenir */ }
+}
 function makeToken() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
 // ---- IP KISITLAMA ----
@@ -400,7 +406,7 @@ app.post('/api/login', express.json(), async (req, res) => {
       startWA(lineId).catch(e => console.error(`Hat baslatilamadi (${lineId}):`, e.message));
     }
   }
-  res.json({ ok: true, token, displayName: user.display_name, role: user.role, username: user.username, lineId, lineTip });
+  res.json({ ok: true, token, displayName: user.display_name, role: user.role, username: user.username, bagimsizOkuma: !!user.bagimsiz_okuma, lineId, lineTip });
 });
 
 // Token gecerli mi (panel acilinca kontrol)
@@ -430,7 +436,7 @@ app.post('/api/whoami', express.json(), async (req, res) => {
       startWA(lineId).catch(() => {});
     }
   }
-  res.json({ ok: true, displayName: s.displayName, role: s.role, username: s.username, lineId, lineTip });
+  res.json({ ok: true, displayName: s.displayName, role: s.role, username: s.username, bagimsizOkuma: bagimsizOkumaKullanicilar.has(s.username), lineId, lineTip });
 });
 
 // Cikis (token sil)
@@ -1353,6 +1359,24 @@ app.post('/api/users/role', express.json(), async (req, res) => {
     // açık oturumların rolünü de güncelle (bellek + DB session)
     for (const [tok, s] of sessions) { if (s.username === u.username) s.role = yeniRol; }
     db.updateSessionRole(u.username, yeniRol).catch(() => {});
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// BAĞIMSIZ OKUMA yan-rolünü aç/kapat (sadece yönetici). role'den bağımsız bir bayrak.
+app.post('/api/users/bagimsizokuma', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  const val = !!req.body?.aktif;
+  try {
+    const users = await db.listUsers();
+    const u = users.find(x => String(x.id) === String(req.body?.id));
+    if (!u) return res.json({ ok: false, error: 'Kullanıcı bulunamadı' });
+    await db.setBagimsizOkuma(u.id, val);
+    // belleği anında güncelle (yeniden giriş gerekmesin): set + açık oturumlar
+    if (val) bagimsizOkumaKullanicilar.add(u.username); else bagimsizOkumaKullanicilar.delete(u.username);
+    for (const [tok, s] of sessions) { if (s.username === u.username) s.bagimsizOkuma = val; }
     res.json({ ok: true });
   } catch (e) {
     res.json({ ok: false, error: e.message });
@@ -2539,6 +2563,8 @@ wss.on('connection', (ws) => {
         if (chat) {
           const oncekiUnread = chat.unread || 0;
           chat.unread = 0;
+          // BAĞIMSIZ OKUMA: sadece bu yan-rol sahibi okuyunca özel sayaç da sıfırlanır.
+          if (bagimsizOkumaKullanicilar.has(ws._username)) chat.ozelUnread = 0;
           chat.hasMention = false; // ÖNEMLI: bahsedilme isareti de kalksin, yoksa geri gelir
           // KİM AÇTI TAKİBİ: okunmamış mesaj VARKEN açan kişiyi kaydet (ekip takibi).
           // "Bu grupla en son kim ilgilendi" belli olsun. Sadece gerçekten okunmamış varken
@@ -2560,7 +2586,7 @@ wss.on('connection', (ws) => {
           // DB'ye de yaz ki sunucu restart olsa bile isaret geri gelmesin
           if (db.isReady()) db.saveChat(chat, _LID).catch(() => {});
           // HAFIF: sadece okundu/bahsedilme durumunu gonder (60 mesaj degil)
-          broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { unread: 0, hasMention: false, sonAcan: chat.sonAcan || '', sonAcanTs: chat.sonAcanTs || 0 } });
+          broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { unread: 0, ozelUnread: chat.ozelUnread || 0, hasMention: false, sonAcan: chat.sonAcan || '', sonAcanTs: chat.sonAcanTs || 0 } });
         }
       }
       // EKSIK TESPIT EDILINCE: panel tam sohbeti ister (msgAppend'de mesaj kactiysa)
@@ -4790,7 +4816,7 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
   }
   chat.lastTime = message.time;
   chat.lastTs = now;
-  if (!message.fromMe) chat.unread++;
+  if (!message.fromMe) { chat.unread++; chat.ozelUnread = (chat.ozelUnread || 0) + 1; }
   // beni etiketleyen okunmamis mesaj geldiyse isaretle
   if (meta.mentionsMe) chat.hasMention = true;
   // HAFIF YAYIN: 60 mesaj yerine sadece bu yeni mesaji gonder (trafik ~40x az -> aninda gider).
@@ -4832,6 +4858,7 @@ function broadcastYeniMesaj(lineId, jid, chat, mesaj) {
       lastTime: chat.lastTime,
       lastTs: chat.lastTs,
       unread: chat.unread || 0,
+      ozelUnread: chat.ozelUnread || 0,
       hasMention: chat.hasMention || false,
       customName: chat.customName,
       atananlar: chatAssignments.get(jid) || [],
@@ -5629,7 +5656,7 @@ async function startWA(lineId = 'ofis') {
                 isGroup: row.is_group, description: row.description || '',
                 avatar: row.avatar || null, memberCount: row.member_count || 0,
                 members: row.members || [], messages: [],
-                unread: row.unread || 0, lastTime: row.last_time || '', lastTs: Number(row.last_ts) || 0,
+                unread: row.unread || 0, ozelUnread: row.ozel_unread || 0, lastTime: row.last_time || '', lastTs: Number(row.last_ts) || 0,
                 pinned: row.pinned, archived: row.archived, hasMention: row.has_mention,
               });
             }
@@ -6541,6 +6568,7 @@ server.listen(PORT, async () => {
   // 1) Supabase'i baslat ve test et
   db.init();
   const dbOk = await db.test();
+  await bagimsizOkumaYukle(); // bağımsız okuma yan-rolü listesini belleğe al
   db.startKeepAlive(15);
   db.startCleanup();
 
@@ -6593,6 +6621,7 @@ async function loadFromDB() {
         members: row.members || [],
         messages: [], // mesajlar sohbet acilinca yuklenecek (performans)
         unread: row.unread || 0,
+        ozelUnread: row.ozel_unread || 0,
         lastTime: row.last_time || '',
         lastTs: Number(row.last_ts) || 0,
         pinned: row.pinned || false,

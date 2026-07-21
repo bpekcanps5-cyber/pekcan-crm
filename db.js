@@ -45,6 +45,13 @@ async function test() {
       pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS isaretli BOOLEAN DEFAULT false')
         .then(() => console.log('   ✓ messages.isaretli kolonu hazır (foto işaretleme kalıcı)'))
         .catch((e) => console.log('   ⚠️ isaretli kolonu eklenemedi:', e.message));
+      // BAĞIMSIZ OKUMA ROLÜ: sohbet için 2. okunmamış sayacı + kullanıcı için yan-rol bayrağı.
+      pool.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS ozel_unread INTEGER DEFAULT 0')
+        .then(() => console.log('   ✓ chats.ozel_unread kolonu hazır (bağımsız okuma rolü)'))
+        .catch((e) => console.log('   ⚠️ ozel_unread eklenemedi:', e.message));
+      pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS bagimsiz_okuma BOOLEAN DEFAULT false')
+        .then(() => console.log('   ✓ users.bagimsiz_okuma kolonu hazır (bağımsız okuma rolü)'))
+        .catch((e) => console.log('   ⚠️ bagimsiz_okuma eklenemedi:', e.message));
     }
     return true;
   } catch (e) {
@@ -109,18 +116,19 @@ function startKeepAlive(saniye = 15) {
 async function saveChat(c, lineId = 'ofis') {
   if (!aktif) return;
   await q(
-    `INSERT INTO chats (line_id, jid, name, is_group, description, avatar, member_count, members, unread, last_time, last_ts, pinned, archived, has_mention, custom_name, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now())
+    `INSERT INTO chats (line_id, jid, name, is_group, description, avatar, member_count, members, unread, last_time, last_ts, pinned, archived, has_mention, custom_name, ozel_unread, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, now())
      ON CONFLICT (line_id, jid) DO UPDATE SET
        name=EXCLUDED.name, is_group=EXCLUDED.is_group, description=EXCLUDED.description,
        avatar=COALESCE(EXCLUDED.avatar, chats.avatar), member_count=EXCLUDED.member_count,
        members=EXCLUDED.members, unread=EXCLUDED.unread, last_time=EXCLUDED.last_time,
        last_ts=EXCLUDED.last_ts, pinned=EXCLUDED.pinned, archived=EXCLUDED.archived,
        has_mention=EXCLUDED.has_mention, custom_name=COALESCE(EXCLUDED.custom_name, chats.custom_name),
+       ozel_unread=EXCLUDED.ozel_unread,
        updated_at=now()`,
     [lineId, c.jid, c.name || '', !!c.isGroup, c.description || '', c.avatar || null,
      c.memberCount || 0, JSON.stringify(c.members || []), c.unread || 0,
-     c.lastTime || '', c.lastTs || 0, !!c.pinned, !!c.archived, !!c.hasMention, c.customName || null]
+     c.lastTime || '', c.lastTs || 0, !!c.pinned, !!c.archived, !!c.hasMention, c.customName || null, c.ozelUnread || 0]
   );
 }
 
@@ -586,7 +594,7 @@ async function checkLogin(username, password) {
   if (!aktif) return null;
   try {
     const r = await pool.query(
-      'SELECT id, username, display_name, role FROM users WHERE username=$1 AND password=$2',
+      'SELECT id, username, display_name, role, bagimsiz_okuma FROM users WHERE username=$1 AND password=$2',
       [username, password]
     );
     return r.rows[0] || null;
@@ -617,7 +625,7 @@ async function listUsers() {
     // kullanici tipini (ofis/pazarlama) de getir — kullanici_hatlari ile birlestir.
     // Eslesme yoksa varsayilan 'ofis'.
     const r = await pool.query(`
-      SELECT u.id, u.username, u.display_name, u.role, u.created_at,
+      SELECT u.id, u.username, u.display_name, u.role, u.created_at, u.bagimsiz_okuma,
              COALESCE(kh.tip, 'ofis') AS tip,
              COALESCE(kh.line_id, 'ofis') AS line_id
       FROM users u
@@ -1026,6 +1034,13 @@ async function deleteUser(id) {
 async function setUserRole(id, role) {
   if (!aktif) return { ok: false };
   try { await pool.query('UPDATE users SET role=$1 WHERE id=$2', [role, id]); return { ok: true }; }
+  catch (e) { return { ok: false, error: e.message }; }
+}
+
+// BAĞIMSIZ OKUMA yan-rolünü aç/kapat (yönetici). role'den bağımsız bir bayrak.
+async function setBagimsizOkuma(id, val) {
+  if (!aktif) return { ok: false };
+  try { await pool.query('UPDATE users SET bagimsiz_okuma=$1 WHERE id=$2', [!!val, id]); return { ok: true }; }
   catch (e) { return { ok: false, error: e.message }; }
 }
 
@@ -1631,7 +1646,7 @@ module.exports = {
   saveChat, saveMessage, saveContact, saveSetting, getSetting,
   loadAll, loadMessages, deleteMessage, wipeAll, wipeGroups, searchMessages,
   cleanupOld, startCleanup,
-  ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, updateUser,
+  ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, setBagimsizOkuma, updateUser,
   getOwnPassword, listUsersWithPasswords,
   saveInternalMessage, loadInternalConversation, listInternalConversations,
   markInternalRead, internalUnreadCount,

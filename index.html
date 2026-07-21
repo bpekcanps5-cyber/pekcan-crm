@@ -1429,7 +1429,9 @@
   .info-head h3{font-size:16.5px;font-weight:700;flex:1}
   .info-body{flex:1;overflow-y:auto;padding:22px}
   .info-hero{display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:26px}
-  .info-hero .ih-av{width:104px;height:104px;border-radius:50%;background-size:cover;background-position:center;display:grid;place-items:center;color:#fff;font-weight:700;font-size:38px;box-shadow:var(--shadow-md);margin-bottom:15px}
+  .info-hero .ih-av{width:104px;height:104px;border-radius:50%;background-size:cover;background-position:center;display:grid;place-items:center;color:#fff;font-weight:700;font-size:38px;box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 40%,transparent),0 6px 20px rgba(0,0,0,.35);margin-bottom:15px;transition:box-shadow .18s,transform .15s}
+  .info-hero .ih-av[onclick]{cursor:zoom-in}
+  .info-hero .ih-av[onclick]:hover{box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 62%,transparent),0 8px 26px rgba(0,0,0,.4);transform:scale(1.02)}
   .info-hero .ih-av.group{border-radius:30px}
   .info-hero .ih-name{font-size:21px;font-weight:800;letter-spacing:-.4px}
   .info-hero .ih-sub{font-size:13.5px;color:var(--muted);margin-top:4px}
@@ -1449,7 +1451,7 @@
   .info-field .if-edit{margin-left:auto;color:var(--brand);cursor:pointer;font-size:12px;font-weight:700;flex-shrink:0}
   .info-field .if-edit:hover{text-decoration:underline}
   .member-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-soft)}
-  .member-row .mr-av{width:42px;height:42px;border-radius:50%;background-size:cover;background-position:center;display:grid;place-items:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0}
+  .member-row .mr-av{width:42px;height:42px;border-radius:50%;background-size:cover;background-position:center;display:grid;place-items:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0;box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 35%,transparent),0 2px 6px rgba(0,0,0,.28)}
   .member-row .mr-name{font-size:14px;font-weight:600}
   .member-row .mr-num{font-size:12.5px;color:var(--muted)}
   .member-row .mr-lid{font-size:10.5px;color:var(--faint);font-style:italic}
@@ -1733,6 +1735,7 @@
   .um-row .um-info{display:flex;flex-direction:column;gap:3px;min-width:0}
   .um-row .um-name{font-size:14px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px}
   .um-row .um-meta{font-size:12px;color:var(--muted)}
+  .um-btn.aktif{background:var(--brand)!important;color:#fff!important;border-color:var(--brand)!important}
   .um-badge{font-size:9.5px;font-weight:800;padding:3px 9px;border-radius:20px;background:linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 70%, #000));color:#fff;text-transform:uppercase;letter-spacing:.5px;box-shadow:0 2px 6px color-mix(in srgb, var(--brand) 30%, transparent)}
   .um-badge.agent{background:var(--border);color:var(--muted);box-shadow:none}
   .um-badge.pazarlama{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;box-shadow:0 2px 6px rgba(139,92,246,.3)}
@@ -3438,9 +3441,11 @@ function playPing(){
     o.start(); o.stop(audioCtx.currentTime+0.3);
   }catch(e){}
 }
+// BAĞIMSIZ OKUMA rolü: o roldeki kişi herkesin okunmamışı yerine KENDİ sayacını (ozelUnread) görür.
+function etkinUnread(c){ return (currentUser && currentUser.bagimsizOkuma) ? (c.ozelUnread||0) : (c.unread||0); }
 // ---- Sayfa basligi: okunmamis toplam ----
 function updateTitle(){
-  const total=Object.values(chats).filter(c=>!archived.has(c.jid)).reduce((s,c)=>s+(c.unread||0),0);
+  const total=Object.values(chats).filter(c=>!archived.has(c.jid)).reduce((s,c)=>s+etkinUnread(c),0);
   document.title=total>0?('('+total+') Pekcan CRM'):'Pekcan CRM';
 }
 // ---- Ayarlar + kendi bilgilerim ----
@@ -3735,7 +3740,7 @@ function connect(){
       const incoming=last && !last.fromMe && last.id!==prevLastId;
       if(incoming && d.jid!==activeJid){ playPing(); }
       if(d.jid===activeJid){
-        chats[d.jid].unread=0; chats[d.jid].hasMention=false;
+        chats[d.jid].unread=0; if(currentUser&&currentUser.bagimsizOkuma) chats[d.jid].ozelUnread=0; chats[d.jid].hasMention=false;
         updateConvHeader(chats[d.jid], d.jid);
         // ACIK sohbete her guncelleme gelince yeniden ciz: yeni mesaj, EMOJI REAKSIYONU,
         // duzenleme, silme, durum (tik) — hepsi ANINDA gorunsun. Debounce (20ms) sayesinde
@@ -6055,7 +6060,7 @@ async function checkAuth(){
   try{
     const r=await fetch('/api/whoami',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
     const d=await r.json();
-    if(d.ok){ currentUser={displayName:d.displayName,role:d.role,username:d.username,lineId:d.lineId,lineTip:d.lineTip}; applyUser(); startApp(); }
+    if(d.ok){ currentUser={displayName:d.displayName,role:d.role,username:d.username,bagimsizOkuma:!!d.bagimsizOkuma,lineId:d.lineId,lineTip:d.lineTip}; applyUser(); startApp(); }
     else { authToken=null; sessionStorage.removeItem('pekcan_token'); showLogin(); }
   }catch(e){ showLogin(); }
 }
@@ -6078,7 +6083,7 @@ async function doLogin(){
     const d=await r.json();
     if(d.ok){
       authToken=d.token; sessionStorage.setItem('pekcan_token',authToken);
-      currentUser={displayName:d.displayName,role:d.role,username:d.username,lineId:d.lineId,lineTip:d.lineTip};
+      currentUser={displayName:d.displayName,role:d.role,username:d.username,bagimsizOkuma:!!d.bagimsizOkuma,lineId:d.lineId,lineTip:d.lineTip};
       applyUser(); startApp();
     } else {
       err.textContent=d.error||'Giriş başarısız';
@@ -6755,13 +6760,15 @@ function userListeCiz(){
     else if(u.tip==='pazarlama') rozet='<span class="um-badge pazarlama">Pazarlama</span>';
     else rozet='<span class="um-badge agent">Temsilci</span>';
     let actions='';
+    const boToggle='<button class="um-btn'+(u.bagimsiz_okuma?' aktif':'')+'" onclick="bagimsizOkumaToggle('+u.id+','+(u.bagimsiz_okuma?'false':'true')+')" title="Bağımsız okuma: başkası açsa da mesajlar bu kişide okunmamış kalır; sadece kendisi açınca okundu olur">'+(u.bagimsiz_okuma?'👁️ Bağımsız ✓':'👁️ Bağımsız okuma')+'</button>';
     if(!benim){
       actions+='<button class="um-btn" onclick="userDuzenleAc('+u.id+',\''+esc(u.username).replace(/'/g,"\\'")+'\',\''+esc(u.display_name||'').replace(/'/g,"\\'")+'\')">Düzenle</button>';
       // ROL DEĞİŞTİR menüsü (yönetici / pazarlama yöneticisi / normal)
       actions+='<button class="um-btn" onclick="rolMenuAc(event,'+u.id+',\''+esc(u.role||'agent')+'\')">Rol ▾</button>';
+      actions+=boToggle;
       actions+='<button class="um-btn danger" onclick="delUser('+u.id+',\''+esc(u.username)+'\')">Sil</button>';
     } else {
-      actions='<button class="um-btn" onclick="userDuzenleAc('+u.id+',\''+esc(u.username).replace(/'/g,"\\'")+'\',\''+esc(u.display_name||'').replace(/'/g,"\\'")+'\')">Düzenle</button><span style="font-size:11px;color:var(--faint);margin-left:6px">sen</span>';
+      actions='<button class="um-btn" onclick="userDuzenleAc('+u.id+',\''+esc(u.username).replace(/'/g,"\\'")+'\',\''+esc(u.display_name||'').replace(/'/g,"\\'")+'\')">Düzenle</button>'+boToggle+'<span style="font-size:11px;color:var(--faint);margin-left:6px">sen</span>';
     }
     return '<div class="um-row"><div class="um-info"><span class="um-name">'+esc(u.display_name||u.username)+' '+rozet+'</span><span class="um-meta">@'+esc(u.username)+'</span></div><div class="um-actions">'+actions+'</div></div>';
   }).join('');
@@ -6825,6 +6832,13 @@ async function addNewUser(){
     } else { msg.textContent=d.error||'Eklenemedi'; }
   }catch(e){ msg.textContent='Sunucu hatası'; }
   btn.disabled=false; btn.textContent='Kullanıcı oluştur';
+}
+function bagimsizOkumaToggle(id,aktif){
+  fetch('/api/users/bagimsizokuma',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,id,aktif})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){ showToast(aktif?'👁️ Bağımsız okuma açıldı':'Bağımsız okuma kapatıldı'); loadUserList(); }
+      else showToast(d.error||'İşlem başarısız');
+    }).catch(()=>showToast('Sunucu hatası'));
 }
 function setRole(id,role){
   fetch('/api/users/role',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,id,role})})
@@ -7178,7 +7192,7 @@ function matchesFilter(c){
   if(currentFilter==='groups'&&!c.isGroup)return false;
   if(currentFilter==='people'&&c.isGroup)return false;
   if(currentFilter==='mentions'&&!c.hasMention)return false;
-  if(currentFilter==='unread'&&!c.unread)return false;
+  if(currentFilter==='unread'&&!etkinUnread(c))return false;
   // BANA ETIKETLENENLER: bu gruba ben (giris yapan kullanici) etiketlenmis miyim
   if(currentFilter==='assigned'){
     const u=currentUser&&currentUser.username;
@@ -7365,7 +7379,7 @@ _renderListRaw=function(){
     nAll++;
     if(c.isGroup) nGroup++; else nPeople++;
     if(c.hasMention) nMention++;
-    if(c.unread) nUnread++;
+    if(etkinUnread(c)) nUnread++;
     if(u && c.atananlar && c.atananlar.includes(u)) nAssigned++;
     if(_buradayim[c.jid] && _buradayim[c.jid].length) nBuradayim++;
     if(favoriler.has(c.jid)) nFavori++;
@@ -7428,16 +7442,16 @@ function chatRow(c){
   // EN SON KİM AÇTI: bir grubu ekipten biri açıp okunmamışı sıfırladıysa göster (ekip takibi).
   // "Bu grupla en son kim ilgilendi" belli olur. Okunmamış YOKKEN ve son 12 saat içinde açılmışsa.
   let acanSub='';
-  if(c.isGroup && c.sonAcan && !c.unread && c.sonAcanTs && (Date.now()-c.sonAcanTs)<12*60*60*1000){
+  if(c.isGroup && c.sonAcan && !etkinUnread(c) && c.sonAcanTs && (Date.now()-c.sonAcanTs)<12*60*60*1000){
     acanSub='<div class="chat-acan" title="Bu grubu en son açan kişi">👁 '+esc(c.sonAcan)+'</div>';
   }
-  return `<div class="chat ${c.jid===activeJid?'active':''} ${c.unread?'unread':''}" onclick="openChat('${c.jid}')" oncontextmenu="openCtxMenu(event,'${c.jid}');return false;">
+  return `<div class="chat ${c.jid===activeJid?'active':''} ${etkinUnread(c)?'unread':''}" onclick="openChat('${c.jid}')" oncontextmenu="openCtxMenu(event,'${c.jid}');return false;">
     ${avatarHtml(c)}
     <div class="chat-main">
       <div class="chat-top"><span class="chat-name${buradayimAdCls}"${buradayimTitle}>${etiketNoktalari}${esc(c.name||c.jid)}${favIc}${pinIc}${menIc}</span>
-        <span class="chat-time ${c.unread?'unread-time':''}">${esc(c.lastTime||'')}</span></div>
+        <span class="chat-time ${etkinUnread(c)?'unread-time':''}">${esc(c.lastTime||'')}</span></div>
       <div class="chat-bottom"><span class="chat-preview${(c.messages&&c.messages.length&&acilMesajMi(c.messages[c.messages.length-1].text))?' acil':''}">${esc(previewText(c))}</span>
-        ${c.unread?'<span class="badge">'+c.unread+'</span>':''}</div>
+        ${etkinUnread(c)?'<span class="badge">'+etkinUnread(c)+'</span>':''}</div>
       ${sub}${acanSub}
     </div>
     <button class="chat-menu-btn" onclick="event.stopPropagation();openCtxMenu(event,'${c.jid}')">${dotsSvg()}</button>
@@ -7832,6 +7846,7 @@ function openChat(jid){
   // ONCE mesajlari iste (EN kritik — sohbet acilir acilmaz mesaj gelsin).
   ws.send(JSON.stringify({type:'loadMessages', jid}));
   ws.send(JSON.stringify({type:'markRead', jid}));
+  if(currentUser&&currentUser.bagimsizOkuma&&chats[jid]) chats[jid].ozelUnread=0; // bağımsız okuma: kendi açınca kendinde kalksın
   // Yan istekleri (avatar, grup adi, presence) KISA gecikmeyle gonder ki loadMessages
   // cevabiyla yarismasin -> mesajlar daha hizli gelir. Bunlar acil degil.
   setTimeout(()=>{
@@ -9106,6 +9121,7 @@ function handleMsgAppend(d){
     if(o.lastTime!==undefined) c.lastTime=o.lastTime;
     if(o.lastTs!==undefined) c.lastTs=o.lastTs;
     if(o.unread!==undefined) c.unread=o.unread;
+    if(o.ozelUnread!==undefined) c.ozelUnread=o.ozelUnread;
     if(o.customName!==undefined){ c.customName=o.customName; if(o.customName) c.name=o.customName; }
     if(o.atananlar!==undefined) c.atananlar=o.atananlar;
     if(o.etiketler!==undefined){ c.etiketler=o.etiketler; _chatLabels[jid]=o.etiketler; }
@@ -9169,6 +9185,7 @@ function handleMsgUpdate(d){
   if(d.ozet){
     const o=d.ozet;
     if(o.unread!==undefined) c.unread=o.unread;
+    if(o.ozelUnread!==undefined) c.ozelUnread=o.ozelUnread;
     if(o.hasMention!==undefined) c.hasMention=o.hasMention;
     if(o.name!==undefined) c.name=o.name;
     if(o.description!==undefined) c.description=o.description;
@@ -10015,7 +10032,7 @@ function openInfo(){
   // Hero: buyuk avatar + isim
   const heroAv=c.avatar?('style="background-image:url('+c.avatar+')"'):('style="background:'+colorFor(dispName)+'"');
   let html='<div class="info-hero">';
-  html+='<div class="ih-av'+(c.isGroup?' group':'')+'" '+heroAv+'>'+(c.avatar?'':(c.isGroup?groupSvg():initials(dispName)))+'</div>';
+  html+='<div class="ih-av'+(c.isGroup?' group':'')+'"'+(c.avatar?' onclick="profilFotoBuyut()"':'')+' '+heroAv+'>'+(c.avatar?'':(c.isGroup?groupSvg():initials(dispName)))+'</div>';
   html+='<div class="ih-name">'+esc(dispName)+'</div>';
   html+='<div class="ih-sub">'+(c.isGroup?((c.memberCount||c.members?.length||0)+' üye'):(isLidChat?'numara gizli':'+'+esc(num)))+'</div>';
   // GRUP ise: fotograf degistir butonu (sadece bagli iken)
