@@ -1241,9 +1241,10 @@
   .composer-sol::-webkit-scrollbar{display:none}
   .emoji-btn,.attach-btn,.qr-btn{background:none;border:none;color:var(--muted);cursor:pointer;display:grid;place-items:center;padding:7px;border-radius:11px;transition:all .14s;flex-shrink:0}
   .emoji-btn:hover,.attach-btn:hover,.qr-btn:hover{color:var(--brand);background:var(--brand-soft)}
+  .emoji-btn:active,.attach-btn:active,.qr-btn:active{transform:scale(.9)}
   .emoji-btn svg,.attach-btn svg,.qr-btn svg{width:22px;height:22px}
   .composer textarea{flex:1 1 auto;min-width:120px;padding:13px 18px;border-radius:14px;border:1.5px solid transparent;background:var(--panel-2);color:var(--text);font-size:14.5px;outline:none;transition:border .15s,background .15s;font-family:inherit;resize:none;line-height:1.45;max-height:300px;overflow-y:auto;-webkit-appearance:none;appearance:none}
-  .composer textarea:focus{border-color:var(--brand);background:var(--panel)}
+  .composer textarea:focus{border-color:var(--brand);background:var(--panel);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 15%,transparent)}
   .composer textarea::placeholder{color:var(--faint)}
   /* textarea scrollbar'i ince ve sade (beyaz oklar gitsin) */
   .composer textarea::-webkit-scrollbar{width:6px}
@@ -1348,8 +1349,9 @@
   .sh-kaydet{width:100%;padding:12px;border-radius:11px;border:none;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .14s}
   .sh-kaydet:hover{opacity:.9}
   .sh-kaydet:disabled{opacity:.5;cursor:not-allowed}
-  .send-btn{width:48px;height:48px;border-radius:50%;background:linear-gradient(140deg,#14b8a6,#0f766e);border:none;cursor:pointer;display:grid;place-items:center;color:#fff;transition:all .15s;box-shadow:0 5px 14px rgba(15,118,110,.4);flex-shrink:0}
-  .send-btn:hover{opacity:.9}
+  .send-btn{width:48px;height:48px;border-radius:50%;background:linear-gradient(140deg,var(--brand-hi,#14b8a6),var(--brand));border:none;cursor:pointer;display:grid;place-items:center;color:#fff;transition:transform .15s,box-shadow .15s,filter .15s;box-shadow:0 5px 16px color-mix(in srgb,var(--brand) 45%,transparent),inset 0 1px 0 rgba(255,255,255,.3);flex-shrink:0}
+  .send-btn:hover{transform:translateY(-2px) scale(1.04);filter:brightness(1.06);box-shadow:0 8px 22px color-mix(in srgb,var(--brand) 55%,transparent),inset 0 1px 0 rgba(255,255,255,.35)}
+  .send-btn:active{transform:translateY(0) scale(.95)}
   /* ═══ Dikey composer responsive: yazı alanı zaten tam genişlik (sıkışmaz),
      sadece alttaki butonlar ve gönder ekrana göre orantılanır ═══ */
   @media (max-width: 1100px){
