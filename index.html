@@ -488,6 +488,27 @@
   .pdl-ad{flex:1;font-size:13px;font-weight:600;color:var(--km-metin);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pdl-sayi{font-size:13.5px;font-weight:800;color:var(--km-metin);font-variant-numeric:tabular-nums}
   .pdl-pct{font-size:11.5px;font-weight:700;color:var(--km-metin-2);min-width:40px;text-align:right;font-variant-numeric:tabular-nums;background:rgba(255,255,255,.06);padding:2px 8px;border-radius:8px}
+  /* Podyum (ilk 3 kürsü) */
+  .perf-podium-kart{background:var(--km-kart);border:1px solid var(--km-cizgi);border-radius:18px;padding:20px 16px 0;margin-bottom:16px;box-shadow:0 8px 26px rgba(0,0,0,.28);overflow:hidden}
+  .perf-podium{display:flex;align-items:flex-end;justify-content:center;gap:9px;margin-top:4px}
+  .pp-col{flex:1;max-width:118px;display:flex;flex-direction:column;align-items:center;position:relative}
+  .pp-col.bos{visibility:hidden}
+  .pp-crown{font-size:22px;margin-bottom:1px;filter:drop-shadow(0 2px 6px rgba(251,191,36,.6));animation:ppFloat 2.6s ease-in-out infinite}
+  @keyframes ppFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+  .pp-av{width:50px;height:50px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:16px;box-shadow:0 4px 14px rgba(0,0,0,.4);border:2.5px solid var(--km-cizgi);margin-bottom:7px}
+  .pp-col.birinci .pp-av{width:62px;height:62px;font-size:20px;border-color:var(--km-gold);box-shadow:0 0 0 3px rgba(251,191,36,.22),0 6px 18px rgba(251,191,36,.35)}
+  .pp-col.ikinci .pp-av{border-color:#cbd5e1;box-shadow:0 0 0 3px rgba(203,213,225,.18),0 5px 14px rgba(0,0,0,.4)}
+  .pp-col.ucuncu .pp-av{border-color:#d9915b;box-shadow:0 0 0 3px rgba(217,145,91,.18),0 5px 14px rgba(0,0,0,.4)}
+  .pp-ad{font-size:12px;font-weight:700;color:var(--km-metin);text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:9px}
+  .pp-ped{width:100%;border-radius:12px 12px 0 0;display:flex;flex-direction:column;align-items:center;padding:9px 6px 10px;border:1px solid var(--km-cizgi);border-bottom:none}
+  .pp-col.birinci .pp-ped{height:92px;background:linear-gradient(180deg,rgba(251,191,36,.26),rgba(251,191,36,.05));border-color:rgba(251,191,36,.4)}
+  .pp-col.ikinci .pp-ped{height:70px;background:linear-gradient(180deg,rgba(203,213,225,.18),rgba(203,213,225,.03));border-color:rgba(203,213,225,.28)}
+  .pp-col.ucuncu .pp-ped{height:58px;background:linear-gradient(180deg,rgba(217,145,91,.18),rgba(217,145,91,.03));border-color:rgba(217,145,91,.28)}
+  .pp-rank{font-size:19px;font-weight:900;color:var(--km-metin);opacity:.45;font-variant-numeric:tabular-nums;line-height:1}
+  .pp-col.birinci .pp-rank{color:var(--km-gold);opacity:.9;font-size:23px}
+  .pp-sayi{font-size:21px;font-weight:850;color:#fff;font-variant-numeric:tabular-nums;line-height:1;margin-top:3px}
+  .pp-col.birinci .pp-sayi{color:var(--km-gold);font-size:25px;text-shadow:0 0 20px rgba(251,191,36,.4)}
+  .pp-sayi-lbl{font-size:9px;color:var(--km-metin-2);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
   .perf-ozet-kart{position:relative;background:var(--km-kart);border:1px solid var(--km-cizgi);border-radius:16px;padding:18px 16px;text-align:center;overflow:hidden;transition:transform .2s cubic-bezier(.34,1.56,.64,1),border-color .2s;backdrop-filter:blur(12px)}
   .perf-ozet-kart:hover{transform:translateY(-3px);border-color:var(--km-cizgi-hi)}
   .perf-ozet-kart.ana{background:linear-gradient(145deg,rgba(34,211,238,.14),rgba(34,211,238,.03));border-color:rgba(34,211,238,.3)}
@@ -523,8 +544,9 @@
   .perf-kisi.birinci{background:linear-gradient(100deg,rgba(251,191,36,.12),var(--km-kart) 55%);border-color:rgba(251,191,36,.3)}
   .perf-kisi.ikinci{background:linear-gradient(100deg,rgba(203,213,225,.1),var(--km-kart) 55%);border-color:rgba(203,213,225,.25)}
   .perf-kisi.ucuncu{background:linear-gradient(100deg,rgba(205,127,50,.1),var(--km-kart) 55%);border-color:rgba(205,127,50,.25)}
-  .perf-sira{font-size:22px;font-weight:850;min-width:44px;height:44px;border-radius:13px;display:grid;place-items:center;background:rgba(0,0,0,.28);color:var(--km-metin-2);flex-shrink:0;font-variant-numeric:tabular-nums}
-  .perf-kisi.birinci .perf-sira,.perf-kisi.ikinci .perf-sira,.perf-kisi.ucuncu .perf-sira{background:transparent;font-size:28px}
+  .perf-sira{font-size:17px;font-weight:850;min-width:22px;text-align:center;color:var(--km-metin-3);flex-shrink:0;font-variant-numeric:tabular-nums}
+  .perf-kisi.birinci .perf-sira,.perf-kisi.ikinci .perf-sira,.perf-kisi.ucuncu .perf-sira{font-size:21px}
+  .perf-kisi-av{width:38px;height:38px;border-radius:12px;flex-shrink:0;display:grid;place-items:center;color:#fff;font-weight:800;font-size:14px;box-shadow:0 3px 10px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.15)}
   .perf-kisi-orta{flex:1;min-width:0}
   .perf-kisi-ust{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
   .perf-kisi-ad{font-size:15.5px;font-weight:750;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:-.2px}
@@ -4236,18 +4258,19 @@ function performansCiz(d){
 
   // ── PANO BAŞLIĞI: lider vurgusu ──
   if(birinci && birinci.police>0){
-    const ikinci = liste[1];
-    let fark='';
-    if(ikinci && ikinci.police>0){
-      const f=birinci.police-ikinci.police;
-      fark = f>0 ? ('<span class="lider-fark">2.\'den '+f+' poliçe önde</span>') : '<span class="lider-fark">başa baş yarış 🔥</span>';
-    }
-    html+='<div class="perf-lider">'+
-      '<div class="lider-kupa">🏆</div>'+
-      '<div class="lider-bilgi"><div class="lider-etiket">Dönemin lideri · '+esc(kapsamAd)+'</div>'+
-      '<div class="lider-ad">'+esc(birinci.ad)+'</div>'+fark+'</div>'+
-      '<div class="lider-sayi">'+birinci.police+'<small>poliçe</small></div>'+
-    '</div>';
+    const _top=liste.slice(0,3).filter(k=>k.police>0);
+    const _pod=function(k,rank){
+      if(!k) return '<div class="pp-col bos"></div>';
+      const cls=rank===1?'birinci':(rank===2?'ikinci':'ucuncu');
+      const crown=rank===1?'<div class="pp-crown">👑</div>':'';
+      return '<div class="pp-col '+cls+'">'+crown+
+        '<div class="pp-av" style="background:'+gradientFor(k.ad)+'">'+esc(initials(k.ad))+'</div>'+
+        '<div class="pp-ad">'+esc(k.ad)+'</div>'+
+        '<div class="pp-ped"><div class="pp-rank">'+rank+'</div><div class="pp-sayi">'+k.police+'</div><div class="pp-sayi-lbl">poliçe</div></div>'+
+      '</div>';
+    };
+    html+='<div class="perf-podium-kart"><div class="pgk-baslik">🏆 Dönemin Zirvesi<span class="pgk-alt">'+esc(kapsamAd)+'</span></div>'+
+      '<div class="perf-podium">'+_pod(_top[1],2)+_pod(_top[0],1)+_pod(_top[2],3)+'</div></div>';
   }
 
   // ── BRANŞ DAĞILIMI (donut grafik) — tüm kişilerin branşlarını topla ──
@@ -4280,6 +4303,7 @@ function performansCiz(d){
 
     html+='<div class="perf-kisi '+siraCls+'" onclick="perfDetayAc('+i+')" id="perfKisi'+i+'">'+
       '<div class="perf-sira">'+madalya+'</div>'+
+      '<div class="perf-kisi-av" style="background:'+gradientFor(k.ad)+'">'+esc(initials(k.ad))+'</div>'+
       '<div class="perf-kisi-orta">'+
         '<div class="perf-kisi-ust"><span class="perf-kisi-ad">'+esc(k.ad)+'</span><span class="perf-kisi-grup">'+k.grupSayisi+' grup</span></div>'+
         '<div class="perf-bar-dis"><div class="perf-bar-ic" style="width:'+oran+'%"></div></div>'+
