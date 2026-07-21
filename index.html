@@ -472,6 +472,22 @@
   .performans-alan{flex:1;overflow-y:auto;padding:20px 24px 28px}
   /* üst özet kartları */
   .perf-ozet{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:13px;margin-bottom:16px}
+  /* Branş dağılımı donut grafik */
+  .perf-grafik-kart{background:var(--km-kart);border:1px solid var(--km-cizgi);border-radius:18px;padding:20px;margin-bottom:16px;box-shadow:0 8px 26px rgba(0,0,0,.28)}
+  .pgk-baslik{font-size:14px;font-weight:750;color:var(--km-metin);display:flex;align-items:center;gap:9px;margin-bottom:16px;flex-wrap:wrap}
+  .pgk-alt{font-size:11.5px;font-weight:500;color:var(--km-metin-2);letter-spacing:.2px}
+  .perf-donut-wrap{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+  .perf-donut{flex-shrink:0;width:180px;height:180px;filter:drop-shadow(0 6px 20px rgba(0,0,0,.35))}
+  .perf-donut-svg{width:180px;height:180px;overflow:visible}
+  .donut-num{fill:var(--km-metin);font-weight:850;font-family:inherit;font-variant-numeric:tabular-nums}
+  .donut-lbl{fill:var(--km-metin-2);font-size:11px;font-weight:700;letter-spacing:1.5px}
+  .perf-donut-legend{flex:1;min-width:210px;display:flex;flex-direction:column;gap:1px}
+  .pdl-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:9px;transition:background .15s}
+  .pdl-row:hover{background:rgba(255,255,255,.05)}
+  .pdl-dot{width:12px;height:12px;border-radius:4px;flex-shrink:0;box-shadow:inset 0 1px 1px rgba(255,255,255,.35),0 1px 3px rgba(0,0,0,.35)}
+  .pdl-ad{flex:1;font-size:13px;font-weight:600;color:var(--km-metin);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pdl-sayi{font-size:13.5px;font-weight:800;color:var(--km-metin);font-variant-numeric:tabular-nums}
+  .pdl-pct{font-size:11.5px;font-weight:700;color:var(--km-metin-2);min-width:40px;text-align:right;font-variant-numeric:tabular-nums;background:rgba(255,255,255,.06);padding:2px 8px;border-radius:8px}
   .perf-ozet-kart{position:relative;background:var(--km-kart);border:1px solid var(--km-cizgi);border-radius:16px;padding:18px 16px;text-align:center;overflow:hidden;transition:transform .2s cubic-bezier(.34,1.56,.64,1),border-color .2s;backdrop-filter:blur(12px)}
   .perf-ozet-kart:hover{transform:translateY(-3px);border-color:var(--km-cizgi-hi)}
   .perf-ozet-kart.ana{background:linear-gradient(145deg,rgba(34,211,238,.14),rgba(34,211,238,.03));border-color:rgba(34,211,238,.3)}
@@ -4171,6 +4187,22 @@ function perfTarihSaat(ts){
   return d.getDate()+' '+aylar[d.getMonth()]+' '+saat;
 }
 
+// Branş renk paleti (donut grafik için)
+const BRANS_RENK={trafik:'#22d3ee',kasko:'#8b5cf6',dask:'#fbbf24',tss:'#34d399','sağlık':'#f472b6','saglik':'#f472b6',konut:'#60a5fa','işyeri':'#fb923c','isyeri':'#fb923c',imm:'#a78bfa','ferdi kaza':'#4ade80','yeşilkart':'#2dd4bf','yesilkart':'#2dd4bf',nakliyat:'#f87171',seyahat:'#e879f9','öss':'#facc15','oss':'#facc15','diğer':'#94a3b8','diger':'#94a3b8'};
+const BRANS_PALET=['#22d3ee','#8b5cf6','#fbbf24','#34d399','#f472b6','#60a5fa','#fb923c','#a78bfa','#4ade80','#2dd4bf','#f87171','#e879f9'];
+function bransRenk(b,i){ return BRANS_RENK[b] || BRANS_PALET[i%BRANS_PALET.length]; }
+// Donut (yuvarlak) grafik SVG — segmentler animasyonla dolar
+function perfDonut(segs,total){
+  const size=180,th=26,r=(size-th)/2,cx=size/2,cy=size/2,C=2*Math.PI*r;
+  let off=0,arcs='';
+  segs.forEach(s=>{
+    const len=(s.value/(total||1))*C;
+    arcs+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+s.color+'" stroke-width="'+th+'" stroke-dasharray="'+len.toFixed(2)+' '+(C-len).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'" transform="rotate(-90 '+cx+' '+cy+')"><animate attributeName="stroke-dasharray" from="0 '+C.toFixed(1)+'" to="'+len.toFixed(2)+' '+(C-len).toFixed(2)+'" dur="0.85s" fill="freeze" calcMode="spline" keySplines="0.25 0.8 0.3 1" keyTimes="0;1"/></circle>';
+    off+=len;
+  });
+  const num=(''+total).length>=5?28:(('' +total).length>=4?34:40);
+  return '<svg class="perf-donut-svg" viewBox="0 0 '+size+' '+size+'"><circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="'+th+'"/>'+arcs+'<text x="'+cx+'" y="'+(cy-2)+'" text-anchor="middle" class="donut-num" style="font-size:'+num+'px">'+total+'</text><text x="'+cx+'" y="'+(cy+18)+'" text-anchor="middle" class="donut-lbl">POLİÇE</text></svg>';
+}
 function performansCiz(d){
   const alan=document.getElementById('performansAlan');
   if(!alan) return;
@@ -4218,6 +4250,18 @@ function performansCiz(d){
     '</div>';
   }
 
+  // ── BRANŞ DAĞILIMI (donut grafik) — tüm kişilerin branşlarını topla ──
+  const _bransTop={};
+  liste.forEach(k=>{ Object.entries(k.branslar||{}).forEach(([b,n])=>{ _bransTop[b]=(_bransTop[b]||0)+n; }); });
+  const _bransArr=Object.entries(_bransTop).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+  if(_bransArr.length){
+    const _segs=_bransArr.map(([b,n],i)=>({label:bransGoster(b),value:n,color:bransRenk(b,i)}));
+    const _dtoplam=_segs.reduce((s,x)=>s+x.value,0);
+    let _leg='<div class="perf-donut-legend">';
+    _segs.forEach(s=>{ const p=Math.round(s.value/(_dtoplam||1)*100); _leg+='<div class="pdl-row"><span class="pdl-dot" style="background:'+s.color+'"></span><span class="pdl-ad">'+esc(s.label)+'</span><span class="pdl-sayi">'+s.value+'</span><span class="pdl-pct">%'+p+'</span></div>'; });
+    _leg+='</div>';
+    html+='<div class="perf-grafik-kart"><div class="pgk-baslik">📊 Branş Dağılımı<span class="pgk-alt">Yüklenen poliçelerin branşlara göre dağılımı</span></div><div class="perf-donut-wrap"><div class="perf-donut">'+perfDonut(_segs,_dtoplam)+'</div>'+_leg+'</div></div>';
+  }
   // ── KİŞİ SIRALAMASI (görsel barlı, tıklanınca detay) ──
   html+='<div class="perf-baslik">Sıralama <span style="font-weight:500;text-transform:none;letter-spacing:0;opacity:.7">· kişiye tıkla, detayını gör</span></div>';
   html+='<div class="perf-liste">';
