@@ -1900,22 +1900,99 @@
 </head>
 <body>
 <div class="login-screen" id="loginScreen">
-  <div class="login-box">
+  <div class="lg-bg" aria-hidden="true">
+    <span class="lg-orb o1"></span>
+    <span class="lg-orb o2"></span>
+    <span class="lg-orb o3"></span>
+    <span class="lg-grid"></span>
+    <span class="lg-spot" id="lgSpot"></span>
+  </div>
+  <div class="login-box" id="lgCard">
     <div class="login-logo">P</div>
     <h2>Pekcan CRM</h2>
     <p class="login-sub">Devam etmek için giriş yap</p>
     <div class="login-field">
       <label>Kullanıcı adı</label>
-      <input type="text" id="loginUser" placeholder="kullanıcı adın" autocomplete="username">
+      <div class="lg-inp">
+        <svg class="lg-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <input type="text" id="loginUser" placeholder="kullanıcı adın" autocomplete="username">
+      </div>
     </div>
     <div class="login-field">
       <label>Şifre</label>
-      <input type="password" id="loginPass" placeholder="şifren" autocomplete="current-password">
+      <div class="lg-inp">
+        <svg class="lg-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <input type="password" id="loginPass" placeholder="şifren" autocomplete="current-password">
+      </div>
     </div>
     <div class="login-error" id="loginError"></div>
     <button class="login-btn" id="loginBtn">Giriş yap</button>
   </div>
 </div>
+<style>
+  #loginScreen{ background:radial-gradient(1200px 780px at 50% -12%, #0e3c4b 0%, transparent 55%), linear-gradient(165deg,#0b1f2b 0%,#0a2e2a 55%,#07231f 100%); overflow:hidden; perspective:1200px; }
+  #loginScreen .lg-bg{ position:absolute; inset:0; overflow:hidden; z-index:0; pointer-events:none; }
+  #loginScreen .lg-orb{ position:absolute; border-radius:50%; filter:blur(62px); opacity:.55; mix-blend-mode:screen; }
+  #loginScreen .lg-orb.o1{ width:460px;height:460px; background:#0fb89e; left:-120px; top:-110px; animation:lgF1 15s ease-in-out infinite; }
+  #loginScreen .lg-orb.o2{ width:520px;height:520px; background:#1f7fd6; right:-170px; top:18%; animation:lgF2 19s ease-in-out infinite; }
+  #loginScreen .lg-orb.o3{ width:420px;height:420px; background:#13d3a6; left:22%; bottom:-170px; animation:lgF3 17s ease-in-out infinite; }
+  #loginScreen .lg-grid{ position:absolute; inset:0; background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px); background-size:46px 46px; -webkit-mask-image:radial-gradient(circle at 50% 44%,#000 0%,transparent 68%); mask-image:radial-gradient(circle at 50% 44%,#000 0%,transparent 68%); opacity:.6; }
+  #loginScreen .lg-spot{ position:absolute; width:560px;height:560px; left:50%; top:40%; transform:translate(-50%,-50%); background:radial-gradient(circle,rgba(45,212,191,.30) 0%,rgba(45,212,191,0) 62%); filter:blur(6px); mix-blend-mode:screen; pointer-events:none; }
+  #loginScreen .login-box{ position:relative; z-index:1; background:rgba(14,24,31,.72); -webkit-backdrop-filter:blur(22px) saturate(140%); backdrop-filter:blur(22px) saturate(140%); border:1px solid rgba(255,255,255,.12); border-radius:26px; padding:42px 38px; box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 30px 80px rgba(0,0,0,.55), 0 12px 44px rgba(15,184,158,.14); opacity:0; animation:lgIn .7s cubic-bezier(.2,.8,.25,1) .05s forwards; transition:transform .18s ease, box-shadow .4s ease; transform-style:preserve-3d; }
+  #loginScreen .login-box:hover{ box-shadow:inset 0 1px 0 rgba(255,255,255,.13), 0 34px 92px rgba(0,0,0,.6), 0 16px 54px rgba(15,184,158,.24); }
+  #loginScreen .login-logo{ position:relative; width:66px;height:66px;border-radius:20px; background:linear-gradient(140deg,#19d3b4,#0f766e 75%); box-shadow:inset 0 1px 0 rgba(255,255,255,.4), 0 10px 26px rgba(20,184,166,.5); animation:lgLogo 5s ease-in-out infinite; margin:0 auto 16px; font-size:31px; }
+  #loginScreen .login-logo::after{ content:""; position:absolute; inset:-7px; border-radius:24px; background:radial-gradient(circle,rgba(25,211,180,.55),transparent 70%); filter:blur(11px); z-index:-1; animation:lgGlow 3.2s ease-in-out infinite; }
+  #loginScreen .login-box h2{ font-size:24px; letter-spacing:-.3px; background:linear-gradient(180deg,#ffffff,#c9f5ec); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent; }
+  #loginScreen .login-sub{ color:#93a7ad; letter-spacing:.2px; margin-bottom:28px; }
+  #loginScreen .login-field{ margin-bottom:15px; }
+  #loginScreen .login-field label{ color:#9fb2b8; font-size:12px; letter-spacing:.3px; margin-bottom:7px; }
+  #loginScreen .lg-inp{ position:relative; }
+  #loginScreen .lg-inp .lg-ic{ position:absolute; left:14px; top:50%; transform:translateY(-50%); width:17px;height:17px; color:#657f89; pointer-events:none; transition:color .18s; }
+  #loginScreen .lg-inp:focus-within .lg-ic{ color:#2dd4bf; }
+  #loginScreen .login-field input{ width:100%; padding:13px 14px 13px 40px; border-radius:13px; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.045); color:#eaf1f2; font-size:14px; outline:none; transition:border-color .18s, box-shadow .18s, background .18s; }
+  #loginScreen .login-field input::placeholder{ color:#5f767f; }
+  #loginScreen .login-field input:focus{ border-color:rgba(45,212,191,.6); background:rgba(45,212,191,.05); box-shadow:0 0 0 4px rgba(45,212,191,.14); }
+  #loginScreen .login-error{ min-height:18px; }
+  #loginScreen .login-btn{ position:relative; overflow:hidden; width:100%; padding:14px; border:none; border-radius:13px; background:linear-gradient(135deg, var(--brand-hi,#12d3a6), var(--brand,#0d9488)); color:#04231d; font-weight:800; font-size:15px; letter-spacing:.2px; cursor:pointer; box-shadow:inset 0 1px 0 rgba(255,255,255,.35), 0 10px 26px rgba(13,148,136,.42); transition:transform .16s, filter .16s, box-shadow .16s; margin-top:6px; }
+  #loginScreen .login-btn::before{ content:""; position:absolute; top:0; left:-120%; width:60%; height:100%; background:linear-gradient(100deg,transparent,rgba(255,255,255,.45),transparent); transform:skewX(-18deg); transition:left .55s ease; }
+  #loginScreen .login-btn:hover{ filter:brightness(1.06); transform:translateY(-2px); box-shadow:inset 0 1px 0 rgba(255,255,255,.4), 0 16px 34px rgba(13,148,136,.52); }
+  #loginScreen .login-btn:hover::before{ left:130%; }
+  #loginScreen .login-btn:active{ transform:translateY(0) scale(.985); }
+  #loginScreen .login-btn:disabled{ filter:grayscale(.25) brightness(.9); transform:none; cursor:default; }
+  @keyframes lgIn{ from{ opacity:0; transform:translateY(16px); filter:blur(7px);} to{ opacity:1; transform:translateY(0); filter:blur(0);} }
+  @keyframes lgLogo{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-6px);} }
+  @keyframes lgGlow{ 0%,100%{ opacity:.5;} 50%{ opacity:.95;} }
+  @keyframes lgF1{ 0%,100%{ transform:translate(0,0) scale(1);} 50%{ transform:translate(40px,30px) scale(1.08);} }
+  @keyframes lgF2{ 0%,100%{ transform:translate(0,0) scale(1);} 50%{ transform:translate(-46px,26px) scale(1.1);} }
+  @keyframes lgF3{ 0%,100%{ transform:translate(0,0) scale(1);} 50%{ transform:translate(30px,-34px) scale(1.06);} }
+  @media (prefers-reduced-motion: reduce){
+    #loginScreen .login-box{ animation:none; opacity:1; }
+    #loginScreen .lg-orb, #loginScreen .login-logo, #loginScreen .login-logo::after{ animation:none; }
+  }
+</style>
+<script>
+  (function(){
+    var scr=document.getElementById('loginScreen'), card=document.getElementById('lgCard'), spot=document.getElementById('lgSpot');
+    if(!scr||!card) return;
+    var ready=false; setTimeout(function(){ ready=true; }, 850);
+    var raf=null, ex=0, ey=0;
+    window.addEventListener('mousemove', function(e){
+      if(!scr.classList.contains('show')) return;
+      if(spot){ spot.style.left=e.clientX+'px'; spot.style.top=e.clientY+'px'; }
+      if(!ready) return;
+      ex=e.clientX; ey=e.clientY;
+      if(raf) return;
+      raf=requestAnimationFrame(function(){
+        raf=null;
+        var r=card.getBoundingClientRect();
+        var dx=Math.max(-1,Math.min(1,(ex-(r.left+r.width/2))/r.width));
+        var dy=Math.max(-1,Math.min(1,(ey-(r.top+r.height/2))/r.height));
+        card.style.transform='rotateY('+(dx*6)+'deg) rotateX('+(-dy*6)+'deg)';
+      });
+    }, {passive:true});
+    window.addEventListener('mouseout', function(e){ if(!e.relatedTarget && card){ card.style.transform=''; } }, {passive:true});
+  })();
+</script>
 <div class="qr-screen" id="qrScreen">
   <div class="qr-box">
     <div class="qr-logo">P</div>
