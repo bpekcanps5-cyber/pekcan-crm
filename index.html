@@ -903,9 +903,10 @@
   /* ===== Konusma alani ===== */
   .conv{flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--chat-bg);position:relative;background-image:radial-gradient(var(--desen, var(--border-soft)) 1px,transparent 0),radial-gradient(var(--desen, var(--border-soft)) 1px,transparent 0);background-size:24px 24px,24px 24px;background-position:0 0,12px 12px}
   .conv-header{background:var(--panel);padding:13px 22px;display:flex;align-items:center;gap:15px;border-bottom:1px solid var(--border);box-shadow:var(--shadow-xs);z-index:2}
-  .conv-avatar{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;background-size:cover;background-position:center;cursor:pointer;box-shadow:var(--shadow-xs);font-size:16px}
+  .conv-avatar{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;background-size:cover;background-position:center;cursor:pointer;box-shadow:0 0 0 2.5px color-mix(in srgb,var(--brand) 42%,transparent),0 2px 8px rgba(0,0,0,.3);font-size:16px;transition:box-shadow .18s,transform .15s}
+  .conv-avatar:hover{box-shadow:0 0 0 2.5px color-mix(in srgb,var(--brand) 62%,transparent),0 3px 10px rgba(0,0,0,.35);transform:scale(1.03)}
   .conv-avatar.group{border-radius:50%}
-  .conv-avatar.has-img{background-color:transparent!important;overflow:hidden}
+  .conv-avatar.has-img{background-color:transparent!important;overflow:hidden;cursor:zoom-in}
   .conv-meta{flex:1;min-width:0}
   .name-row{display:flex;align-items:center;gap:7px;min-width:0}
   .conv-meta .name{font-size:17px;font-weight:700;cursor:pointer;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2229,7 +2230,7 @@
       <div class="offline-banner" id="offlineBanner" style="display:none">WhatsApp bağlı değil — mesaj gönderilemez</div>
       <div class="conv-header">
         <button class="mobil-geri" onclick="mobilGeri()" title="Geri" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>
-        <div class="conv-avatar" id="convAvatar" onclick="openInfo()"></div>
+        <div class="conv-avatar" id="convAvatar" onclick="profilFotoBuyut()"></div>
         <div class="conv-meta">
           <div class="name-row">
             <div class="name" id="convName" onclick="openInfo()"></div>
@@ -10437,6 +10438,13 @@ function lbGaleriTopla(tiklananUrl){
     }
   }
   if(!_lbGaleri.length){ _lbGaleri=[tiklananUrl]; _lbMesajIdler=['']; _lbTarihler=['']; _lbAlbumSira=[1]; _lbAlbumToplam=[1]; }
+}
+// Başlıktaki profil fotoğrafına tıklayınca: foto varsa büyüteçte aç, yoksa bilgi panelini aç.
+function profilFotoBuyut(){
+  const c = activeJid && chats[activeJid];
+  const url = c && c.avatar;
+  if(url){ try{ openLightbox(url); return; }catch(e){} }
+  openInfo();
 }
 function openLightbox(url){
   // tıklanan fotonun albümünü topla, index'ini bul
