@@ -2561,8 +2561,16 @@ wss.on('connection', (ws) => {
       else if (msg.type === 'markRead') {
         const chat = C.get(msg.jid);
         if (chat) {
+          if (ws._role === 'muhasebeci') {
+            // MUHASEBECİ okuması SESSİZ: sadece kendi sayacı sıfırlanır; ortak unread/ozelUnread'e,
+            // "kim okudu" bilgisine dokunulmaz, WhatsApp'a okundu gönderilmez (ekip hâlâ okunmamış görür).
+            chat.muhUnread = 0;
+            if (db.isReady()) db.saveChat(chat, _LID).catch(() => {});
+            broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { muhUnread: 0 } });
+          } else {
           const oncekiUnread = chat.unread || 0;
           chat.unread = 0;
+          chat.muhUnread = 0; // normal (muhasebeci olmayan) okuma herkeste okundu yapar
           // BAĞIMSIZ OKUMA: sadece bu yan-rol sahibi okuyunca özel sayaç da sıfırlanır.
           if (bagimsizOkumaKullanicilar.has(ws._username)) chat.ozelUnread = 0;
           chat.hasMention = false; // ÖNEMLI: bahsedilme isareti de kalksin, yoksa geri gelir
@@ -2588,10 +2596,22 @@ wss.on('connection', (ws) => {
           // DB'ye de yaz ki sunucu restart olsa bile isaret geri gelmesin
           if (db.isReady()) db.saveChat(chat, _LID).catch(() => {});
           // HAFIF: sadece okundu/bahsedilme durumunu gonder (60 mesaj degil)
-          broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { unread: 0, ozelUnread: chat.ozelUnread || 0, hasMention: false, sonAcan: chat.sonAcan || '', sonAcanTs: chat.sonAcanTs || 0 } });
+          broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { unread: 0, ozelUnread: chat.ozelUnread || 0, muhUnread: 0, hasMention: false, sonAcan: chat.sonAcan || '', sonAcanTs: chat.sonAcanTs || 0 } });
+          }
         }
       }
       // EKSIK TESPIT EDILINCE: panel tam sohbeti ister (msgAppend'de mesaj kactiysa)
+      // OKUNMADI OLARAK İŞARETLE: yanlışlıkla okunan grubu herkeste tekrar okunmamış yap.
+      else if (msg.type === 'markUnread') {
+        const chat = C.get(msg.jid);
+        if (chat) {
+          chat.unread = chat.unread || 1;
+          chat.ozelUnread = chat.ozelUnread || 1;
+          chat.muhUnread = chat.muhUnread || 1;
+          if (db.isReady()) db.saveChat(chat, _LID).catch(() => {});
+          broadcastHat(_LID, { type: 'msgUpdate', jid: msg.jid, ozet: { unread: chat.unread, ozelUnread: chat.ozelUnread, muhUnread: chat.muhUnread } });
+        }
+      }
       else if (msg.type === 'syncChat') {
         const chat = C.get(msg.jid);
         if (chat) {
@@ -4818,7 +4838,7 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
   }
   chat.lastTime = message.time;
   chat.lastTs = now;
-  if (!message.fromMe) { chat.unread++; chat.ozelUnread = (chat.ozelUnread || 0) + 1; }
+  if (!message.fromMe) { chat.unread++; chat.ozelUnread = (chat.ozelUnread || 0) + 1; chat.muhUnread = (chat.muhUnread || 0) + 1; }
   // beni etiketleyen okunmamis mesaj geldiyse isaretle
   if (meta.mentionsMe) chat.hasMention = true;
   // HAFIF YAYIN: 60 mesaj yerine sadece bu yeni mesaji gonder (trafik ~40x az -> aninda gider).
@@ -4861,6 +4881,7 @@ function broadcastYeniMesaj(lineId, jid, chat, mesaj) {
       lastTs: chat.lastTs,
       unread: chat.unread || 0,
       ozelUnread: chat.ozelUnread || 0,
+      muhUnread: chat.muhUnread || 0,
       hasMention: chat.hasMention || false,
       customName: chat.customName,
       atananlar: chatAssignments.get(jid) || [],
@@ -5658,7 +5679,7 @@ async function startWA(lineId = 'ofis') {
                 isGroup: row.is_group, description: row.description || '',
                 avatar: row.avatar || null, memberCount: row.member_count || 0,
                 members: row.members || [], messages: [],
-                unread: row.unread || 0, ozelUnread: row.ozel_unread || 0, lastTime: row.last_time || '', lastTs: Number(row.last_ts) || 0,
+                unread: row.unread || 0, ozelUnread: row.ozel_unread || 0, muhUnread: row.muh_unread || 0, lastTime: row.last_time || '', lastTs: Number(row.last_ts) || 0,
                 pinned: row.pinned, archived: row.archived, hasMention: row.has_mention,
               });
             }
@@ -6624,6 +6645,7 @@ async function loadFromDB() {
         messages: [], // mesajlar sohbet acilinca yuklenecek (performans)
         unread: row.unread || 0,
         ozelUnread: row.ozel_unread || 0,
+        muhUnread: row.muh_unread || 0,
         lastTime: row.last_time || '',
         lastTs: Number(row.last_ts) || 0,
         pinned: row.pinned || false,

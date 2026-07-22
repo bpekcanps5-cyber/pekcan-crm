@@ -3441,8 +3441,14 @@ function playPing(){
     o.start(); o.stop(audioCtx.currentTime+0.3);
   }catch(e){}
 }
-// BAĞIMSIZ OKUMA rolü: o roldeki kişi herkesin okunmamışı yerine KENDİ sayacını (ozelUnread) görür.
-function etkinUnread(c){ return (currentUser && currentUser.bagimsizOkuma) ? (c.ozelUnread||0) : (c.unread||0); }
+// BAĞIMSIZ OKUMA / MUHASEBECİ: her rol kendi okunmamış sayacını görür.
+function etkinUnread(c){
+  if(currentUser){
+    if(currentUser.role==='muhasebeci') return c.muhUnread||0;
+    if(currentUser.bagimsizOkuma) return c.ozelUnread||0;
+  }
+  return c.unread||0;
+}
 // ---- Sayfa basligi: okunmamis toplam ----
 function updateTitle(){
   const total=Object.values(chats).filter(c=>!archived.has(c.jid)).reduce((s,c)=>s+etkinUnread(c),0);
@@ -7497,6 +7503,14 @@ function mesajSonucAc(jid, msgId){
 }
 
 let _ctxAcikJid=null; // sağ tık menüsü açık olan grubun jid'i (anlık kim-açtı güncellemesi için)
+function okunmadiYap(jid){
+  ctxMenu.classList.remove('show');
+  const c=chats[jid]; if(!c) return;
+  c.unread=c.unread||1; c.ozelUnread=c.ozelUnread||1; c.muhUnread=c.muhUnread||1;
+  renderList(); updateTitle();
+  if(connected) ws.send(JSON.stringify({type:'markUnread', jid}));
+  showToast('Okunmadı olarak işaretlendi');
+}
 function openCtxMenu(e,jid){
   _ctxAcikJid=jid; // hangi grubun menüsü açık (anlık güncelleme için)
   const isPin=pinned.has(jid), isArch=archived.has(jid);
@@ -7512,7 +7526,8 @@ function openCtxMenu(e,jid){
   html+=`
     <div class="ctx-item" onclick="togglePin('${jid}')">${pinSvg()}${isPin?'Sabitlemeyi kaldir':'Sabitle'}</div>
     <div class="ctx-item" onclick="toggleArchive('${jid}')">${archiveSvg()}${isArch?'Arsivden cikar':'Arsivle'}</div>
-    <div class="ctx-item ctx-favori" onclick="toggleFavori('${jid}')">⭐ ${favoriler.has(jid)?'Favorilerden çıkar':'Favorilere ekle'}</div>`;
+    <div class="ctx-item ctx-favori" onclick="toggleFavori('${jid}')">⭐ ${favoriler.has(jid)?'Favorilerden çıkar':'Favorilere ekle'}</div>
+    <div class="ctx-item" onclick="okunmadiYap('${jid}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Okunmadı olarak işaretle</div>`;
   // YÖNETİCİ: bu grupta biri "buradayım" bastıysa (yeşil), yönetici kaldırabilir
   const yonetici = currentUser && (currentUser.role==='admin' || currentUser.role==='pzr_yonetici');
   const bList=_buradayim[jid];
@@ -7846,7 +7861,7 @@ function openChat(jid){
   // ONCE mesajlari iste (EN kritik — sohbet acilir acilmaz mesaj gelsin).
   ws.send(JSON.stringify({type:'loadMessages', jid}));
   ws.send(JSON.stringify({type:'markRead', jid, etiketFiltrede: !!_aktifEtiketFiltre}));
-  if(currentUser&&currentUser.bagimsizOkuma&&chats[jid]) chats[jid].ozelUnread=0; // bağımsız okuma: kendi açınca kendinde kalksın
+  if(currentUser&&chats[jid]){ if(currentUser.role==='muhasebeci') chats[jid].muhUnread=0; else if(currentUser.bagimsizOkuma) chats[jid].ozelUnread=0; } // kendi açınca kendi sayacı kalksın
   // Yan istekleri (avatar, grup adi, presence) KISA gecikmeyle gonder ki loadMessages
   // cevabiyla yarismasin -> mesajlar daha hizli gelir. Bunlar acil degil.
   setTimeout(()=>{
@@ -9122,6 +9137,7 @@ function handleMsgAppend(d){
     if(o.lastTs!==undefined) c.lastTs=o.lastTs;
     if(o.unread!==undefined) c.unread=o.unread;
     if(o.ozelUnread!==undefined) c.ozelUnread=o.ozelUnread;
+    if(o.muhUnread!==undefined) c.muhUnread=o.muhUnread;
     if(o.customName!==undefined){ c.customName=o.customName; if(o.customName) c.name=o.customName; }
     if(o.atananlar!==undefined) c.atananlar=o.atananlar;
     if(o.etiketler!==undefined){ c.etiketler=o.etiketler; _chatLabels[jid]=o.etiketler; }
@@ -9186,6 +9202,7 @@ function handleMsgUpdate(d){
     const o=d.ozet;
     if(o.unread!==undefined) c.unread=o.unread;
     if(o.ozelUnread!==undefined) c.ozelUnread=o.ozelUnread;
+    if(o.muhUnread!==undefined) c.muhUnread=o.muhUnread;
     if(o.hasMention!==undefined) c.hasMention=o.hasMention;
     if(o.name!==undefined) c.name=o.name;
     if(o.description!==undefined) c.description=o.description;

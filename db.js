@@ -52,6 +52,9 @@ async function test() {
       pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS bagimsiz_okuma BOOLEAN DEFAULT false')
         .then(() => console.log('   ✓ users.bagimsiz_okuma kolonu hazır (bağımsız okuma rolü)'))
         .catch((e) => console.log('   ⚠️ bagimsiz_okuma eklenemedi:', e.message));
+      pool.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS muh_unread INTEGER DEFAULT 0')
+        .then(() => console.log('   ✓ chats.muh_unread kolonu hazır (muhasebeci sessiz okuma)'))
+        .catch((e) => console.log('   ⚠️ muh_unread eklenemedi:', e.message));
     }
     return true;
   } catch (e) {
@@ -116,19 +119,19 @@ function startKeepAlive(saniye = 15) {
 async function saveChat(c, lineId = 'ofis') {
   if (!aktif) return;
   await q(
-    `INSERT INTO chats (line_id, jid, name, is_group, description, avatar, member_count, members, unread, last_time, last_ts, pinned, archived, has_mention, custom_name, ozel_unread, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, now())
+    `INSERT INTO chats (line_id, jid, name, is_group, description, avatar, member_count, members, unread, last_time, last_ts, pinned, archived, has_mention, custom_name, ozel_unread, muh_unread, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17, now())
      ON CONFLICT (line_id, jid) DO UPDATE SET
        name=EXCLUDED.name, is_group=EXCLUDED.is_group, description=EXCLUDED.description,
        avatar=COALESCE(EXCLUDED.avatar, chats.avatar), member_count=EXCLUDED.member_count,
        members=EXCLUDED.members, unread=EXCLUDED.unread, last_time=EXCLUDED.last_time,
        last_ts=EXCLUDED.last_ts, pinned=EXCLUDED.pinned, archived=EXCLUDED.archived,
        has_mention=EXCLUDED.has_mention, custom_name=COALESCE(EXCLUDED.custom_name, chats.custom_name),
-       ozel_unread=EXCLUDED.ozel_unread,
+       ozel_unread=EXCLUDED.ozel_unread, muh_unread=EXCLUDED.muh_unread,
        updated_at=now()`,
     [lineId, c.jid, c.name || '', !!c.isGroup, c.description || '', c.avatar || null,
      c.memberCount || 0, JSON.stringify(c.members || []), c.unread || 0,
-     c.lastTime || '', c.lastTs || 0, !!c.pinned, !!c.archived, !!c.hasMention, c.customName || null, c.ozelUnread || 0]
+     c.lastTime || '', c.lastTs || 0, !!c.pinned, !!c.archived, !!c.hasMention, c.customName || null, c.ozelUnread || 0, c.muhUnread || 0]
   );
 }
 
