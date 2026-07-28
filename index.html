@@ -2720,6 +2720,52 @@
     padding:5px 10px !important;box-shadow:0 6px 18px -8px rgba(0,0,0,.6) !important;
     backdrop-filter:none !important}
 
+  /* Ayar satırlarında net basma geri bildirimi */
+  .set-item{transition:background .13s ease,transform .1s ease !important}
+  .set-item:active{background:var(--brand-soft) !important;transform:scale(.985) !important}
+  #profilFotoKaldirBtn:hover{background:color-mix(in srgb,#e0453a 12%,transparent) !important;color:#c9352b !important}
+  #profilFotoKaldirBtn:hover svg{color:#c9352b !important}
+  html[data-theme="dark"] #profilFotoKaldirBtn:hover{color:#ff6b5e !important}
+  html[data-theme="dark"] #profilFotoKaldirBtn:hover svg{color:#ff6b5e !important}
+
+  /* Kişi bilgi kartı */
+  #kisiBilgiKatman{position:fixed;inset:0;z-index:100040;display:grid;place-items:center;
+    background:rgba(11,16,22,.6);backdrop-filter:blur(5px);animation:pbGir .16s ease}
+  #kisiBilgiKatman .kb-kart{display:flex;flex-direction:column;align-items:center;gap:9px;
+    padding:26px 30px 22px;border-radius:20px;background:var(--panel);border:1px solid var(--border);
+    box-shadow:0 30px 70px -28px rgba(0,0,0,.6);min-width:260px}
+  #kisiBilgiKatman .kb-av{width:112px;height:112px;border-radius:50%;background-size:cover;
+    background-position:center;box-shadow:0 0 0 3px var(--panel-2)}
+  #kisiBilgiKatman .kb-harf{display:grid;place-items:center;color:#fff;font-size:38px;font-weight:800}
+  #kisiBilgiKatman .kb-ad{font-size:19px;font-weight:800;color:var(--text);letter-spacing:-.01em;
+    text-align:center;max-width:280px}
+  #kisiBilgiKatman .kb-alt{font-size:13.5px;color:var(--muted);text-align:center;max-width:280px}
+  #kisiBilgiKatman .kb-etiket{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink);background:var(--brand-soft);padding:3px 10px;border-radius:10px}
+  #kisiBilgiKatman .kb-arac{display:flex;gap:9px;margin-top:6px}
+  #kisiBilgiKatman .kb-btn{padding:9px 16px;border:none;border-radius:20px;cursor:pointer;
+    font-size:13px;font-weight:700;background:var(--brand);color:#fff;transition:filter .14s ease,transform .1s ease}
+  #kisiBilgiKatman .kb-btn:hover{filter:brightness(1.08)}
+  #kisiBilgiKatman .kb-btn:active{transform:scale(.97)}
+  #kisiBilgiKatman .kb-kapat{background:var(--panel-2);color:var(--text)}
+  .conv-avatar{cursor:pointer}
+
+  /* Profili büyüt katmanı */
+  #profilBuyukKatman{position:fixed;inset:0;z-index:100050;display:grid;place-items:center;
+    background:rgba(11,16,22,.72);backdrop-filter:blur(6px);animation:pbGir .16s ease}
+  @keyframes pbGir{from{opacity:0}to{opacity:1}}
+  #profilBuyukKatman .pb-kutu{display:flex;flex-direction:column;align-items:center;gap:14px;padding:22px}
+  #profilBuyukKatman img{width:min(64vw,340px);height:min(64vw,340px);object-fit:cover;border-radius:50%;
+    box-shadow:0 24px 60px -24px rgba(0,0,0,.8),0 0 0 4px rgba(255,255,255,.12)}
+  #profilBuyukKatman .pb-ad{color:#fff;font-size:19px;font-weight:700;letter-spacing:-.01em}
+  #profilBuyukKatman .pb-arac{display:flex;gap:10px}
+  #profilBuyukKatman .pb-btn{padding:10px 18px;border:none;border-radius:22px;cursor:pointer;
+    font-size:13.5px;font-weight:700;background:var(--brand);color:#fff;
+    transition:filter .14s ease,transform .1s ease}
+  #profilBuyukKatman .pb-btn:hover{filter:brightness(1.08)}
+  #profilBuyukKatman .pb-btn:active{transform:scale(.97)}
+  #profilBuyukKatman .pb-kapat{background:rgba(255,255,255,.14);color:#fff}
+
   /* ═══ PROFİL FOTOĞRAFI (rail avatarı) ═══ */
   #settingsAvatar{position:relative !important;overflow:hidden !important;cursor:pointer !important;
     background-size:cover !important;background-position:center !important}
@@ -3255,7 +3301,7 @@
       <div class="offline-banner" id="offlineBanner" style="display:none">WhatsApp bağlı değil — mesaj gönderilemez</div>
       <div class="conv-header">
         <button class="mobil-geri" onclick="mobilGeri()" title="Geri" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>
-        <div class="conv-avatar" id="convAvatar" onclick="profilFotoBuyut()"></div>
+        <div class="conv-avatar" id="convAvatar" onclick="sohbetKisiBilgi()" title="Kişi bilgisi"></div>
         <div class="conv-meta">
           <div class="name-row">
             <div class="name" id="convName" onclick="openInfo()"></div>
@@ -3394,7 +3440,7 @@
     <div id="internalContent" style="display:none;flex-direction:column;min-height:0;flex:1">
       <div class="conv-header">
         <button class="mobil-geri" onclick="mobilGeri()" title="Geri" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>
-        <div class="conv-avatar" id="iconvAvatar"></div>
+        <div class="conv-avatar" id="iconvAvatar" onclick="icMesajKisiBilgi(window._acikIcMesajKullanici)" title="Kişi bilgisi"></div>
         <div class="conv-meta"><div class="name" id="iconvName"></div><div class="sub" id="iconvSub">Ekip içi mesaj</div></div>
         <div style="margin-left:auto;display:flex;gap:6px">
           <button class="im-head-btn" id="imPinBtn" title="Sohbeti sabitle" onclick="imSabitleToggle()">📌</button>
@@ -6189,7 +6235,9 @@ function renderInternalList(d){
       const okunmaCls = unread>0?' im-okunmamis':' im-okundu';
       const sabitIk = _imSabitliler.includes(it.other_user)?'<span class="im-pin-ik">📌</span>':'';
       return '<div class="chat'+aktif+okunmaCls+'" onclick="openInternalChat(\''+esc(it.other_user)+'\')">'
-        + '<div class="avatar" style="background:'+gradientFor(ad)+'">'+esc(initials(ad))+'</div>'
+        + (function(){ var f=window.panelProfilFoto&&window.panelProfilFoto(it.other_user);
+             return f ? '<div class="avatar" style="background-image:url(\''+f+'\');background-size:cover;background-position:center"></div>'
+                      : '<div class="avatar" style="background:'+gradientFor(ad)+'">'+esc(initials(ad))+'</div>'; })()
         + '<div class="chat-main"><div class="chat-top"><span class="chat-name">'+esc(ad)+'</span>'+sabitIk+'</div>'
         + '<div class="chat-bottom"><span class="chat-last">'+esc(sonKim)+esc((imEfektCoz((it.last_text||'').trim()).metin||'📎 Dosya').slice(0,40))+'</span>'+rozet+'</div></div>'
         + '</div>';
@@ -6211,8 +6259,14 @@ function openInternalChat(other){
   const u=_internalUsers.find(x=>x.username===other);
   const ad=u?(u.displayName||u.username):other;
   document.getElementById('iconvName').textContent=ad;
-  document.getElementById('iconvAvatar').textContent=initials(ad);
-  document.getElementById('iconvAvatar').style.background=gradientFor(ad);
+  window._acikIcMesajKullanici=other;
+  (function(){
+    var iav=document.getElementById('iconvAvatar');
+    var f=window.panelProfilFoto&&window.panelProfilFoto(other);
+    if(f){ iav.textContent=''; iav.style.background=''; iav.style.backgroundImage='url("'+f+'")';
+      iav.style.backgroundSize='cover'; iav.style.backgroundPosition='center'; }
+    else { iav.style.backgroundImage=''; iav.textContent=initials(ad); iav.style.background=gradientFor(ad); }
+  })();
   document.getElementById('internalEmpty').style.display='none';
   document.getElementById('internalContent').style.display='flex';
   // GEÇİŞ DÜZELTMESİ: başka sohbete geçtiysek eski mesajları ANINDA temizle
@@ -12388,7 +12442,12 @@ function handleNewChatResult(d){
   }
   function kur(){
     var liste=document.getElementById('railEtiketler');
-    if(!liste||document.getElementById('railEtiketAcKapa'))return;
+    if(!liste)return;
+    if(document.getElementById('railEtiketAcKapa')&&document.getElementById('railKapaBtn')&&document.getElementById('railAcHandle')){
+      etiketBarTasi(document.documentElement.classList.contains('rail-kapali'));
+      return;
+    }
+    if(document.getElementById('railEtiketAcKapa')){ kurKapatma(); return; }
     try{ if(localStorage.getItem('railEtiketKapali')==='1') document.documentElement.classList.add('etiket-kapali'); }catch(e){}
     var b=document.createElement('button');
     b.id='railEtiketAcKapa';
@@ -12400,10 +12459,14 @@ function handleNewChatResult(d){
     };
     liste.parentNode.insertBefore(b, liste);
 
-    /* Tüm rail'i sola katla */
-    var rail=liste.closest('.rail')||document.querySelector('.rail');
-    if(rail && !document.getElementById('railKapaBtn')){
-      try{ if(localStorage.getItem('railKapali')==='1') document.documentElement.classList.add('rail-kapali'); }catch(e){}
+    kurKapatma();
+  }
+  function kurKapatma(){
+    var liste=document.getElementById('railEtiketler');
+    var rail=(liste&&liste.closest('.rail'))||document.querySelector('.rail');
+    if(!rail) return;
+    try{ if(localStorage.getItem('railKapali')==='1') document.documentElement.classList.add('rail-kapali'); }catch(e){}
+    if(!document.getElementById('railKapaBtn')){
       var k=document.createElement('button');
       k.id='railKapaBtn';
       k.title='Sol paneli kapat';
@@ -12416,7 +12479,8 @@ function handleNewChatResult(d){
       var sp=rail.querySelector('.rail-spacer');
       var av=rail.querySelector('#settingsAvatar');
       if(av) rail.insertBefore(k, av); else if(sp) rail.insertBefore(k, sp.nextSibling); else rail.appendChild(k);
-
+    }
+    if(!document.getElementById('railAcHandle')){
       var h=document.createElement('button');
       h.id='railAcHandle';
       h.title='Sol paneli aç';
@@ -12427,11 +12491,12 @@ function handleNewChatResult(d){
         etiketBarTasi(false);
       };
       document.body.appendChild(h);
-      if(document.documentElement.classList.contains('rail-kapali')) etiketBarTasi(true);
     }
+    if(document.documentElement.classList.contains('rail-kapali')) etiketBarTasi(true);
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',kur);
-  setTimeout(kur,1200);
+  kur(); setTimeout(kur,400); setTimeout(kur,1200);
+  setInterval(kur,1500);
 })();
 </script>
 <script>
@@ -12519,22 +12584,114 @@ function handleNewChatResult(d){
   function menuyeEkle(){
     var m=document.getElementById('settingsMenu');
     if(!m||document.getElementById('profilFotoBtn')) return;
-    var ilk=m.firstElementChild;
+    var ilk=m.querySelector('.set-item')||m.firstElementChild;
     var b=document.createElement('div');
-    b.className=(ilk&&ilk.className)||'sm-item';
+    b.className='set-item';
     b.id='profilFotoBtn';
     b.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><path d="M9 3l-1.8 2H4a2 2 0 00-2 2v11a2 2 0 002 2h16a2 2 0 002-2V7a2 2 0 00-2-2h-3.2L15 3H9zm3 5a5 5 0 110 10 5 5 0 010-10zm0 2a3 3 0 100 6 3 3 0 000-6z"/></svg><span>Profil Fotoğrafı</span>';
     b.onclick=function(e){ e.stopPropagation(); m.classList.remove('show'); sec(); };
     var b2=document.createElement('div');
-    b2.className=b.className; b2.id='profilFotoKaldirBtn';
+    b2.className='set-item'; b2.id='profilFotoKaldirBtn';
     b2.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><path d="M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg><span>Fotoğrafı Kaldır</span>';
     b2.onclick=function(e){ e.stopPropagation(); m.classList.remove('show'); kaldir(); };
-    if(ilk){ m.insertBefore(b, ilk); m.insertBefore(b2, ilk); } else { m.appendChild(b); m.appendChild(b2); }
+    if(ilk&&ilk.parentNode===m){ m.insertBefore(b, ilk); m.insertBefore(b2, ilk); } else { m.appendChild(b); m.appendChild(b2); }
+    gorunurluk();
   }
-  function kur(){ uygula(); menuyeEkle(); }
+  function gorunurluk(){
+    var d=null; try{ d=localStorage.getItem(anahtar()); }catch(e){}
+    var k=document.getElementById('profilFotoKaldirBtn'); if(k) k.style.display=d?'':'none';
+    var g=document.getElementById('profilFotoGosterBtn'); if(g) g.style.display=d?'':'none';
+  }
+  /* profili büyüt: fotoğrafı tam ekran göster */
+  function buyut(){
+    var d=null; try{ d=localStorage.getItem(anahtar()); }catch(e){}
+    if(!d){ if(typeof showToast==='function') showToast('Önce profil fotoğrafı ekle'); return; }
+    var eski=document.getElementById('profilBuyukKatman'); if(eski) eski.remove();
+    var ad=(window.currentUser&&(currentUser.displayName||currentUser.username))||'Profil';
+    var k=document.createElement('div');
+    k.id='profilBuyukKatman';
+    k.innerHTML='<div class="pb-kutu"><img src="'+d+'" alt="'+ad+'"><div class="pb-ad">'+ad+'</div>'+
+      '<div class="pb-arac"><button class="pb-btn" id="pbDegistir">Fotoğrafı Değiştir</button>'+
+      '<button class="pb-btn pb-kapat" id="pbKapat">Kapat</button></div></div>';
+    k.onclick=function(e){ if(e.target===k) k.remove(); };
+    document.body.appendChild(k);
+    document.getElementById('pbKapat').onclick=function(){ k.remove(); };
+    document.getElementById('pbDegistir').onclick=function(){ k.remove(); sec(); };
+    document.addEventListener('keydown', function esc(ev){
+      if(ev.key==='Escape'){ var el=document.getElementById('profilBuyukKatman'); if(el) el.remove(); document.removeEventListener('keydown', esc); }
+    });
+  }
+  function menuyeEkle2(){
+    var m=document.getElementById('settingsMenu');
+    if(!m||document.getElementById('profilFotoGosterBtn')) return;
+    var hedef=document.getElementById('profilFotoBtn'); if(!hedef) return;
+    var g=document.createElement('div');
+    g.className='set-item'; g.id='profilFotoGosterBtn';
+    g.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><path d="M15 3h6v6h-2V6.4l-3.3 3.3-1.4-1.4L17.6 5H15V3zM3 15h2v2.6l3.3-3.3 1.4 1.4L6.4 19H9v2H3v-6z"/></svg><span>Profili Büyüt</span>';
+    g.onclick=function(e){ e.stopPropagation(); m.classList.remove('show'); buyut(); };
+    m.insertBefore(g, hedef);
+  }
+  function kur(){ uygula(); menuyeEkle(); menuyeEkle2(); gorunurluk(); }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',kur); else kur();
   setTimeout(kur,1500); setTimeout(kur,4000);
 })();
+</script>
+<script>
+/* Panel kullanıcılarının profil fotoğrafı + sohbet başlığında kişi bilgisi kartı */
+window.panelProfilFoto=function(kullanici){
+  if(!kullanici) return null;
+  var adaylar=[kullanici, String(kullanici).toLowerCase()];
+  for(var i=0;i<adaylar.length;i++){
+    try{ var v=localStorage.getItem('profilFoto_'+adaylar[i]); if(v) return v; }catch(e){}
+  }
+  return null;
+};
+/* Sohbet başlığı: önce kişi bilgisi kartı, foto oradan büyütülür */
+window.kisiBilgiKarti=function(opt){
+  var eski=document.getElementById('kisiBilgiKatman'); if(eski) eski.remove();
+  var k=document.createElement('div');
+  k.id='kisiBilgiKatman';
+  var avHtml = opt.foto
+    ? '<div class="kb-av" id="kbAv" style="background-image:url(\''+opt.foto+'\');cursor:zoom-in" title="Büyütmek için tıkla"></div>'
+    : '<div class="kb-av kb-harf" style="background:'+(opt.renk||'#4a5c68')+'">'+(opt.bashar||'')+'</div>';
+  k.innerHTML='<div class="kb-kart">'+avHtml+
+    '<div class="kb-ad">'+(opt.ad||'')+'</div>'+
+    (opt.alt?'<div class="kb-alt">'+opt.alt+'</div>':'')+
+    (opt.etiket?'<div class="kb-etiket">'+opt.etiket+'</div>':'')+
+    '<div class="kb-arac">'+
+      (opt.foto?'<button class="kb-btn" id="kbBuyut">Fotoğrafı Büyüt</button>':'')+
+      '<button class="kb-btn kb-kapat" id="kbKapat">Kapat</button>'+
+    '</div></div>';
+  k.onclick=function(e){ if(e.target===k) k.remove(); };
+  document.body.appendChild(k);
+  document.getElementById('kbKapat').onclick=function(){ k.remove(); };
+  var b=document.getElementById('kbBuyut'), av=document.getElementById('kbAv');
+  function ac(){ k.remove(); if(typeof openLightbox==='function') openLightbox(opt.foto); }
+  if(b) b.onclick=ac; if(av) av.onclick=ac;
+  document.addEventListener('keydown', function esc(ev){
+    if(ev.key==='Escape'){ var el=document.getElementById('kisiBilgiKatman'); if(el) el.remove(); document.removeEventListener('keydown', esc); }
+  });
+};
+/* WhatsApp sohbet başlığı avatarı: bilgi kartı aç */
+window.sohbetKisiBilgi=function(){
+  var av=document.getElementById('convAvatar');
+  var ad=(document.getElementById('convName')||{}).textContent||'';
+  var alt=(document.querySelector('#convContent .conv-meta .sub')||{}).textContent||'';
+  var arka=av?getComputedStyle(av).backgroundImage:'';
+  var foto=null, m=arka&&arka.match(/url\(["']?(.+?)["']?\)/);
+  if(m) foto=m[1];
+  kisiBilgiKarti({ad:ad, alt:alt, foto:foto, bashar:(av?av.textContent.trim():''),
+    renk:(av?getComputedStyle(av).backgroundColor:''), etiket:''});
+};
+/* İç mesaj başlığı avatarı */
+window.icMesajKisiBilgi=function(kullanici){
+  var av=document.getElementById('iconvAvatar');
+  var ad=(document.getElementById('iconvName')||{}).textContent||'';
+  var alt=(document.getElementById('iconvSub')||{}).textContent||'';
+  var foto=window.panelProfilFoto(kullanici);
+  kisiBilgiKarti({ad:ad, alt:alt, foto:foto, bashar:(av?av.textContent.trim():''),
+    renk:(av?getComputedStyle(av).backgroundColor:''), etiket:'Panel kullanıcısı'});
+};
 </script>
 </body>
 </html>
