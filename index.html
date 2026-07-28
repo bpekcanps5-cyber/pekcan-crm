@@ -2725,10 +2725,10 @@
   html[data-theme="dark"] .search-wrap input{background:#202c33 !important}
   .limit-row{padding:2px 16px 12px !important}
 
-  /* ═══ ETİKETLER v9: renkli halka + beyaz iç madalyon + kırmızı sayı ═══ */
+  /* ═══ ETİKETLER v10: renkli halka + koyu mürekkep göbek + akkor kırmızı sayı ═══ */
   @keyframes etiketParilti{
     0%{transform:translateX(-150%) rotate(20deg);opacity:0}
-    10%{opacity:.9}
+    10%{opacity:.85}
     34%{transform:translateX(150%) rotate(20deg);opacity:0}
     100%{transform:translateX(150%) rotate(20deg);opacity:0}}
   .rail-etiketler{gap:9px !important}
@@ -2738,33 +2738,36 @@
   .rail-etiket .re-nokta{width:32px !important;height:32px !important;border-radius:50% !important;
     position:relative !important;overflow:hidden !important;filter:none !important;z-index:2 !important;
     display:grid !important;place-items:center !important;
-    box-shadow:inset 0 1.5px 1px rgba(255,255,255,.5),inset 0 -4px 7px rgba(0,0,0,.28),
+    box-shadow:inset 0 1.5px 1px rgba(255,255,255,.45),inset 0 -4px 7px rgba(0,0,0,.3),
       0 2px 5px -1px rgba(11,20,26,.32) !important;
     transition:transform .16s ease,box-shadow .16s ease !important}
-  /* içteki beyaz madalyon */
+  /* göbek: etiket renginden koyulaştırılmış mürekkep disk */
   .rail-etiket .re-nokta::before{content:"" !important;display:block !important;
-    position:absolute !important;inset:5px !important;border-radius:50% !important;
-    background:radial-gradient(circle at 50% 32%,#ffffff,#eef1f3) !important;
-    box-shadow:inset 0 -1px 2px rgba(11,20,26,.16),0 1px 1px rgba(255,255,255,.5) !important;
+    position:absolute !important;inset:4.5px !important;border-radius:50% !important;
+    background:radial-gradient(circle at 50% 30%,
+      color-mix(in srgb,var(--c,#12d3a6) 26%,#101c22),
+      color-mix(in srgb,var(--c,#12d3a6) 8%,#0a1115)) !important;
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.14) !important;
     z-index:3 !important}
   .rail-etiket .re-nokta::after{content:"" !important;display:block !important;
     position:absolute !important;inset:-30% -60% !important;width:40% !important;height:auto !important;
-    background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent) !important;
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.7),transparent) !important;
     border-radius:0 !important;z-index:4 !important;pointer-events:none !important;
     animation:etiketParilti 4.2s ease-in-out infinite !important}
   .rail-etiket:nth-child(2n) .re-nokta::after{animation-delay:.7s !important}
   .rail-etiket:nth-child(3n) .re-nokta::after{animation-delay:1.5s !important}
   .rail-etiket:nth-child(4n) .re-nokta::after{animation-delay:2.3s !important}
   .rail-etiket:hover .re-nokta{transform:scale(1.06) !important}
-  .rail-etiket.aktif .re-nokta{box-shadow:inset 0 1.5px 1px rgba(255,255,255,.5),
-    inset 0 -4px 7px rgba(0,0,0,.28),0 0 0 2px var(--panel),0 0 0 3.5px var(--brand) !important}
+  .rail-etiket.aktif .re-nokta{box-shadow:inset 0 1.5px 1px rgba(255,255,255,.45),
+    inset 0 -4px 7px rgba(0,0,0,.3),0 0 0 2px var(--panel),0 0 0 3.5px var(--brand) !important}
   .rail-etiket .re-sayi{position:absolute !important;inset:0 !important;top:0 !important;right:0 !important;
     display:grid !important;place-items:center !important;z-index:6 !important;
     width:auto !important;height:auto !important;min-width:0 !important;padding:0 !important;
     background:transparent !important;box-shadow:none !important;border:none !important;
-    border-radius:50% !important;color:#e0342a !important;
+    border-radius:50% !important;color:#ff5247 !important;
     font-size:11.5px !important;font-weight:800 !important;letter-spacing:-.04em !important;
-    font-variant-numeric:tabular-nums !important;line-height:1 !important;text-shadow:none !important}
+    font-variant-numeric:tabular-nums !important;line-height:1 !important;
+    text-shadow:0 0 7px rgba(255,60,45,.65),0 1px 1px rgba(0,0,0,.5) !important}
   .rail-etiket .re-ad{background:#111b21 !important;border-radius:8px !important;font-weight:600 !important}
 
   /* ═══ FİLTRELER: ilk hali — ince çerçeveli dolu hap ═══ */
