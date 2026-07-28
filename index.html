@@ -2866,6 +2866,7 @@
   #railEtiketAcKapa:hover{background:var(--panel-2);color:var(--text)}
   #railEtiketAcKapa svg{width:15px;height:15px;transition:transform .18s ease}
   html.etiket-kapali #railEtiketler{display:none !important}
+  html.rail-kapali #sidebarEtiketBar #railEtiketler{display:flex !important}
   html.etiket-kapali #railEtiketAcKapa svg{transform:rotate(-90deg)}
   html.etiket-kapali #railEtiketAcKapa{color:var(--brand);background:var(--brand-soft)}
 
@@ -2879,6 +2880,19 @@
   #railAcHandle:hover{color:var(--brand);background:var(--brand-soft)}
   #railAcHandle svg{width:13px;height:13px}
   html.rail-kapali #railAcHandle{display:grid}
+
+  /* Rail kapalıyken: etiketler sohbet listesinin altında yatay şerit */
+  #sidebarEtiketBar{display:none;flex-direction:column;gap:6px;padding:9px 12px 11px;
+    border-top:1px solid var(--border);background:var(--panel);flex-shrink:0}
+  html.rail-kapali #sidebarEtiketBar{display:flex}
+  #sidebarEtiketBar .seb-baslik{font-size:10.5px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--faint)}
+  #sidebarEtiketBar #railEtiketler{flex-direction:row !important;flex-wrap:wrap !important;
+    align-items:center !important;justify-content:flex-start !important;gap:10px !important;
+    max-height:84px !important;overflow-y:auto !important;padding:0 !important;width:auto !important}
+  #sidebarEtiketBar #railEtiketAcKapa{display:none !important}
+  #sidebarEtiketBar .rail-etiket .re-ad{left:auto !important;bottom:calc(100% + 7px) !important;
+    top:auto !important;transform:translateX(-30%) !important}
   #railKapaBtn{width:34px;height:24px;margin-top:4px;border:none;background:transparent;cursor:pointer;
     display:grid;place-items:center;border-radius:12px;color:var(--faint)}
   #railKapaBtn:hover{background:var(--panel-2);color:var(--text)}
@@ -2963,27 +2977,26 @@
     box-shadow:0 4px 14px -6px rgba(11,20,26,.45) !important}
   #toast svg{width:14px !important;height:14px !important}
 
-  /* ═══ BELGE İKONU: katlı köşeli sayfa + uzantı yazısı içinde ═══ */
-  .msg-doc .doc-icon{width:40px !important;height:48px !important;border-radius:3px !important;
-    display:grid !important;place-items:end center !important;padding:0 0 7px !important;
-    position:relative !important;flex-shrink:0 !important;overflow:hidden !important;
-    clip-path:polygon(0 0,72% 0,100% 26%,100% 100%,0 100%) !important;
-    box-shadow:0 1px 3px rgba(11,20,26,.22) !important}
-  .msg-doc .doc-icon svg{display:none !important}
-  .msg-doc .doc-icon::before{content:"" !important;position:absolute !important;top:0 !important;right:0 !important;
-    width:28% !important;height:26% !important;background:rgba(255,255,255,.42) !important;
-    clip-path:polygon(0 0,100% 100%,0 100%) !important}
-  .msg-doc .doc-icon::after{content:"" !important;position:absolute !important;left:8px !important;right:8px !important;
-    top:12px !important;height:9px !important;
-    background:repeating-linear-gradient(180deg,rgba(255,255,255,.55) 0 2px,transparent 2px 5px) !important;
-    border-radius:1px !important}
-  .msg-doc .doc-ext{position:static !important;transform:none !important;background:transparent !important;
-    color:#fff !important;padding:0 !important;border-radius:0 !important;
-    font-size:10px !important;font-weight:800 !important;letter-spacing:.08em !important;
-    box-shadow:none !important;text-shadow:0 1px 1px rgba(0,0,0,.28) !important;z-index:2 !important}
-  html[data-theme="dark"] .msg-doc .doc-ext{background:transparent !important;color:#fff !important}
-  .msg-doc{gap:12px !important;padding:9px 11px !important;align-items:center !important}
-  .msg-doc:hover .doc-icon{box-shadow:0 2px 6px rgba(11,20,26,.3) !important}
+  /* ═══ BELGE İKONU: yuvarlak daire + beyaz sayfa simgesi, uzantı alt şeritte ═══ */
+  .msg-doc .doc-icon{width:46px !important;height:46px !important;border-radius:50% !important;
+    display:grid !important;place-items:center !important;padding:0 !important;
+    position:relative !important;flex-shrink:0 !important;overflow:visible !important;
+    clip-path:none !important;box-shadow:0 1px 4px -1px rgba(11,20,26,.3) !important}
+  .msg-doc .doc-icon svg{display:block !important;width:24px !important;height:24px !important;
+    color:#fff !important;opacity:.96 !important}
+  .msg-doc .doc-icon::before{display:none !important}
+  .msg-doc .doc-icon::after{content:"" !important;position:absolute !important;inset:0 !important;
+    left:auto !important;right:auto !important;top:auto !important;height:auto !important;
+    border-radius:50% !important;background:linear-gradient(160deg,rgba(255,255,255,.22),transparent 55%) !important}
+  .msg-doc .doc-ext{position:absolute !important;bottom:-5px !important;left:0 !important;right:0 !important;
+    transform:none !important;width:fit-content !important;margin-inline:auto !important;
+    white-space:nowrap !important;background:#fff !important;color:#3b4a54 !important;
+    padding:1px 6px !important;border-radius:8px !important;font-size:9px !important;
+    font-weight:800 !important;letter-spacing:.06em !important;z-index:3 !important;
+    text-shadow:none !important;box-shadow:0 1px 3px rgba(11,20,26,.22) !important}
+  html[data-theme="dark"] .msg-doc .doc-ext{background:#233138 !important;color:#e9edef !important}
+  .msg-doc{gap:13px !important;padding:10px 12px !important;align-items:center !important}
+  .msg-doc:hover .doc-icon{box-shadow:0 2px 7px -1px rgba(11,20,26,.36) !important}
   .toplu-sayac{bottom:136px !important}
   #takipKartlar{bottom:124px !important}
   .eski-yuk-not{z-index:6 !important}
@@ -12284,6 +12297,30 @@ function handleNewChatResult(d){
 <script>
 /* Etiket listesini aç/kapa (rail) — durum hatırlanır */
 (function(){
+  /* Rail kapalıyken etiket listesini sohbet listesinin altına taşı */
+  function etiketBarTasi(kapali){
+    var liste=document.getElementById('railEtiketler');
+    var rail=document.querySelector('.rail');
+    var sidebar=document.querySelector('.sidebar');
+    if(!liste||!rail||!sidebar)return;
+    if(kapali){
+      var bar=document.getElementById('sidebarEtiketBar');
+      if(!bar){
+        bar=document.createElement('div');
+        bar.id='sidebarEtiketBar';
+        bar.innerHTML='<span class="seb-baslik">Etiketler</span>';
+        sidebar.appendChild(bar);
+      }
+      if(liste.parentNode!==bar) bar.appendChild(liste);
+    } else {
+      var sp=rail.querySelector('.rail-spacer');
+      if(liste.parentNode!==rail){
+        if(sp) rail.insertBefore(liste, sp); else rail.appendChild(liste);
+        var ak=document.getElementById('railEtiketAcKapa');
+        if(ak) rail.insertBefore(ak, liste);
+      }
+    }
+  }
   function kur(){
     var liste=document.getElementById('railEtiketler');
     if(!liste||document.getElementById('railEtiketAcKapa'))return;
@@ -12309,6 +12346,7 @@ function handleNewChatResult(d){
       k.onclick=function(){
         document.documentElement.classList.add('rail-kapali');
         try{ localStorage.setItem('railKapali','1'); }catch(e){}
+        etiketBarTasi(true);
       };
       var sp=rail.querySelector('.rail-spacer');
       if(sp) rail.insertBefore(k, sp); else rail.appendChild(k);
@@ -12320,12 +12358,13 @@ function handleNewChatResult(d){
       h.onclick=function(){
         document.documentElement.classList.remove('rail-kapali');
         try{ localStorage.setItem('railKapali','0'); }catch(e){}
+        etiketBarTasi(false);
       };
       document.body.appendChild(h);
+      if(document.documentElement.classList.contains('rail-kapali')) etiketBarTasi(true);
     }
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',kur);
-  else kur();
   setTimeout(kur,1200);
 })();
 </script>
