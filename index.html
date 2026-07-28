@@ -2256,6 +2256,134 @@
   .login-box,.qr-box{border-radius:16px;box-shadow:var(--shadow-lg)}
   .login-btn{border-radius:10px;background:var(--brand);box-shadow:0 4px 10px -3px rgba(0,128,105,.5)}
   .login-logo,.qr-logo{border-radius:14px}
+
+  /* ═══════════════════════════════════════════════════════════
+     WHATSAPP WEB KATMANI — kesin geçersiz kılma.
+     Uygulamanın skin'leri (html[data-skin=...]) token'ları
+     yeniden tanımlıyordu; burada !important ile tek bir
+     WhatsApp paleti sabitlenir: açık + koyu.
+     ═══════════════════════════════════════════════════════════ */
+  html,html[data-skin]{
+    --ink:#008069 !important; --ink-2:#017561 !important;
+    --brand:#008069 !important; --brand-hi:#00a884 !important; --brand-soft:#d9fdd3 !important;
+    --gold:#b8873b !important; --gold-soft:#fff8e6 !important;
+    --bg:#f0f2f5 !important; --panel:#ffffff !important; --panel-2:#f0f2f5 !important; --chat-bg:#efeae2 !important;
+    --in:#ffffff !important; --out:#d9fdd3 !important;
+    --text:#111b21 !important; --muted:#667781 !important; --faint:#8696a0 !important;
+    --border:#e9edef !important; --border-soft:#f0f2f5 !important;
+    --unread:#25d366 !important; --group:#2f7ef0 !important; --online:#25d366 !important;
+    --tick-blue:#53bdeb !important; --desen:rgba(17,27,33,.035) !important;
+    --radius:8px !important; --radius-sm:6px !important; --radius-lg:10px !important;
+  }
+  html[data-theme="dark"],html[data-theme="dark"][data-skin]{
+    --ink:#00a884 !important; --ink-2:#00a884 !important;
+    --brand:#00a884 !important; --brand-hi:#06cf9c !important; --brand-soft:#103529 !important;
+    --gold:#f2c94c !important; --gold-soft:#3a2f14 !important;
+    --bg:#0b141a !important; --panel:#111b21 !important; --panel-2:#202c33 !important; --chat-bg:#0b141a !important;
+    --in:#202c33 !important; --out:#005c4b !important;
+    --text:#e9edef !important; --muted:#8696a0 !important; --faint:#667781 !important;
+    --border:#222d34 !important; --border-soft:#222d34 !important;
+    --unread:#00a884 !important; --group:#53bdeb !important;
+    --desen:rgba(233,237,239,.04) !important;
+  }
+
+  /* Gövde ve üç kolon */
+  body,.app{background:var(--bg) !important}
+  .sidebar{background:var(--panel) !important;border-right:1px solid var(--border) !important}
+  .sb-header{background:var(--panel) !important;border-bottom:none !important;padding:16px 16px 8px !important}
+  .sb-title{margin-bottom:12px !important}
+  .sb-title h1{font-size:22px !important;font-weight:700 !important;letter-spacing:-.01em}
+  .icon-sm{background:transparent !important;border-radius:50% !important;width:36px !important;height:36px !important;color:var(--muted) !important}
+  .icon-sm:hover{background:var(--panel-2) !important;color:var(--text) !important}
+  .conn-pill{border-radius:16px !important;background:var(--brand-soft) !important;color:var(--ink) !important;font-weight:600 !important}
+
+  /* Sohbet alanı: WhatsApp zemini */
+  #convContent,#internalContent,.messages{background-color:var(--chat-bg) !important}
+  .messages{padding:14px 6% 8px !important;gap:2px !important;
+    background-image:radial-gradient(var(--desen) 1px,transparent 1px) !important;background-size:26px 26px !important}
+  .conv-header{background:var(--panel-2) !important;border-bottom:1px solid var(--border) !important;padding:10px 16px !important;box-shadow:none !important}
+  .conv-avatar{width:40px !important;height:40px !important}
+  .conv-meta .name{font-size:16px !important;font-weight:600 !important;letter-spacing:0}
+  .conv-meta .sub{font-size:13px !important;color:var(--muted) !important}
+
+  /* Balonlar: WhatsApp ölçüleri + üst köşe kuyruğu (uygulamanın kendi kuyruğu korunur) */
+  .msg{max-width:65% !important;border-radius:7.5px !important;padding:6px 9px 8px !important;
+    font-size:14.2px !important;line-height:19px !important;font-weight:400 !important;
+    box-shadow:0 1px .5px rgba(11,20,26,.13) !important}
+  .msg.in{border-top-left-radius:0 !important;border-bottom-left-radius:7.5px !important;background:var(--in) !important}
+  .msg.out{border-top-right-radius:0 !important;border-bottom-right-radius:7.5px !important;background:var(--out) !important}
+  .msg.in.grouped{border-top-left-radius:7.5px !important}
+  .msg.out.grouped{border-top-right-radius:7.5px !important}
+  .msg .meta{font-size:11px !important;color:var(--faint) !important}
+  .day-sep{background:var(--panel) !important;color:var(--muted) !important;border-radius:7.5px !important;
+    box-shadow:0 1px .5px rgba(11,20,26,.13) !important;font-size:12.5px !important;font-weight:500 !important;
+    text-transform:uppercase;letter-spacing:.02em}
+  html[data-theme="dark"] .day-sep,html[data-theme="dark"] .sys-msg{background:#182229 !important;box-shadow:none !important}
+  .sys-msg{background:var(--panel) !important;color:var(--muted) !important;border-radius:7.5px !important;box-shadow:0 1px .5px rgba(11,20,26,.13) !important}
+  .msg-doc{border-radius:6px !important;background:rgba(0,0,0,.05) !important}
+  html[data-theme="dark"] .msg-doc{background:rgba(0,0,0,.22) !important}
+  .reply-quote{border-radius:6px !important}
+  .msg-reaction{border-radius:14px !important;background:var(--panel) !important;border:1px solid var(--border) !important;box-shadow:none !important}
+
+  /* Composer */
+  .composer{background:var(--panel-2) !important;border-top:none !important;padding:8px 16px !important;gap:8px !important}
+  .composer textarea{background:var(--panel) !important;border-radius:8px !important;border:none !important;
+    box-shadow:none !important;padding:11px 14px !important;font-size:14.5px !important}
+  html[data-theme="dark"] .composer textarea{background:#2a3942 !important}
+  .composer-arac-satir{background:transparent !important}
+  .qr-btn,.emoji-btn,.attach-btn{background:transparent !important;color:var(--muted) !important;border-radius:50% !important}
+  .qr-btn:hover,.emoji-btn:hover,.attach-btn:hover{background:rgba(0,0,0,.06) !important;color:var(--text) !important}
+  html[data-theme="dark"] .qr-btn,html[data-theme="dark"] .emoji-btn,html[data-theme="dark"] .attach-btn{color:#8696a0 !important}
+  .send-btn{width:46px !important;height:46px !important;border-radius:50% !important;
+    background:var(--brand) !important;color:#fff !important;box-shadow:none !important}
+  html[data-theme="dark"] .send-btn{color:#111b21 !important}
+  .send-btn:hover{background:var(--ink-2) !important}
+
+  /* Bantlar */
+  .group-desc{background:var(--panel-2) !important;border-bottom:1px solid var(--border) !important}
+  .group-desc .dt{color:var(--muted) !important}
+  .atama-bilgisi{background:var(--brand-soft) !important;border-bottom:1px solid var(--border) !important;color:var(--ink) !important}
+  html[data-theme="dark"] .atama-bilgisi{color:#a5d8c9 !important}
+
+  /* Paneller / modal / butonlar: düz WhatsApp yüzeyleri */
+  .qr-panel,.emoji-panel,.info-panel,.mention-list,.modal,#globalMsgMenu,.reaksiyon-bilgi{
+    background:var(--panel) !important;border:1px solid var(--border) !important;border-radius:8px !important;
+    box-shadow:0 2px 10px rgba(11,20,26,.16) !important;backdrop-filter:none !important}
+  html[data-theme="dark"] .qr-panel,html[data-theme="dark"] .emoji-panel,html[data-theme="dark"] .info-panel,
+  html[data-theme="dark"] .modal,html[data-theme="dark"] #globalMsgMenu,html[data-theme="dark"] .mention-list{
+    background:#233138 !important;border-color:#2a3942 !important;box-shadow:0 2px 12px rgba(0,0,0,.5) !important}
+  .btn,.ky-btn,.login-btn{border-radius:24px !important;font-weight:600 !important;box-shadow:none !important}
+  .btn.primary,.login-btn{background:var(--brand) !important;color:#fff !important;border:none !important}
+  html[data-theme="dark"] .btn.primary,html[data-theme="dark"] .login-btn{color:#111b21 !important}
+  .btn.ghost{background:transparent !important;color:var(--brand) !important;border:1px solid var(--border) !important}
+  .um-input,.kf-secim,.kf-date,.odeme-not,.search-wrap input,.msg-search-bar input{
+    border-radius:8px !important;border:1px solid var(--border) !important;background:var(--panel-2) !important}
+  html[data-theme="dark"] .um-input,html[data-theme="dark"] .kf-secim,html[data-theme="dark"] .kf-date,
+  html[data-theme="dark"] .odeme-not,html[data-theme="dark"] .search-wrap input{background:#202c33 !important;border-color:#2a3942 !important}
+
+  /* KONTROL: cyan cam tema kaldırıldı, WhatsApp yüzeyleri */
+  #kontrolContent{background:var(--bg) !important;color:var(--text) !important;
+    --km-cyan:var(--brand) !important; --km-cyan-2:var(--ink-2) !important;
+    --km-violet:#7028b8 !important; --km-gold:#b8873b !important;
+    --km-kart:var(--panel) !important; --km-kart-hi:var(--panel-2) !important;
+    --km-cizgi:var(--border) !important; --km-cizgi-hi:var(--brand) !important;
+    --km-metin:var(--text) !important; --km-metin-2:var(--muted) !important; --km-metin-3:var(--faint) !important}
+  #kontrolContent .dash-kart,#kontrolContent .perf-ozet-kart,#kontrolContent .perf-grafik-kart,
+  #kontrolContent .perf-podium-kart,#kontrolContent .perf-aciklama,#kontrolContent .kapsam-secici{
+    background:var(--panel) !important;border:1px solid var(--border) !important;border-radius:8px !important;
+    box-shadow:none !important;backdrop-filter:none !important}
+  #kontrolContent .perf-ozet-kart.ana{background:var(--brand-soft) !important;border-color:var(--brand) !important}
+  #kontrolContent .perf-ozet-kart.ana .poz-buyuk{color:var(--ink) !important;text-shadow:none !important}
+  #kontrolContent .kapsam-btn.active{background:var(--brand) !important;color:#fff !important;box-shadow:none !important}
+  html[data-theme="dark"] #kontrolContent .kapsam-btn.active{color:#111b21 !important}
+  #kontrolContent .kontrol-head{background:var(--panel) !important;border-bottom:1px solid var(--border) !important}
+  #kontrolContent .kontrol-alt-sekme{background:var(--panel) !important;border-bottom:1px solid var(--border) !important;padding:0 20px !important;gap:24px !important}
+  #kontrolContent .kas-btn{border-radius:0 !important;padding:15px 2px 13px !important;background:transparent !important}
+  #kontrolContent .kas-btn.active{color:var(--ink) !important}
+  #kontrolContent .kas-btn.active::after{background:var(--brand) !important;box-shadow:none !important;left:0;right:0;border-radius:0 !important}
+  #kontrolContent .pp-crown{animation:none !important;filter:none !important}
+  #kontrolContent .pp-col.birinci .pp-sayi{text-shadow:none !important}
+  #kontrolContent .odeme-dropzone{border-radius:8px !important}
 </style>
 </head>
 <body>
