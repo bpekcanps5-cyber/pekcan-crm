@@ -2012,6 +2012,12 @@
     .msg{ max-width:86%; }
     .main-tab span{ font-size:12px; }
   }
+
+  /* SESSIZ KAYIP UYARISI: cift tik gelmeyen mesaj gorunur sekilde isaretlenir */
+  .tik.teyitsiz{color:#f5a524;font-weight:700;font-size:10.5px;letter-spacing:.01em;white-space:nowrap}
+  .msg.teyitsiz{box-shadow:0 0 0 1.5px rgba(245,165,36,.55),0 1px 1px rgba(0,0,0,.16)!important}
+  .msg.teyitsiz::after{content:'Ulaştığı doğrulanamadı';position:absolute;left:0;right:0;bottom:-15px;
+    font-size:10px;color:#f5a524;font-weight:600;text-align:right;pointer-events:none}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -4900,8 +4906,11 @@ function connect(){
       const c=chats[d.jid];
       if(c && c.messages){
         const m=c.messages.find(x=>x.id===d.id);
-        if(m && (d.durum>(m.durum||0))){
+        // DUZELTME: hata durumlari (-1 iletilemedi, -2 teyit yok) NEGATIF oldugu icin
+        // eski "yeni>eski" kontrolu bunlari COPE ATIYORDU -> kirmizi uyari hic gorunmuyordu.
+        if(m && (d.durum<0 || d.durum>(m.durum||0))){
           m.durum=d.durum;
+          if(d.durum<0) m.gonderilemedi=true;
           // acik sohbetse tiki guncelle (tum mesajlari yeniden cizmeden)
           if(activeJid===d.jid){
             const el=document.querySelector('.msg[data-mid="'+(CSS&&CSS.escape?CSS.escape(d.id):d.id)+'"] .tik');
@@ -9437,6 +9446,7 @@ function renderAddMemberSecili(){
 function tikHtml(durum){
   const d=durum||0;
   if(d===-1) return '<span class="tik hata" title="Gönderilemedi! Silip tekrar deneyin.">⚠️</span>';
+  if(d===-2) return '<span class="tik teyitsiz" title="Karşıya ulaştığı DOĞRULANAMADI — çift tik gelmedi. Kontrol edip gerekirse tekrar gönderin.">⚠ iletilmedi?</span>';
   if(d>=4) return '<span class="tik okundu" title="Okundu (mavi)">✓✓</span>';
   if(d>=3) return '<span class="tik" title="Karşıya ulaştı">✓✓</span>';
   if(d>=2) return '<span class="tik" title="WhatsApp aldı, karşıya ulaşması bekleniyor">✓</span>';

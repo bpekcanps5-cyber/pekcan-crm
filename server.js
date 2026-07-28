@@ -4234,8 +4234,32 @@ async function iletimZamanAsimi(msgId) {
   const grupMu = (jid || '').endsWith('@g.us');
   if (grupMu) {
     const durum = m ? (m.durum || 0) : 0;
-    if (durum >= 2) {
-      // tek tik (veya daha üstü) geldi -> mesaj WhatsApp'a ulaştı, GİTTİ say. Sorun yok.
+    if (durum >= 3) {
+      // CIFT TIK geldi -> gruptaki en az bir uyeye ULASTI. Kesin gitti, sorun yok.
+      return;
+    }
+    if (durum === 2) {
+      // ═══ SESSIZ KAYIP KORUMASI ═══
+      // TEK TIK var ama CIFT TIK yok. Eskiden burada "gitti say" deniyordu; ancak
+      // baglanti yari-acikken WhatsApp tek tik dondurup mesaji ASLA dagitmayabiliyor
+      // (panelde gorunuyor, gruba dusmuyor). Aktif bir grupta iletim saniyeler surer;
+      // 3 dakika sonra hala cift tik yoksa operatoru UYAR (kirmizi degil, "teyit yok").
+      setTimeout(() => {
+        const cc2 = hatChats(lineId);
+        const ch2 = cc2 ? cc2.get(jid) : null;
+        const mm2 = ch2 ? ch2.messages.find(x => x.id === msgId) : null;
+        if (!mm2) return;
+        if ((mm2.durum || 0) >= 3) return; // bu arada iletildi -> sorun yok
+        console.log(`   ⚠️  GRUP mesaji 3dk'dir CIFT TIK almadi (sessiz kayip olabilir): ${(jid||'').split('@')[0]} id=${msgId}`);
+        mm2.durum = -2; mm2.teyitsiz = true;
+        broadcastHat(lineId, { type: 'msgStatus', jid, id: msgId, durum: -2 });
+        broadcastHat(lineId, {
+          type: 'iletimUyari', jid, id: msgId,
+          grupAd: (ch2 && ch2.name) || 'bir grup',
+          text: (veri && veri.text) || '',
+          mesaj: '⚠️ Bu mesajın karşıya ULAŞTIĞI DOĞRULANAMADI (çift tik gelmedi). Kontrol edip gerekirse tekrar gönderin.',
+        });
+      }, 3 * 60 * 1000);
       return;
     }
     // tek tik BİLE gelmedi (durum 0/1) -> mesaj gerçekten gitmemiş olabilir.
