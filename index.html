@@ -2691,6 +2691,53 @@
   html[data-theme="dark"] .search-wrap input{background:#202c33 !important}
   .limit-row{padding:2px 16px 12px !important}
 
+  /* ═══ ETİKETLER v4: yuvarlak, siyah kenar, içinde sade sayı ═══ */
+  .rail-etiketler{gap:9px !important}
+  .rail-etiket{width:34px !important;height:34px !important;border-radius:50% !important}
+  .rail-etiket .re-nokta{width:28px !important;height:28px !important;border-radius:50% !important;
+    position:relative !important;filter:none !important;
+    box-shadow:0 0 0 1.5px #111b21 !important}
+  html[data-theme="dark"] .rail-etiket .re-nokta{box-shadow:0 0 0 1.5px #000 !important}
+  .rail-etiket .re-nokta::after{display:none !important}
+  .rail-etiket:hover .re-nokta{box-shadow:0 0 0 1.5px #111b21,0 2px 6px rgba(11,20,26,.22) !important}
+  .rail-etiket.aktif .re-nokta{box-shadow:0 0 0 1.5px #111b21,0 0 0 3.5px rgba(0,168,132,.55) !important}
+  .rail-etiket .re-sayi{position:absolute !important;inset:0 !important;display:grid !important;
+    place-items:center !important;background:transparent !important;box-shadow:none !important;
+    color:#fff !important;font-size:12px !important;font-weight:700 !important;
+    text-shadow:0 1px 1.5px rgba(0,0,0,.4) !important;z-index:4 !important}
+
+  /* ═══ FİLTRELER v4: çerçevesiz, sade — sadece renk ve yazı ═══ */
+  .filters{gap:4px !important;padding:2px 12px 12px !important}
+  .filter{height:30px !important;padding:0 11px !important;border:none !important;border-radius:15px !important;
+    background:transparent !important;color:var(--muted) !important;font-size:13.5px !important;
+    font-weight:600 !important;gap:6px !important}
+  html[data-theme="dark"] .filter{color:#8696a0 !important}
+  .filter:hover{background:rgba(11,20,26,.05) !important;color:var(--text) !important}
+  html[data-theme="dark"] .filter:hover{background:rgba(255,255,255,.05) !important;color:#e9edef !important}
+  .filter .n{opacity:.5 !important;font-weight:600 !important;font-size:12.5px !important;
+    background:transparent !important;padding:0 !important;color:inherit !important}
+  .filter.active{background:#d9fdd3 !important;color:#015d4c !important;font-weight:700 !important}
+  html[data-theme="dark"] .filter.active{background:#103529 !important;color:#00a884 !important}
+  .filter.filter-yonetici,.filter.filter-favori,.filter.filter-buradayim{background:transparent !important;border:none !important}
+  .filter.filter-yonetici{color:#7028b8 !important}
+  html[data-theme="dark"] .filter.filter-yonetici{color:#c39bf5 !important}
+  .filter.filter-favori{color:#8a6516 !important}
+  html[data-theme="dark"] .filter.filter-favori{color:#f2c94c !important}
+  .filter.filter-buradayim{color:#0d6249 !important}
+  html[data-theme="dark"] .filter.filter-buradayim{color:#4cd6a4 !important}
+  .filter.filter-yonetici:hover{background:rgba(112,40,184,.08) !important;color:#6b23b2 !important}
+  html[data-theme="dark"] .filter.filter-yonetici:hover{background:rgba(195,155,245,.12) !important;color:#d3b4f8 !important}
+  .filter.filter-favori:hover{background:rgba(184,135,59,.10) !important;color:#7f5d13 !important}
+  html[data-theme="dark"] .filter.filter-favori:hover{background:rgba(242,201,76,.12) !important;color:#f6d475 !important}
+  .filter.filter-buradayim:hover{background:rgba(15,138,99,.09) !important;color:#0b5a43 !important}
+  html[data-theme="dark"] .filter.filter-buradayim:hover{background:rgba(76,214,164,.12) !important;color:#6fe0b8 !important}
+  .filter.filter-yonetici.active{background:rgba(112,40,184,.13) !important;color:#6b23b2 !important}
+  html[data-theme="dark"] .filter.filter-yonetici.active{background:rgba(195,155,245,.16) !important;color:#d3b4f8 !important}
+  .filter.filter-favori.active{background:rgba(184,135,59,.15) !important;color:#7f5d13 !important}
+  html[data-theme="dark"] .filter.filter-favori.active{background:rgba(242,201,76,.16) !important;color:#f6d475 !important}
+  .filter.filter-buradayim.active{background:rgba(15,138,99,.14) !important;color:#0b5a43 !important}
+  html[data-theme="dark"] .filter.filter-buradayim.active{background:rgba(76,214,164,.16) !important;color:#6fe0b8 !important}
+
   /* ═══ SATIŞ BÖLÜMÜ KALDIRILDI ═══ */
   #kasSatislar,#satisEkleBtn,#satisHizli,#satisModal,#satisBransSecim{display:none !important}
 </style>
