@@ -2873,7 +2873,7 @@
   /* Tüm rail'i sola katla + geri açma tutamağı */
   html.rail-kapali .rail{width:0 !important;min-width:0 !important;padding:0 !important;
     border-right:none !important;overflow:hidden !important;opacity:0 !important}
-  #railAcHandle{position:fixed;left:0;top:50%;transform:translateY(-50%);width:19px;height:56px;
+  #railAcHandle{position:fixed;left:0;top:66%;transform:translateY(-50%);width:19px;height:56px;
     border-radius:0 10px 10px 0;background:var(--panel-2);border:1px solid var(--border);border-left:none;
     color:var(--muted);display:none;place-items:center;cursor:pointer;z-index:500;padding:0;
     box-shadow:2px 0 8px -4px rgba(11,20,26,.3)}
@@ -2888,8 +2888,10 @@
   #sidebarEtiketBar .seb-baslik{font-size:10.5px;font-weight:700;letter-spacing:.1em;
     text-transform:uppercase;color:var(--faint)}
   #sidebarEtiketBar #railEtiketler{flex-direction:row !important;flex-wrap:wrap !important;
-    align-items:center !important;justify-content:flex-start !important;gap:10px !important;
-    max-height:84px !important;overflow-y:auto !important;padding:0 !important;width:auto !important}
+    align-items:center !important;justify-content:center !important;gap:12px 14px !important;
+    max-height:96px !important;overflow-y:auto !important;padding:2px 0 !important;width:100% !important}
+  #sidebarEtiketBar .seb-baslik{text-align:center}
+  #sidebarEtiketBar .rail-etiket{margin:0 !important}
   #sidebarEtiketBar #railEtiketAcKapa{display:none !important}
   #sidebarEtiketBar .rail-etiket .re-ad{left:auto !important;bottom:calc(100% + 7px) !important;
     top:auto !important;transform:translateX(-30%) !important}
@@ -2977,26 +2979,34 @@
     box-shadow:0 4px 14px -6px rgba(11,20,26,.45) !important}
   #toast svg{width:14px !important;height:14px !important}
 
-  /* ═══ BELGE İKONU: yuvarlak daire + beyaz sayfa simgesi, uzantı alt şeritte ═══ */
-  .msg-doc .doc-icon{width:46px !important;height:46px !important;border-radius:50% !important;
-    display:grid !important;place-items:center !important;padding:0 !important;
-    position:relative !important;flex-shrink:0 !important;overflow:visible !important;
-    clip-path:none !important;box-shadow:0 1px 4px -1px rgba(11,20,26,.3) !important}
-  .msg-doc .doc-icon svg{display:block !important;width:24px !important;height:24px !important;
-    color:#fff !important;opacity:.96 !important}
-  .msg-doc .doc-icon::before{display:none !important}
-  .msg-doc .doc-icon::after{content:"" !important;position:absolute !important;inset:0 !important;
-    left:auto !important;right:auto !important;top:auto !important;height:auto !important;
-    border-radius:50% !important;background:linear-gradient(160deg,rgba(255,255,255,.22),transparent 55%) !important}
-  .msg-doc .doc-ext{position:absolute !important;bottom:-5px !important;left:0 !important;right:0 !important;
-    transform:none !important;width:fit-content !important;margin-inline:auto !important;
-    white-space:nowrap !important;background:#fff !important;color:#3b4a54 !important;
-    padding:1px 6px !important;border-radius:8px !important;font-size:9px !important;
-    font-weight:800 !important;letter-spacing:.06em !important;z-index:3 !important;
-    text-shadow:none !important;box-shadow:0 1px 3px rgba(11,20,26,.22) !important}
-  html[data-theme="dark"] .msg-doc .doc-ext{background:#233138 !important;color:#e9edef !important}
+  /* ═══ BELGE İKONU: beyaz sayfa + altta dosya rengi şeridi (uzantı orada) ═══ */
+  .msg-doc .doc-icon{width:42px !important;height:52px !important;border-radius:4px !important;
+    display:block !important;padding:0 !important;position:relative !important;flex-shrink:0 !important;
+    overflow:hidden !important;clip-path:none !important;
+    box-shadow:0 1px 3px rgba(11,20,26,.22) !important}
+  .msg-doc .doc-icon::before{content:"" !important;position:absolute !important;
+    left:0 !important;right:0 !important;top:0 !important;bottom:15px !important;height:auto !important;
+    display:block !important;
+    background:
+      repeating-linear-gradient(180deg,rgba(11,20,26,.20) 0 1.5px,transparent 1.5px 4.5px) no-repeat 9px 22px / calc(100% - 18px) 12px,
+      #ffffff !important}
+  html[data-theme="dark"] .msg-doc .doc-icon::before{background:
+      repeating-linear-gradient(180deg,rgba(11,20,26,.22) 0 1.5px,transparent 1.5px 4.5px) no-repeat 9px 22px / calc(100% - 18px) 12px,
+      #eceff1 !important}
+  .msg-doc .doc-icon::after{content:"" !important;position:absolute !important;top:0 !important;
+    right:0 !important;left:auto !important;bottom:auto !important;width:12px !important;height:12px !important;
+    background:rgba(11,20,26,.13) !important;border-radius:0 !important;
+    clip-path:polygon(0 0,100% 100%,0 100%) !important;z-index:2 !important}
+  .msg-doc .doc-icon svg{display:block !important;width:0 !important;height:0 !important}
+  .msg-doc .doc-ext{position:absolute !important;bottom:0 !important;left:0 !important;right:0 !important;
+    transform:none !important;width:100% !important;margin:0 !important;white-space:nowrap !important;
+    display:grid !important;place-items:center !important;height:15px !important;
+    background:transparent !important;color:#fff !important;padding:0 !important;
+    border-radius:0 !important;box-shadow:none !important;text-shadow:0 1px 1px rgba(0,0,0,.22) !important;
+    font-size:9px !important;font-weight:800 !important;letter-spacing:.1em !important;z-index:3 !important}
+  html[data-theme="dark"] .msg-doc .doc-ext{background:transparent !important;color:#fff !important}
   .msg-doc{gap:13px !important;padding:10px 12px !important;align-items:center !important}
-  .msg-doc:hover .doc-icon{box-shadow:0 2px 7px -1px rgba(11,20,26,.36) !important}
+  .msg-doc:hover .doc-icon{box-shadow:0 2px 7px -1px rgba(11,20,26,.34) !important}
   .toplu-sayac{bottom:136px !important}
   #takipKartlar{bottom:124px !important}
   .eski-yuk-not{z-index:6 !important}
