@@ -2012,12 +2012,6 @@
     .msg{ max-width:86%; }
     .main-tab span{ font-size:12px; }
   }
-
-  /* SESSIZ KAYIP UYARISI: cift tik gelmeyen mesaj gorunur sekilde isaretlenir */
-  .tik.teyitsiz{color:#f5a524;font-weight:700;font-size:10.5px;letter-spacing:.01em;white-space:nowrap}
-  .msg.teyitsiz{box-shadow:0 0 0 1.5px rgba(245,165,36,.55),0 1px 1px rgba(0,0,0,.16)!important}
-  .msg.teyitsiz::after{content:'Ulaştığı doğrulanamadı';position:absolute;left:0;right:0;bottom:-15px;
-    font-size:10px;color:#f5a524;font-weight:600;text-align:right;pointer-events:none}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -2567,6 +2561,9 @@
   html[data-theme="dark"] #kontrolContent .perf-kisi.ucuncu .pks-buyuk{color:#cf9b74 !important}
   #kontrolContent .perf-kisi.ikinci .perf-kisi-av{box-shadow:0 0 0 2px #9aa7b1 !important}
   #kontrolContent .perf-kisi.ucuncu .perf-kisi-av{box-shadow:0 0 0 2px #c08a63 !important}
+  #kontrolContent .perf-kisi-grup{background:var(--panel-2) !important;color:var(--muted) !important;
+    border-radius:5px !important}
+  #kontrolContent .perf-detay{background:var(--panel-2) !important}
   #kontrolContent .perf-kisi.birinci .perf-bar-ic,#kontrolContent .perf-kisi.birinci .perf-bar-dis .perf-bar-ic{
     background:linear-gradient(90deg,#c9922c,#e8c46a) !important}
   #kontrolContent .perf-kisi.ikinci .perf-bar-ic,#kontrolContent .perf-kisi.ikinci .perf-bar-dis .perf-bar-ic{
@@ -2728,22 +2725,28 @@
   html[data-theme="dark"] .search-wrap input{background:#202c33 !important}
   .limit-row{padding:2px 16px 12px !important}
 
-  /* ═══ ETİKETLER v5: yuvarlak renkli daire + üstte kırmızı sayı rozeti ═══ */
-  .rail-etiketler{gap:11px !important}
-  .rail-etiket{width:34px !important;height:34px !important;border-radius:50% !important}
-  .rail-etiket .re-nokta{width:26px !important;height:26px !important;border-radius:50% !important;
-    position:relative !important;filter:none !important;box-shadow:0 0 0 1.5px #111b21 !important}
-  html[data-theme="dark"] .rail-etiket .re-nokta{box-shadow:0 0 0 1.5px #000 !important}
+  /* ═══ ETİKETLER v6: sayı dairenin içinde — modern, sade ═══ */
+  .rail-etiketler{gap:10px !important}
+  .rail-etiket{width:34px !important;height:34px !important;border-radius:50% !important;
+    display:grid !important;place-items:center !important}
+  .rail-etiket .re-nokta{width:30px !important;height:30px !important;border-radius:50% !important;
+    position:relative !important;filter:none !important;
+    box-shadow:inset 0 -1px 2px rgba(0,0,0,.18),0 1px 2px rgba(11,20,26,.22) !important;
+    transition:box-shadow .15s ease,transform .15s ease !important}
   .rail-etiket .re-nokta::after{display:none !important}
-  .rail-etiket:hover .re-nokta{box-shadow:0 0 0 1.5px #111b21,0 2px 6px rgba(11,20,26,.22) !important}
-  .rail-etiket.aktif .re-nokta{box-shadow:0 0 0 1.5px #111b21,0 0 0 3.5px rgba(0,168,132,.55) !important}
-  .rail-etiket .re-sayi{position:absolute !important;inset:auto !important;top:-4px !important;right:-3px !important;
-    display:grid !important;place-items:center !important;
-    min-width:17px !important;width:auto !important;height:17px !important;padding:0 4px !important;
-    border-radius:9px !important;background:#f0362a !important;color:#fff !important;
-    font-size:10px !important;font-weight:800 !important;text-shadow:none !important;
-    box-shadow:0 0 0 1.5px #f7f8fa !important;z-index:4 !important}
-  html[data-theme="dark"] .rail-etiket .re-sayi{box-shadow:0 0 0 1.5px #111b21 !important}
+  .rail-etiket:hover .re-nokta{transform:scale(1.06) !important;
+    box-shadow:inset 0 -1px 2px rgba(0,0,0,.18),0 2px 6px rgba(11,20,26,.3) !important}
+  .rail-etiket.aktif .re-nokta{box-shadow:inset 0 -1px 2px rgba(0,0,0,.18),
+    0 0 0 2px var(--panel),0 0 0 3.5px var(--brand) !important}
+  .rail-etiket .re-sayi{position:absolute !important;inset:0 !important;top:0 !important;right:0 !important;
+    display:grid !important;place-items:center !important;z-index:4 !important;
+    width:auto !important;height:auto !important;min-width:0 !important;padding:0 !important;
+    background:transparent !important;box-shadow:none !important;border:none !important;
+    border-radius:50% !important;color:#fff !important;
+    font-size:12px !important;font-weight:700 !important;letter-spacing:-.02em !important;
+    font-variant-numeric:tabular-nums !important;line-height:1 !important;
+    text-shadow:0 1px 1px rgba(0,0,0,.22) !important}
+  .rail-etiket .re-ad{background:#111b21 !important;border-radius:8px !important;font-weight:600 !important}
 
   /* ═══ FİLTRELER: ilk hali — ince çerçeveli dolu hap ═══ */
   .filters{gap:6px !important;padding:2px 16px 12px !important}
@@ -4906,11 +4909,8 @@ function connect(){
       const c=chats[d.jid];
       if(c && c.messages){
         const m=c.messages.find(x=>x.id===d.id);
-        // DUZELTME: hata durumlari (-1 iletilemedi, -2 teyit yok) NEGATIF oldugu icin
-        // eski "yeni>eski" kontrolu bunlari COPE ATIYORDU -> kirmizi uyari hic gorunmuyordu.
-        if(m && (d.durum<0 || d.durum>(m.durum||0))){
+        if(m && (d.durum>(m.durum||0))){
           m.durum=d.durum;
-          if(d.durum<0) m.gonderilemedi=true;
           // acik sohbetse tiki guncelle (tum mesajlari yeniden cizmeden)
           if(activeJid===d.jid){
             const el=document.querySelector('.msg[data-mid="'+(CSS&&CSS.escape?CSS.escape(d.id):d.id)+'"] .tik');
@@ -9446,7 +9446,6 @@ function renderAddMemberSecili(){
 function tikHtml(durum){
   const d=durum||0;
   if(d===-1) return '<span class="tik hata" title="Gönderilemedi! Silip tekrar deneyin.">⚠️</span>';
-  if(d===-2) return '<span class="tik teyitsiz" title="Karşıya ulaştığı DOĞRULANAMADI — çift tik gelmedi. Kontrol edip gerekirse tekrar gönderin.">⚠ iletilmedi?</span>';
   if(d>=4) return '<span class="tik okundu" title="Okundu (mavi)">✓✓</span>';
   if(d>=3) return '<span class="tik" title="Karşıya ulaştı">✓✓</span>';
   if(d>=2) return '<span class="tik" title="WhatsApp aldı, karşıya ulaşması bekleniyor">✓</span>';
