@@ -2464,6 +2464,109 @@
 
   /* ═══ TEMALAR KALDIRILDI: yalnızca açık + koyu ═══ */
   .tema-baslik,#skinGrid,.skin-grid{display:none !important}
+
+  /* ═══ ETİKET DAİRELERİ: parlak cam his + renkli hale ═══ */
+  .rail-etiketler{gap:11px !important;padding:4px 0 !important}
+  .rail-etiket{width:36px !important;height:36px !important;transition:transform .16s ease !important}
+  .rail-etiket:hover{transform:scale(1.08) !important;background:transparent !important}
+  .rail-etiket .re-nokta{width:31px !important;height:31px !important;
+    box-shadow:inset 0 2.5px 3px rgba(255,255,255,.5),
+      inset 0 -3px 6px rgba(0,0,0,.28),
+      0 0 0 1.5px rgba(11,20,26,.55),
+      0 2px 7px color-mix(in srgb,var(--c,#12d3a6) 45%,transparent) !important}
+  html[data-theme="dark"] .rail-etiket .re-nokta{
+    box-shadow:inset 0 2.5px 3px rgba(255,255,255,.42),
+      inset 0 -3px 6px rgba(0,0,0,.34),
+      0 0 0 1.5px rgba(233,237,239,.16),
+      0 2px 10px color-mix(in srgb,var(--c,#12d3a6) 40%,transparent) !important}
+  .rail-etiket:hover .re-nokta{
+    box-shadow:inset 0 2.5px 3px rgba(255,255,255,.55),
+      inset 0 -3px 6px rgba(0,0,0,.26),
+      0 0 0 1.5px rgba(11,20,26,.5),
+      0 3px 12px color-mix(in srgb,var(--c,#12d3a6) 62%,transparent) !important}
+  .rail-etiket.aktif .re-nokta{
+    box-shadow:inset 0 2.5px 3px rgba(255,255,255,.5),
+      inset 0 -3px 6px rgba(0,0,0,.26),
+      0 0 0 2px #fff,
+      0 0 0 4px color-mix(in srgb,var(--c,#12d3a6) 70%,transparent),
+      0 3px 12px color-mix(in srgb,var(--c,#12d3a6) 55%,transparent) !important}
+  html[data-theme="dark"] .rail-etiket.aktif .re-nokta{
+    box-shadow:inset 0 2.5px 3px rgba(255,255,255,.42),
+      inset 0 -3px 6px rgba(0,0,0,.32),
+      0 0 0 2px #0b141a,
+      0 0 0 4px color-mix(in srgb,var(--c,#12d3a6) 80%,transparent) !important}
+  .rail-etiket .re-sayi{font-size:13px !important;font-weight:800 !important;
+    text-shadow:0 1px 2px rgba(0,0,0,.5),0 0 4px rgba(0,0,0,.25) !important}
+
+  /* ═══ PANEL KULLANICISI ADI: belirgin çerçeve ═══ */
+  .msg .sender-name.team-name{
+    display:inline-flex !important;align-items:center !important;gap:6px !important;
+    padding:3px 11px 3px 9px !important;border-radius:999px !important;
+    border:1.5px solid #017561 !important;background:rgba(1,117,97,.10) !important;
+    color:#015d4c !important;font-size:13px !important;font-weight:800 !important;
+    margin-bottom:5px !important;letter-spacing:-.01em !important}
+  html[data-theme="dark"] .msg .sender-name.team-name{
+    border-color:#4cbfa1 !important;background:rgba(0,168,132,.16) !important;color:#a9ecd9 !important}
+  .msg .sender-name.team-name .panel-rozet{width:12px !important;height:12px !important;opacity:1 !important}
+  .msg .sender-name.team-name .panel-rozet svg{width:12px !important;height:12px !important}
+
+  /* ═══ COMPOSER: tek beyaz kart (araçlar içinde) + dışarıda yeşil daire ═══ */
+  .composer.composer-dikey{position:relative !important;background:var(--panel) !important;
+    border-radius:24px !important;padding:6px 10px 4px !important;
+    margin:0 82px 16px 16px !important;gap:2px !important;
+    box-shadow:0 1px 2px rgba(11,20,26,.10),0 6px 16px -8px rgba(11,20,26,.18) !important}
+  html[data-theme="dark"] .composer.composer-dikey{background:var(--panel-2) !important;box-shadow:none !important}
+  .composer.composer-dikey textarea{background:transparent !important;box-shadow:none !important;
+    border-radius:0 !important;padding:9px 8px 5px !important}
+  .composer.composer-dikey .composer-arac-satir{background:transparent !important;
+    padding:0 2px 2px !important;position:static !important}
+  .composer.composer-dikey .send-btn{position:absolute !important;right:-66px !important;bottom:0 !important}
+
+  /* ═══ PERFORMANS SIRALAMASI: beyaz kart + altın/gümüş/bronz şerit ═══ */
+  #kontrolContent .perf-baslik{font-size:12px !important;font-weight:700 !important;
+    letter-spacing:.08em !important;color:var(--muted) !important;margin:4px 0 10px !important}
+  #kontrolContent .perf-liste{gap:0 !important;background:var(--panel) !important;
+    border:1px solid var(--border) !important;border-radius:12px !important;overflow:hidden !important;
+    box-shadow:0 1px 2px rgba(11,20,26,.06),0 4px 10px -4px rgba(11,20,26,.10) !important}
+  html[data-theme="dark"] #kontrolContent .perf-liste{box-shadow:none !important}
+  #kontrolContent .perf-kisi{background:transparent !important;border:none !important;
+    border-bottom:1px solid var(--border-soft) !important;border-radius:0 !important;
+    padding:14px 18px !important;box-shadow:none !important;transform:none !important}
+  #kontrolContent .perf-kisi:last-child{border-bottom:none !important}
+  #kontrolContent .perf-kisi:hover{background:var(--panel-2) !important}
+  #kontrolContent .perf-kisi.birinci{background:linear-gradient(90deg,#fffaee,transparent 62%) !important;
+    box-shadow:inset 3px 0 0 #e5a91c !important;padding:17px 18px !important}
+  html[data-theme="dark"] #kontrolContent .perf-kisi.birinci{
+    background:linear-gradient(90deg,rgba(229,169,28,.12),transparent 62%) !important}
+  #kontrolContent .perf-kisi.ikinci{background:linear-gradient(90deg,#f6f8fa,transparent 62%) !important;
+    box-shadow:inset 3px 0 0 #9aa7b1 !important;padding:16px 18px !important}
+  html[data-theme="dark"] #kontrolContent .perf-kisi.ikinci{
+    background:linear-gradient(90deg,rgba(154,167,177,.12),transparent 62%) !important}
+  #kontrolContent .perf-kisi.ucuncu{background:transparent !important;box-shadow:inset 3px 0 0 #d3a07a !important}
+  #kontrolContent .perf-sira{font-size:17px !important;font-weight:800 !important;color:var(--muted) !important;
+    min-width:26px !important;text-shadow:none !important}
+  #kontrolContent .perf-kisi.birinci .perf-sira,#kontrolContent .perf-kisi.ikinci .perf-sira,
+  #kontrolContent .perf-kisi.ucuncu .perf-sira{font-size:21px !important}
+  #kontrolContent .perf-kisi-av{border-radius:50% !important;width:38px !important;height:38px !important;
+    box-shadow:none !important}
+  #kontrolContent .perf-kisi.birinci .perf-kisi-av{box-shadow:0 0 0 2px #e5a91c !important}
+  #kontrolContent .perf-rozet{border-radius:4px !important;font-size:10.5px !important;font-weight:700 !important;
+    letter-spacing:.04em;background:var(--panel-2) !important;color:var(--muted) !important;box-shadow:none !important}
+  #kontrolContent .perf-lider,#kontrolContent .dash-panel{background:var(--panel) !important;
+    border:1px solid var(--border) !important;border-radius:12px !important;box-shadow:none !important}
+  #kontrolContent .perf-lider .lider-sayi{color:var(--ink) !important;text-shadow:none !important}
+
+  /* ═══ İÇ MESAJLAR ═══ */
+  .internal-pane .im-yeni-btn,#internalNewBtn,.im-yeni{border-radius:20px !important;
+    background:var(--brand) !important;color:#fff !important;border:none !important;font-weight:700 !important;
+    box-shadow:0 3px 8px -2px rgba(0,128,105,.45) !important}
+  html[data-theme="dark"] .internal-pane .im-yeni-btn,html[data-theme="dark"] #internalNewBtn{color:#0b141a !important}
+  .im-head-btn{width:36px !important;height:36px !important;border-radius:50% !important;
+    background:transparent !important;border:none !important;color:#54656f !important;font-size:16px !important}
+  html[data-theme="dark"] .im-head-btn{color:#aebac1 !important}
+  .im-head-btn:hover{background:var(--panel-2) !important}
+  .im-grup-kart{border-radius:0 !important}
+  .im-tema-kart{border-radius:10px !important}
 </style>
 </head>
 <body>
