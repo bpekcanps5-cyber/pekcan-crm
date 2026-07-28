@@ -2017,6 +2017,11 @@
   .sender-name .tn-foto{width:16px;height:16px;border-radius:50%;background-size:cover;background-position:center;flex-shrink:0;box-shadow:0 0 0 1px rgba(255,255,255,.2)}
   .sender-name.clickable{cursor:pointer}
   .sender-name.clickable:hover{filter:brightness(1.15)}
+
+  /* Ic mesajda gonderen fotografi + tiklanabilirlik */
+  .im-sender.im-tikla{cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .im-sender.im-tikla:hover{filter:brightness(1.2)}
+  .im-foto{width:16px;height:16px;border-radius:50%;background-size:cover;background-position:center;flex-shrink:0;box-shadow:0 0 0 1px rgba(255,255,255,.2)}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -4862,7 +4867,7 @@ function connect(){
     }
     else if(d.type==='favoriler'){ favoriler.clear(); (d.liste||[]).forEach(j=>favoriler.add(j)); renderList(); }
     else if(d.type==='favoriUpdate'){ if(d.favori) favoriler.add(d.jid); else favoriler.delete(d.jid); renderList(); }
-    else if(d.type==='profilFoto'){ if(d.veri) window._panelFotolar[d.username]=d.veri; else delete window._panelFotolar[d.username]; profilFotoUygula(); if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]); }
+    else if(d.type==='profilFoto'){ if(d.veri) window._panelFotolar[d.username]=d.veri; else delete window._panelFotolar[d.username]; profilFotoTazele(); }
     else if(d.type==='mesajSabitler'){ _mesajSabitler=d.durum||{}; sabitBandGuncelle(); }
     else if(d.type==='mesajSabitUpdate'){ if(d.liste&&d.liste.length) _mesajSabitler[d.jid]=d.liste; else delete _mesajSabitler[d.jid]; if(d.jid===activeJid) sabitBandGuncelle(); }
     else if(d.type==='buradayimUpdate'){ handleBuradayimUpdate(d.jid, d.liste); }
@@ -6197,7 +6202,9 @@ function satisExcelIndir(){
 }
 
 // Sol liste: konusmalar (kiminle, son mesaj, okunmamis)
+let _internalListSon=null;
 function renderInternalList(d){
+  _internalListSon=d;
   d=d||{};
   _internalUsers = d.users||_internalUsers;
   _internalMe = d.me||_internalMe;
@@ -6374,7 +6381,7 @@ function drawInternalMessages(){
     // İSİM BAŞLIĞI: gelen mesajda (karşı taraf), grubun ilk mesajında karşı tarafın adı
     let isimHtml='';
     if(!ben && !ayniGonderen){
-      isimHtml='<div class="im-sender" style="color:'+colorFor(karsiAd)+'">'+esc(karsiAd)+'</div>';
+      isimHtml='<div class="im-sender im-tikla" style="color:'+colorFor(karsiAd)+'" onclick="panelKisiGoster(\''+String(karsiAd).replace(/'/g,"\\'")+'\')" title="Kişi bilgisi">'+imFotoHtml(karsiAd)+esc(karsiAd)+'</div>';
     }
     // dosya var mı? (mediaUrl/media_url)
     const medya = m.mediaUrl || m.media_url || '';
@@ -6656,7 +6663,7 @@ function drawGroupMessages(){
     const u=_internalUsers.find(x=>x.username===gonderen);
     const ad=u?(u.displayName||u.username):gonderen;
     let isimHtml='';
-    if(!ben && !ayni){ isimHtml='<div class="im-sender" style="color:'+colorFor(ad)+'">'+esc(ad)+'</div>'; }
+    if(!ben && !ayni){ isimHtml='<div class="im-sender im-tikla" style="color:'+colorFor(ad)+'" onclick="panelKisiGoster(\''+String(ad).replace(/'/g,"\\'")+'\')" title="Kişi bilgisi">'+imFotoHtml(ad)+esc(ad)+'</div>'; }
     const mid=m.id||'';
     // SİLİNMİŞ
     if(m.deleted){
@@ -11344,14 +11351,26 @@ function telFormatla(num){
 
 // ═══ PANEL PROFIL FOTOGRAFLARI (sunucuda saklanir, herkes gorur) ═══
 window._panelFotolar = {};
+// Ic mesajda gonderen adinin yanindaki kucuk profil fotografi
+function imFotoHtml(ad){
+  const f=(typeof panelProfilFoto==='function')?panelProfilFoto(ad):null;
+  return f?'<span class="im-foto" style="background-image:url(\''+f+'\')"></span>':'';
+}
 async function panelFotolariYukle(){
   try{
     const r=await fetch('/api/profile/avatars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
     const d=await r.json();
-    if(d.ok){ window._panelFotolar=d.fotolar||{}; profilFotoUygula(); if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]); }
+    if(d.ok){ window._panelFotolar=d.fotolar||{}; profilFotoTazele(); }
   }catch(e){}
 }
 // Kendi avatarini ekranda uygula (rail + ayarlar)
+// Fotograflar degisince ekrandaki HER yeri tazele (avatar + mesajlar + ic mesaj listesi)
+function profilFotoTazele(){
+  try{ profilFotoUygula(); }catch(e){}
+  try{ if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]); }catch(e){}
+  try{ if(typeof _internalListSon!=='undefined' && _internalListSon) renderInternalList(_internalListSon); }catch(e){}
+  try{ if(typeof imMesajlariCiz==='function') imMesajlariCiz(); }catch(e){}
+}
 function profilFotoUygula(){
   const ad=(currentUser&&(currentUser.displayName||currentUser.username))||'';
   const veri=window._panelFotolar[ad]||window._panelFotolar[(currentUser&&currentUser.username)||'']||'';
@@ -11363,7 +11382,13 @@ function profilFotoUygula(){
 }
 // Panel kullanicisinin adina tiklayinca: fotografini buyuk goster
 function panelKisiGoster(ad){
-  const veri=window._panelFotolar[ad]||'';
+  const veri=(typeof panelProfilFoto==='function'?panelProfilFoto(ad):null)||'';
+  // ONCE kisi bilgi karti acilir; fotografi oradan buyutulur (istenen akis bu)
+  if(typeof kisiBilgiKarti==='function'){
+    kisiBilgiKarti({ad:ad, alt:'Panel kullanıcısı', foto:veri||null,
+      bashar:initials(ad), renk:gradientFor(ad), etiket:'Ekip'});
+    return;
+  }
   if(veri){ try{ openLightbox(veri); return; }catch(e){} }
   const av=document.getElementById('senderAv');
   if(av){ av.style.backgroundImage=''; av.style.background=gradientFor(ad); av.textContent=initials(ad); }
@@ -11380,8 +11405,7 @@ async function profilFotoKaydet(veri){
     if(d.ok){
       const ad=(currentUser&&(currentUser.displayName||currentUser.username))||'';
       if(veri){ window._panelFotolar[ad]=veri; } else { delete window._panelFotolar[ad]; }
-      profilFotoUygula();
-      if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]);
+      profilFotoTazele();
       showToast(veri?'✓ Profil fotoğrafı güncellendi (herkes görecek)':'Profil fotoğrafı kaldırıldı');
     } else showToast(d.error||'Kaydedilemedi');
   }catch(e){ showToast('Sunucu hatası'); }
@@ -12417,6 +12441,7 @@ function handleNewChatResult(d){
 /* Etiket listesini aç/kapa (rail) — durum hatırlanır */
 (function(){
   /* Rail kapalıyken etiket listesini sohbet listesinin altına taşı */
+  window.etiketBarTasi = etiketBarTasi;  // disaridan cagirilabilsin (yerlesim tazeleme)
   function etiketBarTasi(kapali){
     var liste=document.getElementById('railEtiketler');
     var rail=document.querySelector('.rail');
@@ -12547,13 +12572,13 @@ function handleNewChatResult(d){
     return 'profilFoto_'+u;
   }
   function uygula(){
+    // TEK KAYNAK: profilFotoUygula (sunucu onbellegi). Eskiden burasi fotograflar
+    // sunucudan GELMEDEN calisip avatari SILIYORDU -> foto "ikide bir kayboluyordu".
+    if(typeof window.profilFotoUygula==='function'){ window.profilFotoUygula(); return; }
     var av=document.getElementById('settingsAvatar'); if(!av) return;
-    var d=null;
-    var ad=(window.currentUser&&(currentUser.displayName||currentUser.username))||'';
-    if(window._panelFotolar&&_panelFotolar[ad]) d=_panelFotolar[ad];
-    if(!d){ try{ d=localStorage.getItem(anahtar()); }catch(e){} }
+    var d=null; try{ d=localStorage.getItem(anahtar()); }catch(e){}
     if(d){ av.style.backgroundImage='url('+d+')'; av.classList.add('foto-var'); }
-    else { av.style.backgroundImage=''; av.classList.remove('foto-var'); }
+    // veri yoksa DOKUNMA (silme) — baska kaynak koymus olabilir
   }
   function sec(){
     var inp=document.createElement('input');
@@ -12598,13 +12623,19 @@ function handleNewChatResult(d){
     gorunurluk();
   }
   function gorunurluk(){
-    var d=null; try{ d=localStorage.getItem(anahtar()); }catch(e){}
+    var d=null;
+    var _ad=(window.currentUser&&(currentUser.displayName||currentUser.username))||'';
+    if(typeof panelProfilFoto==='function') d=panelProfilFoto(_ad);
+    if(!d){ try{ d=localStorage.getItem(anahtar()); }catch(e){} }
     var k=document.getElementById('profilFotoKaldirBtn'); if(k) k.style.display=d?'':'none';
     var g=document.getElementById('profilFotoGosterBtn'); if(g) g.style.display=d?'':'none';
   }
   /* profili büyüt: fotoğrafı tam ekran göster */
   function buyut(){
-    var d=null; try{ d=localStorage.getItem(anahtar()); }catch(e){}
+    var d=null;
+    var _ad=(window.currentUser&&(currentUser.displayName||currentUser.username))||'';
+    if(typeof panelProfilFoto==='function') d=panelProfilFoto(_ad);
+    if(!d){ try{ d=localStorage.getItem(anahtar()); }catch(e){} }
     if(!d){ if(typeof showToast==='function') showToast('Önce profil fotoğrafı ekle'); return; }
     var eski=document.getElementById('profilBuyukKatman'); if(eski) eski.remove();
     var ad=(window.currentUser&&(currentUser.displayName||currentUser.username))||'Profil';
@@ -12632,6 +12663,26 @@ function handleNewChatResult(d){
     m.insertBefore(g, hedef);
   }
   function kur(){ uygula(); menuyeEkle(); menuyeEkle2(); gorunurluk(); }
+  // ETIKET BARI KAYMASI: panel etiketleri kendi yeniden cizdiginde yerlesim bozuluyordu.
+  // renderRailEtiketler'i sarip her cizimden sonra dogru yeri geri koyuyoruz.
+  (function(){
+    var bek=setInterval(function(){
+      if(typeof window.renderRailEtiketler!=='function') return;
+      if(window.renderRailEtiketler.__yerYamali) { clearInterval(bek); return; }
+      var asil=window.renderRailEtiketler;
+      window.renderRailEtiketler=function(){
+        var r=asil.apply(this,arguments);
+        try{
+          if(typeof window.etiketBarTasi==='function')
+            window.etiketBarTasi(document.documentElement.classList.contains('rail-kapali'));
+        }catch(e){}
+        return r;
+      };
+      window.renderRailEtiketler.__yerYamali=true;
+      clearInterval(bek);
+    },200);
+    setTimeout(function(){ clearInterval(bek); },15000);
+  })();
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',kur); else kur();
   setTimeout(kur,1500); setTimeout(kur,4000);
 })();
@@ -12640,6 +12691,13 @@ function handleNewChatResult(d){
 /* Panel kullanıcılarının profil fotoğrafı + sohbet başlığında kişi bilgisi kartı */
 window.panelProfilFoto=function(kullanici){
   if(!kullanici) return null;
+  // 1) SUNUCU onbellegi: herkesin fotografi burada (her cihazdan gorunur)
+  if(window._panelFotolar){
+    if(_panelFotolar[kullanici]) return _panelFotolar[kullanici];
+    var lk=String(kullanici).toLocaleLowerCase('tr');
+    for(var k in _panelFotolar){ if(String(k).toLocaleLowerCase('tr')===lk) return _panelFotolar[k]; }
+  }
+  // 2) geriye uyum: eski tarayici kaydi
   var adaylar=[kullanici, String(kullanici).toLowerCase()];
   for(var i=0;i<adaylar.length;i++){
     try{ var v=localStorage.getItem('profilFoto_'+adaylar[i]); if(v) return v; }catch(e){}
