@@ -2836,20 +2836,28 @@
     transform:scale(1.06)}
   .buradayim-btn.aktif:hover,.buradayim-btn.active:hover{background:var(--ink-2) !important}
 
-  /* *yıldız içindeki* metin: rengarenk gradyan + hafif akış */
+  /* *yıldız içindeki* metin: rengarenk (desteği olmayan tarayıcıda düz renk) */
   @keyframes mdBoldKay{0%{background-position:0% 50%}100%{background-position:200% 50%}}
-  .msg .md-bold{
+  .msg .md-bold,.msg b.md-bold{
     font-weight:800 !important;letter-spacing:-.01em !important;
-    background:linear-gradient(100deg,#f0362a,#f5a623,#16b364,#2f7ef0,#9b4df5,#f0362a) !important;
-    background-size:200% auto !important;
-    -webkit-background-clip:text !important;background-clip:text !important;
-    -webkit-text-fill-color:transparent !important;color:transparent !important;
-    animation:mdBoldKay 6s linear infinite !important;
-    text-shadow:none !important;padding:0 1px !important}
+    color:#d63a2f !important;-webkit-text-fill-color:currentColor !important;
+    background:none !important;text-shadow:none !important;padding:0 !important}
   html[data-theme="dark"] .msg .md-bold,html[data-skin="gece"] .msg .md-bold,
-  html[data-skin="orman"] .msg .md-bold,html[data-skin="mor"] .msg .md-bold{
-    background:linear-gradient(100deg,#ff6b5e,#ffc44d,#3ddc97,#63a8ff,#c39bf5,#ff6b5e) !important;
-    background-size:200% auto !important}
+  html[data-skin="orman"] .msg .md-bold,html[data-skin="mor"] .msg .md-bold{color:#ffb04d !important}
+  @supports ((-webkit-background-clip:text) or (background-clip:text)){
+    .msg .md-bold,.msg b.md-bold{
+      display:inline !important;
+      background-image:linear-gradient(100deg,#e0453a,#e8901c,#12a05f,#2f7ef0,#8b3ff0,#e0453a) !important;
+      background-size:200% auto !important;background-repeat:repeat !important;
+      -webkit-background-clip:text !important;background-clip:text !important;
+      -webkit-text-fill-color:transparent !important;color:transparent !important;
+      animation:mdBoldKay 7s linear infinite !important}
+    html[data-theme="dark"] .msg .md-bold,html[data-skin="gece"] .msg .md-bold,
+    html[data-skin="orman"] .msg .md-bold,html[data-skin="mor"] .msg .md-bold{
+      background-image:linear-gradient(100deg,#ff7a6b,#ffc44d,#3ddc97,#7ab6ff,#c9a3f7,#ff7a6b) !important;
+      -webkit-background-clip:text !important;background-clip:text !important;
+      -webkit-text-fill-color:transparent !important;color:transparent !important}
+  }
 
   /* Etiket listesi aç/kapa düğmesi */
   #railEtiketAcKapa{width:34px;height:22px;margin:2px 0 0;border:none;cursor:pointer;
@@ -2860,6 +2868,21 @@
   html.etiket-kapali #railEtiketler{display:none !important}
   html.etiket-kapali #railEtiketAcKapa svg{transform:rotate(-90deg)}
   html.etiket-kapali #railEtiketAcKapa{color:var(--brand);background:var(--brand-soft)}
+
+  /* Tüm rail'i sola katla + geri açma tutamağı */
+  html.rail-kapali .rail{width:0 !important;min-width:0 !important;padding:0 !important;
+    border-right:none !important;overflow:hidden !important;opacity:0 !important}
+  #railAcHandle{position:fixed;left:0;top:50%;transform:translateY(-50%);width:19px;height:56px;
+    border-radius:0 10px 10px 0;background:var(--panel-2);border:1px solid var(--border);border-left:none;
+    color:var(--muted);display:none;place-items:center;cursor:pointer;z-index:500;padding:0;
+    box-shadow:2px 0 8px -4px rgba(11,20,26,.3)}
+  #railAcHandle:hover{color:var(--brand);background:var(--brand-soft)}
+  #railAcHandle svg{width:13px;height:13px}
+  html.rail-kapali #railAcHandle{display:grid}
+  #railKapaBtn{width:34px;height:24px;margin-top:4px;border:none;background:transparent;cursor:pointer;
+    display:grid;place-items:center;border-radius:12px;color:var(--faint)}
+  #railKapaBtn:hover{background:var(--panel-2);color:var(--text)}
+  #railKapaBtn svg{width:15px;height:15px}
 
   /* Renkli filtreler ve butonlar temaya uysun */
   html[data-skin="gece"] .filter.active,html[data-skin="orman"] .filter.active,
@@ -2935,7 +2958,10 @@
     background:transparent !important;color:inherit !important;opacity:.7 !important}
 
   /* Bildirim/sayac kartları yazı alanını kapatmasın */
-  #toast{bottom:118px !important}
+  #toast{bottom:118px !important;padding:8px 14px !important;border-radius:10px !important;
+    font-size:12.5px !important;font-weight:600 !important;max-width:70% !important;
+    box-shadow:0 4px 14px -6px rgba(11,20,26,.45) !important}
+  #toast svg{width:14px !important;height:14px !important}
   .toplu-sayac{bottom:136px !important}
   #takipKartlar{bottom:124px !important}
   .eski-yuk-not{z-index:6 !important}
@@ -12249,6 +12275,32 @@ function handleNewChatResult(d){
       try{ localStorage.setItem('railEtiketKapali', k?'1':'0'); }catch(e){}
     };
     liste.parentNode.insertBefore(b, liste);
+
+    /* Tüm rail'i sola katla */
+    var rail=liste.closest('.rail')||document.querySelector('.rail');
+    if(rail && !document.getElementById('railKapaBtn')){
+      try{ if(localStorage.getItem('railKapali')==='1') document.documentElement.classList.add('rail-kapali'); }catch(e){}
+      var k=document.createElement('button');
+      k.id='railKapaBtn';
+      k.title='Sol paneli kapat';
+      k.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.4 7.4L14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>';
+      k.onclick=function(){
+        document.documentElement.classList.add('rail-kapali');
+        try{ localStorage.setItem('railKapali','1'); }catch(e){}
+      };
+      var sp=rail.querySelector('.rail-spacer');
+      if(sp) rail.insertBefore(k, sp); else rail.appendChild(k);
+
+      var h=document.createElement('button');
+      h.id='railAcHandle';
+      h.title='Sol paneli aç';
+      h.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.6 16.6L10 18l6-6-6-6-1.4 1.4L13.2 12z"/></svg>';
+      h.onclick=function(){
+        document.documentElement.classList.remove('rail-kapali');
+        try{ localStorage.setItem('railKapali','0'); }catch(e){}
+      };
+      document.body.appendChild(h);
+    }
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',kur);
   else kur();
