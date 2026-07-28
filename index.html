@@ -2560,6 +2560,86 @@
   .im-grup-kart{border-radius:0 !important}
   .im-tema-kart{border-radius:10px !important}
 
+  /* Grup içi gönderen (müşteri) adı: daha okunur */
+  .msg .sender-name:not(.team-name){font-size:14.5px !important;font-weight:800 !important;
+    margin-bottom:3px !important;letter-spacing:-.01em !important}
+
+  /* ═══ ETİKETLER: halka (donut) rozet — renk dışta, sayı içte ═══ */
+  .rail-etiketler{gap:10px !important}
+  .rail-etiket{width:36px !important;height:36px !important}
+  .rail-etiket .re-nokta{width:30px !important;height:30px !important;position:relative !important;
+    box-shadow:0 1px 3px rgba(11,20,26,.14) !important;filter:none !important;
+    transition:box-shadow .16s ease !important}
+  .rail-etiket .re-nokta::after{content:"" !important;position:absolute !important;inset:3.5px !important;
+    border-radius:50% !important;background:#f7f8fa !important;transition:inset .16s ease,background .16s ease !important}
+  html[data-theme="dark"] .rail-etiket .re-nokta::after{background:#111b21 !important}
+  .rail-etiket:hover .re-nokta::after{inset:5px !important}
+  .rail-etiket:hover .re-nokta{box-shadow:0 2px 7px rgba(11,20,26,.2) !important}
+  .rail-etiket.aktif .re-nokta::after{inset:100% !important}
+  .rail-etiket.aktif .re-nokta{box-shadow:0 0 0 2px #f7f8fa,0 0 0 3.5px var(--c,#12d3a6) !important}
+  html[data-theme="dark"] .rail-etiket.aktif .re-nokta{box-shadow:0 0 0 2px #111b21,0 0 0 3.5px var(--c,#12d3a6) !important}
+  .rail-etiket .re-sayi{color:var(--c,#12d3a6) !important;font-size:12px !important;font-weight:800 !important;
+    text-shadow:none !important;z-index:4 !important}
+  .rail-etiket.aktif .re-sayi{color:#fff !important}
+
+  /* ═══ RENKLİ FİLTRELER: mor / altın / yeşil geri ═══ */
+  .filter.filter-yonetici{background:#f4ecfd !important;border-color:#dcc4f7 !important;color:#7028b8 !important}
+  html[data-theme="dark"] .filter.filter-yonetici{background:#2b1c44 !important;border-color:#3f2c60 !important;color:#c39bf5 !important}
+  .filter.filter-yonetici .n{color:#9a6bc9 !important}
+  .filter.filter-yonetici:hover{background:#ecdcfb !important}
+  .filter.filter-yonetici.active{background:#7028b8 !important;border-color:#5c1f99 !important;color:#fff !important}
+  .filter.filter-favori{background:#fff8e6 !important;border-color:#ecdcb4 !important;color:#8a6516 !important}
+  html[data-theme="dark"] .filter.filter-favori{background:#3a2f14 !important;border-color:#4d3f1d !important;color:#f2c94c !important}
+  .filter.filter-favori .n{color:#b08a2e !important}
+  html[data-theme="dark"] .filter.filter-favori .n{color:#c9a94a !important}
+  .filter.filter-favori:hover{background:#fdf0cf !important}
+  .filter.filter-favori.active{background:#b8873b !important;border-color:#96692b !important;color:#fff !important}
+  .filter.filter-buradayim{background:#e2f6ee !important;border-color:#b5ddcb !important;color:#0f6b52 !important}
+  html[data-theme="dark"] .filter.filter-buradayim{background:#12352a !important;border-color:#1f4d3c !important;color:#4cd6a4 !important}
+  .filter.filter-buradayim .n{color:#3d9377 !important}
+  .filter.filter-buradayim:hover{background:#d3f0e3 !important}
+  .filter.filter-buradayim.active{background:#0f8a63 !important;border-color:#0b6f50 !important;color:#fff !important;
+    box-shadow:none !important}
+
+  /* ═══ SOHBET SATIRLARI: WhatsApp nefes aralığı ═══ */
+  .chat{padding:12px 16px !important;gap:15px !important;min-height:72px !important}
+  .chat-main{display:flex !important;flex-direction:column !important;gap:5px !important;min-width:0}
+  .chat-top{display:flex !important;align-items:center !important;gap:7px !important;line-height:1.25 !important}
+  .chat-bottom{display:flex !important;align-items:center !important;gap:8px !important;line-height:1.3 !important}
+  .chat-name{line-height:1.3 !important}
+  .chat-last{line-height:1.35 !important}
+  .chat-tags{margin-top:3px !important}
+  .chat-acan{margin-top:3px !important;font-size:12px !important}
+
+  /* ═══ FİLTRE ÇİPLERİ v2: dolu yüzey + sayı rozeti ═══ */
+  .filters{gap:7px !important;padding:0 16px 12px !important}
+  .filter{height:32px !important;display:inline-flex !important;align-items:center !important;gap:7px !important;
+    padding:0 12px !important;border-radius:16px !important;border:none !important;
+    background:#eef1f4 !important;color:#3b4a54 !important;font-size:13.5px !important;font-weight:600 !important;
+    box-shadow:none !important;transition:background .14s ease,color .14s ease !important}
+  html[data-theme="dark"] .filter{background:#1e2a32 !important;color:#c3cdd3 !important}
+  .filter:hover{background:#e3e8ec !important;color:var(--text) !important}
+  html[data-theme="dark"] .filter:hover{background:#28353d !important;color:#e9edef !important}
+  .filter .n{margin-left:0 !important;padding:1px 6px !important;border-radius:9px !important;
+    background:rgba(11,20,26,.07) !important;color:#5b6b76 !important;
+    font-size:11.5px !important;font-weight:700 !important;line-height:16px !important;min-width:18px;text-align:center}
+  html[data-theme="dark"] .filter .n{background:rgba(255,255,255,.09) !important;color:#93a1aa !important}
+  .filter.active{background:#016452 !important;color:#fff !important;font-weight:700 !important}
+  html[data-theme="dark"] .filter.active{background:#00806a !important;color:#eafff8 !important}
+  .filter.active .n{background:rgba(255,255,255,.22) !important;color:#fff !important}
+  .filter.filter-yonetici{background:#f2e9fc !important;color:#6b23b2 !important}
+  html[data-theme="dark"] .filter.filter-yonetici{background:#291a40 !important;color:#c39bf5 !important}
+  .filter.filter-yonetici .n{background:rgba(112,40,184,.12) !important;color:#7b3cbe !important}
+  html[data-theme="dark"] .filter.filter-yonetici .n{background:rgba(195,155,245,.16) !important;color:#c9a6f2 !important}
+  .filter.filter-favori{background:#fdf3dd !important;color:#7f5d13 !important}
+  html[data-theme="dark"] .filter.filter-favori{background:#352b12 !important;color:#f2c94c !important}
+  .filter.filter-favori .n{background:rgba(184,135,59,.16) !important;color:#8a6516 !important}
+  html[data-theme="dark"] .filter.filter-favori .n{background:rgba(242,201,76,.16) !important;color:#e0bb56 !important}
+  .filter.filter-buradayim{background:#def3ea !important;color:#0d6249 !important}
+  html[data-theme="dark"] .filter.filter-buradayim{background:#11332a !important;color:#4cd6a4 !important}
+  .filter.filter-buradayim .n{background:rgba(15,138,99,.14) !important;color:#0f7a5b !important}
+  html[data-theme="dark"] .filter.filter-buradayim .n{background:rgba(76,214,164,.16) !important;color:#54c9a1 !important}
+
   /* ═══ SATIŞ BÖLÜMÜ KALDIRILDI ═══ */
   #kasSatislar,#satisEkleBtn,#satisHizli,#satisModal,#satisBransSecim{display:none !important}
 </style>
