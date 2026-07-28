@@ -2640,6 +2640,57 @@
   .filter.filter-buradayim .n{background:rgba(15,138,99,.14) !important;color:#0f7a5b !important}
   html[data-theme="dark"] .filter.filter-buradayim .n{background:rgba(76,214,164,.16) !important;color:#54c9a1 !important}
 
+  /* ═══ ETİKETLER v3: etiket rozeti (yuvarlak köşeli), sayı beyaz ═══ */
+  .rail-etiketler{gap:8px !important}
+  .rail-etiket{width:38px !important;height:28px !important;border-radius:8px !important}
+  .rail-etiket .re-nokta{width:32px !important;height:24px !important;border-radius:7px !important;
+    position:relative !important;box-shadow:inset 0 0 0 1px rgba(11,20,26,.14),0 1px 2px rgba(11,20,26,.18) !important;
+    filter:none !important}
+  html[data-theme="dark"] .rail-etiket .re-nokta{
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.25),0 1px 2px rgba(0,0,0,.35) !important}
+  .rail-etiket .re-nokta::after{display:none !important}
+  .rail-etiket:hover .re-nokta{box-shadow:inset 0 0 0 1px rgba(11,20,26,.2),0 2px 6px rgba(11,20,26,.24) !important}
+  .rail-etiket.aktif .re-nokta{box-shadow:inset 0 0 0 1px rgba(11,20,26,.2),
+    0 0 0 2px #f7f8fa,0 0 0 3.5px var(--brand) !important}
+  html[data-theme="dark"] .rail-etiket.aktif .re-nokta{box-shadow:inset 0 0 0 1px rgba(0,0,0,.25),
+    0 0 0 2px #111b21,0 0 0 3.5px var(--brand) !important}
+  .rail-etiket .re-sayi{position:absolute !important;inset:0 !important;display:grid !important;
+    place-items:center !important;color:#fff !important;font-size:12px !important;font-weight:800 !important;
+    text-shadow:0 1px 1px rgba(0,0,0,.35) !important;z-index:4 !important}
+
+  /* ═══ FİLTRELER v3: sakin çerçeveli hap (WhatsApp çizgisi) ═══ */
+  .filters{gap:8px !important;padding:2px 16px 12px !important}
+  .filter{height:31px !important;padding:0 13px !important;border-radius:16px !important;
+    background:transparent !important;border:1px solid var(--border) !important;
+    color:var(--muted) !important;font-size:13.5px !important;font-weight:600 !important;gap:6px !important}
+  html[data-theme="dark"] .filter{border-color:#2a3942 !important;color:#8696a0 !important}
+  .filter:hover{background:rgba(11,20,26,.04) !important;color:var(--text) !important}
+  html[data-theme="dark"] .filter:hover{background:rgba(255,255,255,.04) !important;color:#e9edef !important}
+  .filter .n{background:transparent !important;padding:0 !important;min-width:0 !important;
+    color:inherit !important;opacity:.55 !important;font-size:12.5px !important;font-weight:600 !important}
+  .filter.active{background:#d9fdd3 !important;border-color:transparent !important;color:#015d4c !important;font-weight:700 !important}
+  html[data-theme="dark"] .filter.active{background:#103529 !important;color:#00a884 !important}
+  .filter.active .n{opacity:.7 !important;color:inherit !important;background:transparent !important}
+  .filter.filter-yonetici{background:transparent !important;border-color:rgba(112,40,184,.35) !important;color:#7028b8 !important}
+  html[data-theme="dark"] .filter.filter-yonetici{border-color:rgba(195,155,245,.32) !important;color:#c39bf5 !important}
+  .filter.filter-yonetici:hover{background:rgba(112,40,184,.07) !important}
+  .filter.filter-yonetici.active{background:rgba(112,40,184,.14) !important;border-color:transparent !important;color:#6b23b2 !important}
+  html[data-theme="dark"] .filter.filter-yonetici.active{background:rgba(195,155,245,.18) !important;color:#d3b4f8 !important}
+  .filter.filter-favori{background:transparent !important;border-color:rgba(184,135,59,.4) !important;color:#8a6516 !important}
+  html[data-theme="dark"] .filter.filter-favori{border-color:rgba(242,201,76,.32) !important;color:#f2c94c !important}
+  .filter.filter-favori:hover{background:rgba(184,135,59,.08) !important}
+  .filter.filter-favori.active{background:rgba(184,135,59,.16) !important;border-color:transparent !important;color:#7f5d13 !important}
+  html[data-theme="dark"] .filter.filter-favori.active{background:rgba(242,201,76,.18) !important;color:#f6d475 !important}
+  .filter.filter-buradayim{background:transparent !important;border-color:rgba(15,138,99,.35) !important;color:#0d6249 !important}
+  html[data-theme="dark"] .filter.filter-buradayim{border-color:rgba(76,214,164,.3) !important;color:#4cd6a4 !important}
+  .filter.filter-buradayim:hover{background:rgba(15,138,99,.07) !important}
+  .filter.filter-buradayim.active{background:rgba(15,138,99,.15) !important;border-color:transparent !important;color:#0b5a43 !important}
+  html[data-theme="dark"] .filter.filter-buradayim.active{background:rgba(76,214,164,.18) !important;color:#6fe0b8 !important}
+  .search-wrap input{border-radius:16px !important;background:var(--panel-2) !important;
+    padding:10px 38px 10px 44px !important;font-size:15px !important}
+  html[data-theme="dark"] .search-wrap input{background:#202c33 !important}
+  .limit-row{padding:2px 16px 12px !important}
+
   /* ═══ SATIŞ BÖLÜMÜ KALDIRILDI ═══ */
   #kasSatislar,#satisEkleBtn,#satisHizli,#satisModal,#satisBransSecim{display:none !important}
 </style>
