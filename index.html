@@ -2040,35 +2040,69 @@
     --ink:#00a884; --ink-2:#00a884;
     --brand:#00806a; --brand-hi:#00a884; --brand-soft:#1a3730;
     --gold:#f2c94c; --gold-soft:#3a2f14;
-    --bg:#0b141a; --panel:#17212b; --panel-2:#202c33; --chat-bg:#0b141a;
+    --bg:#0b141a; --panel:#111b21; --panel-2:#202c33; --chat-bg:#0b141a;
     --in:#202c33; --out:#005c4b;
     --text:#e9edef; --muted:#8696a0; --faint:#667781;
-    --border:#222d34; --border-soft:#1e2c35;
+    --border:#222d34; --border-soft:#222d34;
     --unread:#00a884; --group:#53bdeb;
     --lit:none;
   }
 
-  /* ── Sol rail: açık yüzey, yuvarlak aktif hücre ── */
-  .rail{background:#f7f8fa;border-right:1px solid var(--border);box-shadow:none;gap:4px}
-  html[data-theme="dark"] .rail{background:#131c22}
-  .rail .logo{border-radius:12px;box-shadow:0 2px 5px -1px rgba(0,128,105,.5)}
-  .rail-btn{border-radius:10px;color:var(--muted);box-shadow:none}
-  .rail-btn:hover{background:var(--panel-2);color:var(--text)}
-  .rail-btn.active{background:var(--brand-soft);color:var(--ink)}
-  html[data-theme="dark"] .rail-btn.active{background:#2a3942;color:var(--text)}
-  .rail-ayrac{background:var(--border)}
-  .rail .avatar{box-shadow:0 1px 3px rgba(11,20,26,.2)}
+  /* ── Sol rail: WhatsApp Web gibi dar, ikon odaklı ── */
+  .rail{width:64px !important;background:#f7f8fa;border-right:1px solid var(--border);box-shadow:none;gap:2px;padding:12px 0}
+  html[data-theme="dark"] .rail{background:#202c33;border-right-color:#0b141a}
+  .rail .logo{width:38px !important;height:38px !important;border-radius:12px !important;background:var(--brand) !important;font-size:17px !important;margin-bottom:10px !important;box-shadow:none !important}
+  .rail-btn{width:46px !important;height:44px !important;border-radius:12px !important;color:var(--muted);box-shadow:none !important;background:transparent !important}
+  .rail-btn svg{width:23px !important;height:23px !important}
+  .rail-btn:hover{background:rgba(0,0,0,.06) !important;color:var(--text)}
+  html[data-theme="dark"] .rail-btn{color:#aebac1}
+  html[data-theme="dark"] .rail-btn:hover{background:rgba(255,255,255,.07) !important;color:#e9edef}
+  .rail-btn.active{background:var(--brand-soft) !important;color:var(--ink) !important}
+  html[data-theme="dark"] .rail-btn.active{background:#2a3942 !important;color:#e9edef !important}
+  .rail-ayrac{background:var(--border);width:28px}
+  html[data-theme="dark"] .rail-ayrac{background:rgba(255,255,255,.12)}
+  .rail .avatar{width:38px !important;height:38px !important;box-shadow:none !important}
   /* Rail etiketleri: siyah halkalı yuvarlak + kırmızı okunmamış rozeti */
-  .rail-etiketler .liste-etiket-nokta,.rail-etiketler [class*="nokta"]{
-    width:26px;height:26px;border-radius:50%;
-    box-shadow:0 0 0 2px #111b21, 0 2px 5px -1px rgba(11,20,26,.3)}
-  html[data-theme="dark"] .rail-etiketler .liste-etiket-nokta{box-shadow:0 0 0 2px #0b141a, 0 0 0 3px rgba(233,237,239,.14)}
+  .rail-etiket{width:30px !important;height:30px !important;border-radius:50% !important}
+  .rail-etiket::before{display:none !important}
+  .rail-etiket .re-nokta{width:22px !important;height:22px !important;
+    box-shadow:0 0 0 2px #111b21, 0 2px 5px -1px rgba(11,20,26,.3) !important}
+  html[data-theme="dark"] .rail-etiket .re-nokta{box-shadow:0 0 0 2px #0b141a, 0 0 0 3px rgba(233,237,239,.16) !important}
+  .rail-etiket.aktif .re-nokta{box-shadow:0 0 0 2px #111b21, 0 0 0 3.5px rgba(0,168,132,.75) !important}
+  .rail-etiket .re-sayi{background:#f0362a !important;font-weight:800;min-width:16px;height:16px;
+    box-shadow:0 0 0 2px #f7f8fa !important}
+  html[data-theme="dark"] .rail-etiket .re-sayi{box-shadow:0 0 0 2px #202c33 !important}
+
+  /* Koyu mod: WhatsApp Web yüzeyleri — mavi/lacivert tona kaçmasın */
+  html[data-theme="dark"] body,
+  html[data-theme="dark"] .app{background:#0b141a}
+  html[data-theme="dark"] .sidebar,
+  html[data-theme="dark"] .chat-list,
+  html[data-theme="dark"] .sb-head,
+  html[data-theme="dark"] .sidebar-head{background:#111b21}
+  html[data-theme="dark"] .conv,
+  html[data-theme="dark"] .conversation,
+  html[data-theme="dark"] .messages{background-color:#0b141a}
+  html[data-theme="dark"] .conv-header,
+  html[data-theme="dark"] .composer textarea,
+  html[data-theme="dark"] .search-wrap{background:#202c33}
+  html[data-theme="dark"] .msg.in{background:#202c33;color:#e9edef}
+  html[data-theme="dark"] .msg.out{background:#005c4b;color:#e9edef}
+  html[data-theme="dark"] .day-sep,
+  html[data-theme="dark"] .sys-msg{background:#182229;color:#8696a0;box-shadow:none}
+  html[data-theme="dark"] .qr-panel,
+  html[data-theme="dark"] .emoji-panel,
+  html[data-theme="dark"] .info-panel,
+  html[data-theme="dark"] .modal,
+  html[data-theme="dark"] .mention-list{background:#233138;border-color:#2a3942}
 
   /* ── Ana sekmeler: alt çizgili, kutusuz ── */
-  .main-tabs{background:transparent;border:none;border-bottom:1px solid var(--border-soft);border-radius:0;margin:0;padding:0 8px;gap:2px}
-  .main-tab{border-radius:0;padding:14px 8px 12px;font-weight:600}
-  .main-tab.active{background:transparent;color:var(--ink);font-weight:700;box-shadow:inset 0 -3px 0 var(--brand)}
-  .main-tab:hover:not(.active){background:transparent;color:var(--text)}
+  .main-tabs{background:transparent !important;border:none !important;border-bottom:1px solid var(--border) !important;border-radius:0 !important;margin:0 !important;padding:0 8px !important;gap:2px}
+  .main-tab{border-radius:0 !important;padding:14px 8px 12px !important;font-weight:600;background:transparent !important;box-shadow:none !important}
+  .main-tab.active{background:transparent !important;color:var(--ink) !important;font-weight:700;box-shadow:inset 0 -3px 0 var(--brand) !important}
+  html[data-theme="dark"] .main-tab.active{color:#00a884 !important;box-shadow:inset 0 -3px 0 #00a884 !important}
+  .main-tab:hover:not(.active){background:transparent !important;color:var(--text)}
+  .main-tab .tab-badge{background:#00a884 !important;color:#0b141a !important}
 
   /* ── Sidebar başlık + arama ── */
   .sidebar{border-right:1px solid var(--border)}
@@ -2077,16 +2111,19 @@
   .icon-sm:hover{background:var(--panel-2)}
   html[data-theme="dark"] .icon-sm{color:#aebac1}
   .conn-pill{border-radius:16px;border:none;background:var(--brand-soft);color:var(--ink);font-weight:700}
-  .search-wrap{background:var(--panel-2);border:none;border-radius:10px}
-  .search-wrap input{font-size:14.5px}
+  .search-wrap input{background:var(--panel-2) !important;border:none !important;border-radius:8px !important;font-size:14.5px;padding:9px 38px 9px 42px !important}
+  html[data-theme="dark"] .search-wrap input{background:#202c33 !important}
 
-  /* ── Filtre çipleri ── */
-  .filters{gap:6px;padding:12px 16px 10px}
-  .filter{border:1px solid #dfe4e8;background:#f7f8fa;color:#3b4a54;border-radius:16px;padding:6px 12px;font-size:13px;font-weight:600}
-  html[data-theme="dark"] .filter{border-color:#2c3a44;background:#202c33;color:#d1d7db}
-  .filter:hover{background:var(--border)}
-  .filter.active{background:#016452;border-color:#01523f;color:#fff;font-weight:700}
-  html[data-theme="dark"] .filter.active{background:#00806a;border-color:#019b7f;color:#e9fff8}
+  /* ── Filtre çipleri: WhatsApp Web hap tarzı ── */
+  .filters{gap:7px;padding:10px 16px 8px;border-bottom:none}
+  .filter{border:1px solid var(--border) !important;background:transparent !important;color:var(--muted) !important;
+    border-radius:16px !important;padding:6px 13px !important;font-size:13px;font-weight:600;box-shadow:none !important}
+  html[data-theme="dark"] .filter{border-color:#2a3942 !important;color:#8696a0 !important}
+  .filter:hover{background:var(--panel-2) !important;color:var(--text) !important}
+  .filter.active{background:var(--brand-soft) !important;border-color:transparent !important;color:var(--ink) !important;font-weight:700;box-shadow:none !important}
+  html[data-theme="dark"] .filter.active{background:#103529 !important;color:#00a884 !important}
+  .filter .n{opacity:1;color:inherit;font-size:11.5px;margin-left:5px}
+  .filter.active .n{opacity:.8}
   .filter .n{color:var(--faint);font-size:11.5px}
   .filter.active .n{color:inherit;opacity:.75}
   .filter-favori{background:var(--gold-soft);color:#8a6516}
@@ -2106,22 +2143,25 @@
   .limit-opt.active{background:var(--panel);color:var(--text);font-weight:700;box-shadow:0 1px 2px rgba(11,20,26,.1)}
   html[data-theme="dark"] .limit-opt.active{background:#2a3942}
 
-  /* ── Sohbet satırları: çizgisiz, 48px avatar, yeşil şerit ── */
+  /* ── Sohbet satırları: WhatsApp Web — ince ayırıcı, 49px avatar ── */
   .chat-list{padding:0}
-  .chat{border-radius:0;margin:0;padding:12px 16px;gap:13px;align-items:center}
-  .chat:hover{background:#f7f8fa}
-  html[data-theme="dark"] .chat:hover{background:#202c33}
-  .chat.active{background:var(--brand-soft)}
-  html[data-theme="dark"] .chat.active{background:#2a3942}
-  .chat.active::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--brand)}
+  .chat{border-radius:0 !important;margin:0 !important;padding:11px 16px !important;gap:14px;align-items:center;
+    box-shadow:inset 0 -1px 0 var(--border-soft)}
+  html[data-theme="dark"] .chat{box-shadow:inset 0 -1px 0 #222d34}
+  .chat:hover{background:var(--panel-2) !important}
+  html[data-theme="dark"] .chat:hover{background:#202c33 !important}
+  .chat.active{background:var(--brand-soft) !important}
+  html[data-theme="dark"] .chat.active{background:#2a3942 !important}
+  .chat.active::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--brand)}
   html[data-theme="dark"] .chat.active::before{display:none}
-  .chat-avatar{width:48px;height:48px;font-size:15px;font-weight:700}
-  .chat-name{font-size:15.5px;letter-spacing:0}
-  .chat-preview{font-size:13.5px;color:#3b4a54}
-  html[data-theme="dark"] .chat-preview{color:#8696a0}
-  .chat-time{font-size:11.5px;font-weight:600}
-  .chat-time.unread-time{color:var(--ink)}
-  .badge{border-radius:10px;font-weight:700;box-shadow:none}
+  .chat > .avatar,.chat-avatar{width:49px !important;height:49px !important;flex:0 0 49px !important;font-size:15px;font-weight:700}
+  .chat-name{font-size:16px !important;letter-spacing:0;font-weight:600}
+  .chat.unread .chat-name{font-weight:700}
+  .chat-last,.chat-preview{font-size:13.5px;color:var(--muted)}
+  .chat-time{font-size:11.5px;font-weight:500}
+  .chat.unread .chat-time{color:var(--brand-hi);font-weight:700}
+  .badge{border-radius:11px !important;background:#00a884 !important;color:#0b141a !important;
+    font-weight:700 !important;box-shadow:none !important;min-width:20px;height:20px;font-size:11.5px}
   .tag{border-radius:4px;font-weight:700;font-size:10.5px;padding:1px 6px}
   .group-icon{border-width:2px}
 
@@ -2196,7 +2236,8 @@
   /* ── "Kim yazdı": panelden gönderen ekip üyesi -> çerçeveli yuvarlak pill ── */
   .msg .sender-name{font-size:13px !important;font-weight:700 !important;margin-bottom:3px}
   .msg .sender-name.team-name{
-    display:inline-flex !important;align-items:center;gap:6px;align-self:flex-start;width:fit-content;
+    display:flex !important;align-items:center;gap:6px;align-self:flex-start;
+    width:fit-content;max-width:100%;float:none;clear:both;
     border:1.5px solid rgba(1,117,97,.3) !important;border-radius:999px !important;
     padding:3px 11px 3px 9px !important;background:rgba(255,255,255,.55) !important;
     color:#016452 !important;font-size:11.5px !important;font-weight:700 !important;
