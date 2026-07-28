@@ -2662,13 +2662,13 @@
 
   /* ═══ ETİKET KONTROL MERKEZİ (v14) — cam yok, canlı düz renk, siyah konturlu kırmızı sayı ═══ */
   @keyframes etiketAktifNabiz{
-    0%,100%{box-shadow:0 0 0 2px color-mix(in srgb,var(--c,#3b82f6) 70%,transparent),
+    0%,100%{box-shadow:0 0 0 1.5px #0b1016,0 0 0 3.5px color-mix(in srgb,var(--c,#3b82f6) 70%,transparent),
       0 0 12px -2px color-mix(in srgb,var(--c,#3b82f6) 60%,transparent)}
-    50%{box-shadow:0 0 0 2px color-mix(in srgb,var(--c,#3b82f6) 95%,transparent),
+    50%{box-shadow:0 0 0 1.5px #0b1016,0 0 0 3.5px color-mix(in srgb,var(--c,#3b82f6) 95%,transparent),
       0 0 20px 1px color-mix(in srgb,var(--c,#3b82f6) 45%,transparent)}}
 
   .rail{width:76px !important}
-  .rail-etiketler{gap:14px !important;padding:6px 0 !important;width:50px !important;
+  .rail-etiketler{gap:11px !important;padding:6px 0 !important;width:50px !important;
     margin:2px auto 0 !important;border-radius:0 !important;flex-direction:column !important;
     align-items:center !important;position:relative !important;
     background:transparent !important;border:none !important;box-shadow:none !important;
@@ -2677,15 +2677,6 @@
     scrollbar-width:none !important}
   html[data-theme="dark"] .rail-etiketler{background:transparent !important;border:none !important;
     box-shadow:none !important}
-  /* etiketleri birbirine bağlayan dikey çizgi */
-  .rail-etiket + .rail-etiket::after{content:"" !important;position:absolute !important;
-    left:50% !important;top:-14px !important;width:2px !important;height:14px !important;
-    transform:translateX(-50%) !important;z-index:0 !important;pointer-events:none !important;
-    background:linear-gradient(180deg,color-mix(in srgb,var(--text) 22%,transparent),
-      color-mix(in srgb,var(--text) 12%,transparent)) !important}
-  html[data-theme="dark"] .rail-etiket + .rail-etiket::after{
-    background:linear-gradient(180deg,rgba(255,255,255,.2),rgba(255,255,255,.09)) !important}
-  #sidebarEtiketBar .rail-etiket + .rail-etiket::after{display:none !important}
 
   .rail-etiket{width:32px !important;height:32px !important;border-radius:50% !important;
     display:grid !important;place-items:center !important;position:relative !important;
@@ -2699,12 +2690,12 @@
     position:relative !important;overflow:visible !important;z-index:2 !important;
     display:grid !important;place-items:center !important;
     filter:saturate(1.25) brightness(1.06) !important;
-    border:none !important;box-shadow:none;
+    border:none !important;box-shadow:0 0 0 1.5px #0b1016;
     transition:box-shadow 180ms ease-out,filter 180ms ease-out !important}
   .rail-etiket .re-nokta::before{display:none !important}
   .rail-etiket .re-nokta::after{display:none !important}
   .rail-etiket:hover .re-nokta{filter:saturate(1.4) brightness(1.12) !important;
-    box-shadow:0 0 14px -2px color-mix(in srgb,var(--c,#3b82f6) 70%,transparent)}
+    box-shadow:0 0 0 1.5px #0b1016,0 0 14px -2px color-mix(in srgb,var(--c,#3b82f6) 70%,transparent)}
   .rail-etiket.aktif .re-nokta{animation:etiketAktifNabiz 2.2s ease-in-out infinite !important}
 
   /* kırmızı sayı: siyah kontur + gölge, her renkte net okunur */
