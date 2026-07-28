@@ -2668,7 +2668,7 @@
       0 0 20px 1px color-mix(in srgb,var(--c,#3b82f6) 45%,transparent)}}
 
   .rail{width:76px !important}
-  .rail-etiketler{gap:11px !important;padding:11px 0 !important;width:56px !important;
+  .rail-etiketler{gap:10px !important;padding:11px 0 !important;width:50px !important;
     margin:2px auto 0 !important;border-radius:18px !important;flex-direction:column !important;
     align-items:center !important;
     background:var(--panel-2) !important;border:1px solid var(--border) !important;
@@ -2677,7 +2677,7 @@
   html[data-theme="dark"] .rail-etiketler{background:#182430 !important;
     border-color:rgba(255,255,255,.06) !important;box-shadow:none !important}
 
-  .rail-etiket{width:38px !important;height:38px !important;border-radius:50% !important;
+  .rail-etiket{width:32px !important;height:32px !important;border-radius:50% !important;
     display:grid !important;place-items:center !important;position:relative !important;
     background:transparent !important;transition:transform 180ms cubic-bezier(.2,.8,.2,1) !important}
   .rail-etiket::before{display:none !important}
@@ -2685,7 +2685,7 @@
   .rail-etiket:active{transform:scale(.97) !important}
 
   /* canlı düz renk: gradyan, cam, iç gölge yok */
-  .rail-etiket .re-nokta{width:38px !important;height:38px !important;border-radius:50% !important;
+  .rail-etiket .re-nokta{width:32px !important;height:32px !important;border-radius:50% !important;
     position:relative !important;overflow:visible !important;z-index:2 !important;
     display:grid !important;place-items:center !important;
     filter:saturate(1.25) brightness(1.06) !important;
@@ -2702,12 +2702,13 @@
     display:grid !important;place-items:center !important;z-index:6 !important;
     width:auto !important;height:auto !important;min-width:0 !important;padding:0 !important;
     background:transparent !important;box-shadow:none !important;border:none !important;
-    border-radius:50% !important;color:#ff3b30 !important;
-    font-size:14px !important;font-weight:900 !important;letter-spacing:-.03em !important;
+    border-radius:50% !important;color:#ffffff !important;
+    font-size:14.5px !important;font-weight:900 !important;letter-spacing:-.02em !important;
+    font-style:italic !important;transform:skewX(-9deg) !important;
     font-variant-numeric:tabular-nums !important;line-height:1 !important;
     -webkit-text-stroke:2.2px #0b1016 !important;paint-order:stroke fill !important;
     text-shadow:0 1px 2px rgba(0,0,0,.7) !important}
-  .rail-etiket .re-ad{position:absolute !important;left:52px !important;top:50% !important;
+  .rail-etiket .re-ad{position:absolute !important;left:46px !important;top:50% !important;
     transform:translateY(-50%) !important;background:#0b1016 !important;color:#eef2f7 !important;
     border:none !important;border-radius:9px !important;font-weight:600 !important;font-size:12px !important;
     padding:5px 10px !important;box-shadow:0 6px 18px -8px rgba(0,0,0,.6) !important;
