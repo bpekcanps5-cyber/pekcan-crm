@@ -2012,6 +2012,11 @@
     .msg{ max-width:86%; }
     .main-tab span{ font-size:12px; }
   }
+
+  /* Panel kullanicisi adindaki kucuk profil fotografi */
+  .sender-name .tn-foto{width:16px;height:16px;border-radius:50%;background-size:cover;background-position:center;flex-shrink:0;box-shadow:0 0 0 1px rgba(255,255,255,.2)}
+  .sender-name.clickable{cursor:pointer}
+  .sender-name.clickable:hover{filter:brightness(1.15)}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -2714,6 +2719,15 @@
     border:none !important;border-radius:9px !important;font-weight:600 !important;font-size:12px !important;
     padding:5px 10px !important;box-shadow:0 6px 18px -8px rgba(0,0,0,.6) !important;
     backdrop-filter:none !important}
+
+  /* ═══ PROFİL FOTOĞRAFI (rail avatarı) ═══ */
+  #settingsAvatar{position:relative !important;overflow:hidden !important;cursor:pointer !important;
+    background-size:cover !important;background-position:center !important}
+  #settingsAvatar.foto-var{color:transparent !important;font-size:0 !important}
+  #settingsAvatar::after{content:"" !important;position:absolute !important;inset:0 !important;
+    border-radius:inherit !important;opacity:0 !important;transition:opacity .16s ease !important;
+    background:rgba(11,16,22,.55) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23fff'%3E%3Cpath d='M9 3l-1.8 2H4a2 2 0 00-2 2v11a2 2 0 002 2h16a2 2 0 002-2V7a2 2 0 00-2-2h-3.2L15 3H9zm3 5a5 5 0 110 10 5 5 0 010-10zm0 2a3 3 0 100 6 3 3 0 000-6z'/%3E%3C/svg%3E") center/16px no-repeat !important}
+  #settingsAvatar:hover::after{opacity:1 !important}
 
   #sidebarEtiketBar #railEtiketler{width:auto !important;max-width:100% !important;
     flex-direction:row !important;flex-wrap:wrap !important;justify-content:center !important;
@@ -4802,6 +4816,7 @@ function connect(){
     }
     else if(d.type==='favoriler'){ favoriler.clear(); (d.liste||[]).forEach(j=>favoriler.add(j)); renderList(); }
     else if(d.type==='favoriUpdate'){ if(d.favori) favoriler.add(d.jid); else favoriler.delete(d.jid); renderList(); }
+    else if(d.type==='profilFoto'){ if(d.veri) window._panelFotolar[d.username]=d.veri; else delete window._panelFotolar[d.username]; profilFotoUygula(); if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]); }
     else if(d.type==='mesajSabitler'){ _mesajSabitler=d.durum||{}; sabitBandGuncelle(); }
     else if(d.type==='mesajSabitUpdate'){ if(d.liste&&d.liste.length) _mesajSabitler[d.jid]=d.liste; else delete _mesajSabitler[d.jid]; if(d.jid===activeJid) sabitBandGuncelle(); }
     else if(d.type==='buradayimUpdate'){ handleBuradayimUpdate(d.jid, d.liste); }
@@ -5071,6 +5086,7 @@ function benimAdim(){
 }
 
 function startApp(){
+  try{ panelFotolariYukle(); }catch(e){}  // panel profil fotograflarini sunucudan cek
   // panele giris yapildi - WebSocket'i baslat (bir kez)
   pinnedYukle(); // sabitlenen sohbetleri tarayıcıdan geri yükle (kaybolmasın)
   isaretliYukle(); // işaretli mesajları tarayıcıdan geri yükle (KALICI işaretler)
@@ -9585,7 +9601,9 @@ function renderMessages(c, searchQ){
       if(m.fromMe){
         // PANEL KULLANICISI: kalkan ikonlu yeşil pill (tıklanmaz — WhatsApp kişisi değil, ekip üyesi)
         const panelRozet='<span class="panel-rozet" title="Panel kullanıcısı"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></span>';
-        name='<div class="sender-name team-name">'+panelRozet+sn+'</div>';
+        const _pf=(window._panelFotolar&&(_panelFotolar[sn]))||'';
+        const _pfAv=_pf?'<span class="tn-foto" style="background-image:url(\''+_pf+'\')"></span>':'';
+        name='<div class="sender-name team-name clickable" onclick="panelKisiGoster(\''+sn.replace(/'/g,"\\'")+'\')" title="Fotoğrafı gör">'+_pfAv+panelRozet+sn+'</div>';
       } else {
         // GELEN grup mesajı: ofis ekibinden mi? (adı Pekcan vb. VEYA sunucu işaretledi)
         const ofisMu = m.senderOfis || ofisIsmiMi(m.sender);
@@ -11269,6 +11287,52 @@ function telFormatla(num){
   // diğer ülkeler / bilinmeyen uzunluk -> sondan 3'erli grupla (yine okunaklı)
   return '+'+s.replace(/(\d)(?=(\d{3})+$)/g,'$1 ');
 }
+
+// ═══ PANEL PROFIL FOTOGRAFLARI (sunucuda saklanir, herkes gorur) ═══
+window._panelFotolar = {};
+async function panelFotolariYukle(){
+  try{
+    const r=await fetch('/api/profile/avatars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
+    const d=await r.json();
+    if(d.ok){ window._panelFotolar=d.fotolar||{}; profilFotoUygula(); if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]); }
+  }catch(e){}
+}
+// Kendi avatarini ekranda uygula (rail + ayarlar)
+function profilFotoUygula(){
+  const ad=(currentUser&&(currentUser.displayName||currentUser.username))||'';
+  const veri=window._panelFotolar[ad]||window._panelFotolar[(currentUser&&currentUser.username)||'']||'';
+  ['settingsAvatar','railAvatar'].forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    if(veri){ el.style.backgroundImage='url("'+veri+'")'; el.classList.add('foto-var'); }
+    else { el.style.backgroundImage=''; el.classList.remove('foto-var'); }
+  });
+}
+// Panel kullanicisinin adina tiklayinca: fotografini buyuk goster
+function panelKisiGoster(ad){
+  const veri=window._panelFotolar[ad]||'';
+  if(veri){ try{ openLightbox(veri); return; }catch(e){} }
+  const av=document.getElementById('senderAv');
+  if(av){ av.style.backgroundImage=''; av.style.background=gradientFor(ad); av.textContent=initials(ad); }
+  const n=document.getElementById('senderName2'); if(n) n.textContent=ad;
+  const t=document.getElementById('senderPhone2'); if(t) t.textContent='Panel kullanıcısı';
+  ['senderDM','senderCopy'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
+  const m=document.getElementById('senderModal'); if(m) m.classList.add('show');
+}
+// Kendi fotografini sunucuya kaydet / kaldir
+async function profilFotoKaydet(veri){
+  try{
+    const r=await fetch('/api/profile/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,veri:veri})});
+    const d=await r.json();
+    if(d.ok){
+      const ad=(currentUser&&(currentUser.displayName||currentUser.username))||'';
+      if(veri){ window._panelFotolar[ad]=veri; } else { delete window._panelFotolar[ad]; }
+      profilFotoUygula();
+      if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]);
+      showToast(veri?'✓ Profil fotoğrafı güncellendi (herkes görecek)':'Profil fotoğrafı kaldırıldı');
+    } else showToast(d.error||'Kaydedilemedi');
+  }catch(e){ showToast('Sunucu hatası'); }
+}
+
 function showSenderInfo(jid, name){
   if(!jid){ showToast('Bu kişinin bilgisi yok'); return; }
   const isLid = jid.endsWith('@lid');
@@ -12408,6 +12472,68 @@ function handleNewChatResult(d){
   }
   var bek2=setInterval(function(){ if(sarmala()) clearInterval(bek2); },150);
   setTimeout(function(){ clearInterval(bek2); },10000);
+})();
+</script>
+<script>
+/* Profil fotoğrafı: rail avatarına tıklayınca menü, "Fotoğraf Değiştir" ile yükle (kişiye özel, tarayıcıda saklanır) */
+(function(){
+  function anahtar(){
+    var u=(window.currentUser&&(currentUser.username||currentUser.displayName))||'kullanici';
+    return 'profilFoto_'+u;
+  }
+  function uygula(){
+    var av=document.getElementById('settingsAvatar'); if(!av) return;
+    var d=null;
+    var ad=(window.currentUser&&(currentUser.displayName||currentUser.username))||'';
+    if(window._panelFotolar&&_panelFotolar[ad]) d=_panelFotolar[ad];
+    if(!d){ try{ d=localStorage.getItem(anahtar()); }catch(e){} }
+    if(d){ av.style.backgroundImage='url('+d+')'; av.classList.add('foto-var'); }
+    else { av.style.backgroundImage=''; av.classList.remove('foto-var'); }
+  }
+  function sec(){
+    var inp=document.createElement('input');
+    inp.type='file'; inp.accept='image/*';
+    inp.onchange=function(){
+      var f=inp.files&&inp.files[0]; if(!f) return;
+      var fr=new FileReader();
+      fr.onload=function(){
+        var img=new Image();
+        img.onload=function(){
+          var k=256, c=document.createElement('canvas'); c.width=k; c.height=k;
+          var x=c.getContext('2d'), m=Math.min(img.width,img.height);
+          x.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,k,k);
+          var veri=c.toDataURL('image/jpeg',.86);
+          if(typeof profilFotoKaydet==='function'){ profilFotoKaydet(veri); }
+          else { try{ localStorage.setItem(anahtar(),veri); }catch(e){} uygula(); }
+        };
+        img.src=fr.result;
+      };
+      fr.readAsDataURL(f);
+    };
+    inp.click();
+  }
+  function kaldir(){
+    try{ localStorage.removeItem(anahtar()); }catch(e){}
+    if(typeof profilFotoKaydet==='function'){ profilFotoKaydet(null); } else { uygula(); }
+  }
+  function menuyeEkle(){
+    var m=document.getElementById('settingsMenu');
+    if(!m||document.getElementById('profilFotoBtn')) return;
+    var ilk=m.firstElementChild;
+    var b=document.createElement('div');
+    b.className=(ilk&&ilk.className)||'sm-item';
+    b.id='profilFotoBtn';
+    b.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><path d="M9 3l-1.8 2H4a2 2 0 00-2 2v11a2 2 0 002 2h16a2 2 0 002-2V7a2 2 0 00-2-2h-3.2L15 3H9zm3 5a5 5 0 110 10 5 5 0 010-10zm0 2a3 3 0 100 6 3 3 0 000-6z"/></svg><span>Profil Fotoğrafı</span>';
+    b.onclick=function(e){ e.stopPropagation(); m.classList.remove('show'); sec(); };
+    var b2=document.createElement('div');
+    b2.className=b.className; b2.id='profilFotoKaldirBtn';
+    b2.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><path d="M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg><span>Fotoğrafı Kaldır</span>';
+    b2.onclick=function(e){ e.stopPropagation(); m.classList.remove('show'); kaldir(); };
+    if(ilk){ m.insertBefore(b, ilk); m.insertBefore(b2, ilk); } else { m.appendChild(b); m.appendChild(b2); }
+  }
+  function kur(){ uygula(); menuyeEkle(); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',kur); else kur();
+  setTimeout(kur,1500); setTimeout(kur,4000);
 })();
 </script>
 </body>

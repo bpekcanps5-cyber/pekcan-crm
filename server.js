@@ -310,6 +310,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const sessions = new Map(); // token -> { username, displayName, role, ts }
 // BAĞIMSIZ OKUMA yan-rolü olan kullanıcı adları (bellek-içi; açılışta DB'den dolar, restart'a dayanıklı).
 let bagimsizOkumaKullanicilar = new Set();
+const profilFotolar = {}; // username -> data-url (panel profil fotograflari)
 async function bagimsizOkumaYukle() {
   try { const us = await db.listUsers(); bagimsizOkumaKullanicilar = new Set(us.filter(u => u.bagimsiz_okuma).map(u => u.username)); }
   catch (e) { /* db henüz hazır değilse boş kalır, sonra tekrar yüklenir */ }
@@ -1381,6 +1382,36 @@ app.post('/api/users/bagimsizokuma', express.json(), async (req, res) => {
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }
+});
+
+// ═══ PANEL PROFIL FOTOGRAFI ═══
+// Kendi fotografini kaydet/kaldir. Sunucuda durur -> her cihazdan gorunur, HERKES gorur.
+app.post('/api/profile/avatar', express.json({ limit: '3mb' }), async (req, res) => {
+  const s = sessions.get(req.body?.token);
+  if (!s) return res.json({ ok: false, error: 'Yetki yok' });
+  const veri = req.body?.veri || null;
+  if (veri && (typeof veri !== 'string' || !veri.startsWith('data:image/') || veri.length > 2000000))
+    return res.json({ ok: false, error: 'Geçersiz görsel' });
+  try {
+    await db.setUserAvatar(s.username, veri);
+    profilFotolar[s.username] = veri || undefined;
+    if (!veri) delete profilFotolar[s.username];
+    // herkese aninda bildir: acik panellerde foto hemen guncellensin
+    for (const [, l] of lines) {
+      try { broadcastHat(l.id || 'ofis', { type: 'profilFoto', username: s.username, veri: veri || null }); } catch (e) {}
+    }
+    res.json({ ok: true });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+// Tum panel kullanicilarinin fotograflari (panel acilista bir kez ceker)
+app.post('/api/profile/avatars', express.json(), async (req, res) => {
+  if (!sessions.get(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  try {
+    const rows = await db.listUserAvatars();
+    const harita = {};
+    for (const r of rows) { if (r.avatar) { harita[r.username] = r.avatar; if (r.display_name) harita[r.display_name] = r.avatar; } }
+    res.json({ ok: true, fotolar: harita });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
 // ---- HIZLI YANITLAR (quick replies) — ortak sablonlar ----

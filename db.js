@@ -49,6 +49,9 @@ async function test() {
       pool.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS ozel_unread INTEGER DEFAULT 0')
         .then(() => console.log('   ✓ chats.ozel_unread kolonu hazır (bağımsız okuma rolü)'))
         .catch((e) => console.log('   ⚠️ ozel_unread eklenemedi:', e.message));
+      pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT')
+        .then(() => console.log('   ✓ users.avatar kolonu hazır (panel profil fotoğrafı)'))
+        .catch((e) => console.log('   ⚠️ avatar eklenemedi:', e.message));
       pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS bagimsiz_okuma BOOLEAN DEFAULT false')
         .then(() => console.log('   ✓ users.bagimsiz_okuma kolonu hazır (bağımsız okuma rolü)'))
         .catch((e) => console.log('   ⚠️ bagimsiz_okuma eklenemedi:', e.message));
@@ -1040,6 +1043,21 @@ async function setUserRole(id, role) {
   catch (e) { return { ok: false, error: e.message }; }
 }
 
+// PANEL PROFIL FOTOGRAFI: kendi fotografini kaydet (data-url) veya kaldir (null).
+async function setUserAvatar(username, veri) {
+  if (!aktif) return { ok: false };
+  try { await pool.query('UPDATE users SET avatar=$1 WHERE username=$2', [veri || null, username]); return { ok: true }; }
+  catch (e) { return { ok: false, error: e.message }; }
+}
+// Tum panel kullanicilarinin fotografi (panelde herkes birbirinin fotosunu gorsun).
+async function listUserAvatars() {
+  if (!aktif) return [];
+  try {
+    const r = await pool.query("SELECT username, display_name, avatar FROM users WHERE avatar IS NOT NULL AND avatar <> ''");
+    return r.rows;
+  } catch (e) { return []; }
+}
+
 // BAĞIMSIZ OKUMA yan-rolünü aç/kapat (yönetici). role'den bağımsız bir bayrak.
 async function setBagimsizOkuma(id, val) {
   if (!aktif) return { ok: false };
@@ -1650,6 +1668,7 @@ module.exports = {
   loadAll, loadMessages, deleteMessage, wipeAll, wipeGroups, searchMessages,
   cleanupOld, startCleanup,
   ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, setBagimsizOkuma, updateUser,
+  setUserAvatar, listUserAvatars,
   getOwnPassword, listUsersWithPasswords,
   saveInternalMessage, loadInternalConversation, listInternalConversations,
   markInternalRead, internalUnreadCount,
