@@ -2840,6 +2840,53 @@
   .badge,.chat .badge,.main-tab .tab-badge{background:var(--unread) !important;color:#fff !important;
     border:none !important;text-shadow:none !important}
   html[data-skin="kum"] .badge{color:#fff !important}
+
+  /* Tema listesi katlanabilir kalsın */
+  #skinGrid.kapali,.skin-grid.kapali{display:none !important}
+  .tema-baslik{cursor:pointer !important;font-weight:700 !important}
+
+  /* Grup açıklaması bandı: her temada uyumlu */
+  .group-desc{background:var(--panel-2) !important;border-bottom:1px solid var(--border) !important;
+    color:var(--text) !important}
+  .group-desc .dt{color:var(--muted) !important}
+  html[data-skin="kum"] .group-desc{background:#fbf3e4 !important;border-bottom-color:#e6d9c2 !important}
+  html[data-skin="kum"] .group-desc .dt{color:#8a6a2f !important}
+  .group-desc button,.group-desc .btn,.group-desc a[onclick]{border-radius:20px !important;
+    background:var(--brand) !important;color:#fff !important;border:none !important;
+    box-shadow:none !important;font-weight:700 !important}
+  .group-desc button:hover,.group-desc .btn:hover{background:var(--ink-2) !important}
+  .group-desc button:last-child,.group-desc .gd-yenile{background:var(--panel) !important;
+    color:var(--muted) !important;border:1px solid var(--border) !important}
+  .group-desc button:last-child:hover,.group-desc .gd-yenile:hover{color:var(--text) !important;
+    background:var(--panel-2) !important}
+
+  /* Filtre sayıları: rozet yok, düz metin */
+  .filter .n{background:transparent !important;border:none !important;box-shadow:none !important;
+    padding:0 !important;min-width:0 !important;border-radius:0 !important;
+    color:var(--faint) !important;font-size:12.5px !important;font-weight:600 !important;
+    margin-left:3px !important;line-height:inherit !important}
+  .filter.active .n{color:inherit !important;opacity:.75 !important}
+  .filter.filter-yonetici .n,.filter.filter-favori .n,.filter.filter-buradayim .n{
+    background:transparent !important;color:inherit !important;opacity:.7 !important}
+
+  /* Bildirim/sayac kartları yazı alanını kapatmasın */
+  #toast{bottom:118px !important}
+  .toplu-sayac{bottom:136px !important}
+  #takipKartlar{bottom:124px !important}
+  .eski-yuk-not{z-index:6 !important}
+
+  /* Arama kutusu: tam yuvarlatılmış tek yüzey */
+  .search-wrap{background:var(--panel-2) !important;border:none !important;border-radius:20px !important;
+    overflow:hidden !important}
+  html[data-theme="dark"] .search-wrap{background:#202c33 !important}
+  html[data-skin="gece"] .search-wrap,html[data-skin="orman"] .search-wrap,html[data-skin="mor"] .search-wrap,
+  html[data-skin="kum"] .search-wrap{background:var(--panel-2) !important}
+  .search-wrap input{background:transparent !important;border:none !important;border-radius:20px !important;
+    box-shadow:none !important;padding:11px 40px 11px 44px !important}
+  .search-wrap:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 35%,transparent) !important}
+  .search-clear{background:transparent !important;border:none !important}
+  .search-clear:hover{background:rgba(11,20,26,.08) !important}
+  html[data-theme="dark"] .search-clear:hover{background:rgba(255,255,255,.08) !important}
   #kasSatislar,#satisEkleBtn,#satisHizli,#satisModal,#satisBransSecim{display:none !important}
 </style>
 </head>
