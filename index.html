@@ -2868,22 +2868,25 @@
   html.rail-kapali #railAcHandle{display:grid}
 
   /* Rail kapalıyken: etiketler sohbet listesinin altında yatay şerit */
-  #sidebarEtiketBar{display:none;flex-direction:column;gap:6px;padding:9px 12px 11px;
+  #sidebarEtiketBar{display:none;flex-direction:column;align-items:center;gap:6px;padding:9px 12px 11px;
     border-top:1px solid var(--border);background:var(--panel);flex-shrink:0}
   html.rail-kapali #sidebarEtiketBar{display:flex}
   html.rail-kapali #sidebarEtiketBar:has(#railEtiketler:empty){display:none}
   #sidebarEtiketBar .seb-baslik{font-size:10.5px;font-weight:700;letter-spacing:.1em;
     text-transform:uppercase;color:var(--faint)}
   #sidebarEtiketBar #railEtiketler{flex-direction:row !important;flex-wrap:wrap !important;
-    align-items:center !important;justify-content:center !important;gap:12px 14px !important;
-    max-height:96px !important;overflow-y:auto !important;padding:2px 0 !important;width:100% !important}
+    align-items:center !important;justify-content:center !important;align-content:center !important;
+    gap:12px 14px !important;max-height:96px !important;overflow-y:auto !important;
+    padding:2px 0 !important;width:100% !important;margin:0 auto !important;text-align:center !important}
   #sidebarEtiketBar .seb-baslik{text-align:center}
   #sidebarEtiketBar .rail-etiket{margin:0 !important}
   #sidebarEtiketBar #railEtiketAcKapa{display:none !important}
   #sidebarEtiketBar .rail-etiket .re-ad{left:auto !important;bottom:calc(100% + 7px) !important;
     top:auto !important;transform:translateX(-30%) !important}
-  #railKapaBtn{width:34px;height:24px;margin-top:4px;border:none;background:transparent;cursor:pointer;
-    display:grid;place-items:center;border-radius:12px;color:var(--faint)}
+  #railKapaBtn{width:34px;height:26px;margin:0 0 8px;cursor:pointer;
+    display:grid;place-items:center;border-radius:13px;color:var(--muted);
+    background:var(--panel-2);border:1px solid var(--border)}
+  #railKapaBtn:hover{background:var(--brand-soft);color:var(--ink);border-color:var(--brand)}
   #railKapaBtn:hover{background:var(--panel-2);color:var(--text)}
   #railKapaBtn svg{width:15px;height:15px}
 
@@ -12342,7 +12345,8 @@ function handleNewChatResult(d){
         etiketBarTasi(true);
       };
       var sp=rail.querySelector('.rail-spacer');
-      if(sp) rail.insertBefore(k, sp); else rail.appendChild(k);
+      var av=rail.querySelector('#settingsAvatar');
+      if(av) rail.insertBefore(k, av); else if(sp) rail.insertBefore(k, sp.nextSibling); else rail.appendChild(k);
 
       var h=document.createElement('button');
       h.id='railAcHandle';
