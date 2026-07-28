@@ -2745,7 +2745,7 @@
   #skinGrid,.skin-grid{display:grid !important}
   .skin-card{display:none !important}
   .skin-card[data-skin="klasik"],.skin-card[data-skin="gece"],.skin-card[data-skin="orman"],
-  .skin-card[data-skin="kum"],.skin-card[data-skin="mor"]{display:flex !important;
+  .skin-card[data-skin="kum"],.skin-card[data-skin="mor"],.skin-card[data-skin="gul"]{display:flex !important;
     border-radius:10px !important;border:1px solid var(--border) !important;background:var(--panel-2) !important}
   .skin-card.aktif,.skin-card.active{border-color:var(--brand) !important;box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 30%,transparent) !important}
   .skin-prev{border-radius:8px !important}
@@ -2754,6 +2754,7 @@
   .skin-card[data-skin="orman"] .skin-prev{background:linear-gradient(135deg,#0a1a14 50%,#2dd4a8 50%) !important}
   .skin-card[data-skin="kum"] .skin-prev{background:linear-gradient(135deg,#f4ece0 50%,#b8873b 50%) !important}
   .skin-card[data-skin="mor"] .skin-prev{background:linear-gradient(135deg,#15102a 50%,#a974ff 50%) !important}
+  .skin-card[data-skin="gul"] .skin-prev{background:linear-gradient(135deg,#fdf1f4 50%,#d95d86 50%) !important}
 
   /* 1) GECE — koyu lacivert + mavi */
   html[data-skin="gece"],html[data-theme="dark"][data-skin="gece"]{
@@ -2795,6 +2796,70 @@
     --text:#ece6fa !important; --muted:#9d8fc4 !important; --faint:#7566a0 !important;
     --border:#261c45 !important; --border-soft:#261c45 !important;
     --unread:#a974ff !important; --group:#c39bf5 !important; --desen:rgba(236,230,250,.04) !important}
+
+  /* 5) GÜL — açık pembe */
+  html[data-skin="gul"],html[data-theme="dark"][data-skin="gul"]{
+    --ink:#b03a63 !important; --ink-2:#992f54 !important;
+    --brand:#c9436f !important; --brand-hi:#d95d86 !important; --brand-soft:#fce7ee !important;
+    --gold:#b8873b !important; --gold-soft:#fdf3dd !important;
+    --bg:#f2e3e8 !important; --panel:#fffafb !important; --panel-2:#fbebf0 !important; --chat-bg:#fbeef2 !important;
+    --in:#fffafb !important; --out:#fbd8e4 !important;
+    --text:#3a1f29 !important; --muted:#8a6472 !important; --faint:#b08c98 !important;
+    --border:#f0d8e0 !important; --border-soft:#f7e6ec !important;
+    --unread:#c9436f !important; --group:#b03a63 !important; --desen:rgba(58,31,41,.035) !important}
+  html[data-skin="gul"] .day-sep,html[data-skin="gul"] .sys-msg{background:#fffafb !important;color:#8a6472 !important}
+  html[data-skin="gul"] .group-desc{background:#fdf2f6 !important;border-bottom-color:#f0d8e0 !important}
+  html[data-skin="gul"] .group-desc .dt{color:#b03a63 !important}
+  html[data-skin="gul"] .badge{color:#fff !important}
+
+  /* Koyu modda/temalarda da sayılar düz metin (kare/rozet yok) */
+  html[data-theme="dark"] .filter .n,html[data-skin] .filter .n,
+  html[data-theme="dark"] .filter.filter-yonetici .n,html[data-theme="dark"] .filter.filter-favori .n,
+  html[data-theme="dark"] .filter.filter-buradayim .n,
+  html[data-skin] .filter.filter-yonetici .n,html[data-skin] .filter.filter-favori .n,
+  html[data-skin] .filter.filter-buradayim .n{
+    background:transparent !important;border:none !important;box-shadow:none !important;
+    padding:0 !important;min-width:0 !important;width:auto !important;border-radius:0 !important;
+    color:inherit !important;opacity:.62 !important;font-size:12.5px !important;font-weight:600 !important;
+    margin-left:3px !important}
+  html[data-theme="dark"] .filter.active .n,html[data-skin] .filter.active .n{opacity:.78 !important}
+
+  /* "Buradayım" aktifken canlı: dolu marka dairesi + nabız halkası */
+  @keyframes buradayimNabiz{
+    0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brand) 55%,transparent)}
+    70%{box-shadow:0 0 0 10px rgba(0,0,0,0)}
+    100%{box-shadow:0 0 0 0 rgba(0,0,0,0)}}
+  .buradayim-btn.aktif,.buradayim-btn.active{background:var(--brand) !important;color:#fff !important;
+    animation:buradayimNabiz 1.9s cubic-bezier(.4,0,.2,1) infinite !important;
+    transform:none !important}
+  .buradayim-btn.aktif svg,.buradayim-btn.active svg{filter:drop-shadow(0 1px 2px rgba(0,0,0,.35)) !important;
+    transform:scale(1.06)}
+  .buradayim-btn.aktif:hover,.buradayim-btn.active:hover{background:var(--ink-2) !important}
+
+  /* *yıldız içindeki* metin: rengarenk gradyan + hafif akış */
+  @keyframes mdBoldKay{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+  .msg .md-bold{
+    font-weight:800 !important;letter-spacing:-.01em !important;
+    background:linear-gradient(100deg,#f0362a,#f5a623,#16b364,#2f7ef0,#9b4df5,#f0362a) !important;
+    background-size:200% auto !important;
+    -webkit-background-clip:text !important;background-clip:text !important;
+    -webkit-text-fill-color:transparent !important;color:transparent !important;
+    animation:mdBoldKay 6s linear infinite !important;
+    text-shadow:none !important;padding:0 1px !important}
+  html[data-theme="dark"] .msg .md-bold,html[data-skin="gece"] .msg .md-bold,
+  html[data-skin="orman"] .msg .md-bold,html[data-skin="mor"] .msg .md-bold{
+    background:linear-gradient(100deg,#ff6b5e,#ffc44d,#3ddc97,#63a8ff,#c39bf5,#ff6b5e) !important;
+    background-size:200% auto !important}
+
+  /* Etiket listesi aç/kapa düğmesi */
+  #railEtiketAcKapa{width:34px;height:22px;margin:2px 0 0;border:none;cursor:pointer;
+    display:grid;place-items:center;border-radius:11px;background:transparent;color:var(--faint);
+    transition:background .14s ease,color .14s ease}
+  #railEtiketAcKapa:hover{background:var(--panel-2);color:var(--text)}
+  #railEtiketAcKapa svg{width:15px;height:15px;transition:transform .18s ease}
+  html.etiket-kapali #railEtiketler{display:none !important}
+  html.etiket-kapali #railEtiketAcKapa svg{transform:rotate(-90deg)}
+  html.etiket-kapali #railEtiketAcKapa{color:var(--brand);background:var(--brand-soft)}
 
   /* Renkli filtreler ve butonlar temaya uysun */
   html[data-skin="gece"] .filter.active,html[data-skin="orman"] .filter.active,
@@ -12168,5 +12233,27 @@ function handleNewChatResult(d){
      Şifre korumalı. İlk açılışta şifre kurulur, tarayıcıda saklanır.
      ═══════════════════════════════════════════════════════════ -->
 
+<script>
+/* Etiket listesini aç/kapa (rail) — durum hatırlanır */
+(function(){
+  function kur(){
+    var liste=document.getElementById('railEtiketler');
+    if(!liste||document.getElementById('railEtiketAcKapa'))return;
+    try{ if(localStorage.getItem('railEtiketKapali')==='1') document.documentElement.classList.add('etiket-kapali'); }catch(e){}
+    var b=document.createElement('button');
+    b.id='railEtiketAcKapa';
+    b.title='Etiket listesini aç/kapa';
+    b.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>';
+    b.onclick=function(){
+      var k=document.documentElement.classList.toggle('etiket-kapali');
+      try{ localStorage.setItem('railEtiketKapali', k?'1':'0'); }catch(e){}
+    };
+    liste.parentNode.insertBefore(b, liste);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',kur);
+  else kur();
+  setTimeout(kur,1200);
+})();
+</script>
 </body>
 </html>
