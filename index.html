@@ -12739,20 +12739,36 @@ window.icMesajKisiBilgi=function(kullanici){
     if(ta){ ta.focus(); try{ ta.selectionStart = ta.selectionEnd = ta.value.length; }catch(_){} }
   });
 
-  // 2) Profil tusu: tek ve kesin baglanti (kaplama/cakisma yuzunden bazen acilmiyordu)
+  // 2) Profil tusu: menuyu ACARKEN KONUMLANDIR (orijinal davranis). Konum verilmezse
+  //    menu ekran disinda kaliyor ve "acilmiyor" gibi gorunuyordu.
+  function ayarMenusunuAc(av){
+    var m = document.getElementById('settingsMenu');
+    if(!m || !av) return;
+    var r = av.getBoundingClientRect();
+    m.style.left = (r.right + 10) + 'px';
+    m.style.bottom = (window.innerHeight - r.bottom) + 'px';
+    m.classList.toggle('show');
+  }
   function profilTusuBagla(){
     var av = document.getElementById('settingsAvatar');
     if(!av || av.__bagli) return;
     av.__bagli = true;
     av.addEventListener('click', function(e){
       e.preventDefault(); e.stopPropagation();
-      var m = document.getElementById('settingsMenu');
-      if(m) m.classList.toggle('show');
-    }, true); // capture: baska hicbir sey engelleyemesin
+      ayarMenusunuAc(av);
+    }, true);
   }
   profilTusuBagla();
   setTimeout(profilTusuBagla, 1000);
   setTimeout(profilTusuBagla, 3000);
+  // Disari tiklayinca kapansin (kendi capture handler'imiz orijinali devre disi biraktigi icin)
+  document.addEventListener('click', function(e){
+    var m = document.getElementById('settingsMenu');
+    if(!m || !m.classList.contains('show')) return;
+    if(m.contains(e.target)) return;
+    if(e.target.closest && e.target.closest('#settingsAvatar')) return;
+    m.classList.remove('show');
+  });
 
   // 3) Etiket ac/kapa: tus nerede olursa olsun calissin (rail'de ya da kenar cubugunda)
   document.addEventListener('click', function(e){
