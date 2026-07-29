@@ -3224,6 +3224,25 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ type: 'opOk', message: 'Çıkarıldı.' }));
       }
 
+      // TUM ATAMALARI TOPLU KALDIR (yonetici): "Etiketlenenler" listesini tek tusla bosalt.
+      else if (msg.type === 'tumAtamalariKaldir') {
+        if (ws._role !== 'admin' && ws._role !== 'pzr_yonetici') {
+          ws.send(JSON.stringify({ type: 'opError', error: 'Bu işlem için yönetici olmalısın.' }));
+          return;
+        }
+        const hepsi = [...chatAssignments.entries()];
+        let sayi = 0;
+        for (const [cjid, users] of hepsi) {
+          if (!users || !users.length) { chatAssignments.delete(cjid); continue; }
+          for (const u of users) { db.removeAssignment(cjid, u).catch(() => {}); }
+          chatAssignments.delete(cjid);
+          broadcastHat('ofis', { type: 'assignmentUpdate', jid: cjid, users: [] });
+          sayi++;
+        }
+        console.log(`   🧹 TUM ATAMALAR KALDIRILDI: ${sayi} sohbet (${ws._username})`);
+        ws.send(JSON.stringify({ type: 'opOk', message: sayi + ' sohbetteki etiket kaldırıldı.' }));
+      }
+
       // FOTO/MEDYA İŞARETLEME (ortak "yapıldı" tiki): bellekte işaretle + DB'ye yaz + tüm panellere yay.
       else if (msg.type === 'mesajIsaretle') {
         const cjid = msg.jid;
