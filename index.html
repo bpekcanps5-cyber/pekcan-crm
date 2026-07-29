@@ -2028,6 +2028,29 @@
   /* Yazma kutusu: bos alana basinca da yaziya odaklan (sagda olu alan kalmasin) */
   .composer{cursor:text}
   .composer .composer-arac-satir,.composer button,.composer .composer-sol{cursor:default}
+
+  /* ═══ SOL SERIT ALT TUSLARI: HER ZAMAN GORUNUR + RAHAT TIKLANIR ═══
+     Sorun: etiket listesi 42vh'ye kadar buyuyunce alttaki katla-tusu ve profil
+     asagi itilip kirpiliyordu; ayrica tuslar cok kucuktu (34x26). */
+  .rail{overflow:visible !important;padding-bottom:14px !important}
+  /* Etiket listesi ONCE kucululsun, alt tuslar asla ezilmesin */
+  .rail-etiketler{min-height:0 !important;flex-shrink:1 !important;max-height:34vh !important}
+  .rail-spacer{flex:1 1 auto !important;min-height:6px !important}
+
+  /* Katlama tusu: buyuk ve sabit */
+  #railKapaBtn{width:44px !important;height:38px !important;margin:0 0 10px !important;
+    flex-shrink:0 !important;position:relative;z-index:20 !important;border-radius:12px !important}
+  #railKapaBtn svg{width:17px !important;height:17px !important;pointer-events:none}
+  /* gorunmeyen genis tiklama alani */
+  #railKapaBtn::before{content:'';position:absolute;inset:-8px -10px}
+
+  /* Profil tusu: buyuk, sabit, en ustte */
+  .rail .avatar,#settingsAvatar{width:46px !important;height:46px !important;
+    flex-shrink:0 !important;position:relative;z-index:25 !important;margin-bottom:2px !important}
+  #settingsAvatar::before{content:'';position:absolute;inset:-8px;border-radius:50%}
+
+  /* Ikisini birlikte alta cakala: serit kisa kalsa bile gorunurler */
+  .rail{justify-content:flex-start}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
