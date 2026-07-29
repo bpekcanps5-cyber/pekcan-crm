@@ -2018,10 +2018,12 @@
   .sender-name.clickable{cursor:pointer}
   .sender-name.clickable:hover{filter:brightness(1.15)}
 
-  /* Toplu etiket temizleme tusu */
-  .filter.etiket-temizle{background:rgba(196,89,94,.14);color:#e08b8f;border:1px solid rgba(196,89,94,.28);font-weight:600;cursor:pointer}
-  .filter.etiket-temizle:hover{background:rgba(196,89,94,.24);color:#f0a5a8;border-color:rgba(196,89,94,.45)}
-  .filter.etiket-temizle:active{transform:scale(.97)}
+  /* Mor "Etiketlenenler" etiketinin ICINDEKI temizleme carpisi */
+  .filter .et-temizle{display:inline-grid;place-items:center;width:16px;height:16px;margin-left:7px;
+    border-radius:5px;font-size:10px;font-weight:700;line-height:1;cursor:pointer;
+    background:rgba(255,255,255,.14);color:inherit;opacity:.65;transition:all .13s}
+  .filter .et-temizle:hover{opacity:1;background:rgba(196,89,94,.85);color:#fff;transform:scale(1.12)}
+  .filter .et-temizle:active{transform:scale(.92)}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -3259,8 +3261,7 @@
       <div class="filter" data-filter="people">Kişiler<span class="n" id="fPeople"></span></div>
       <div class="filter" data-filter="mentions">Bahsedilmeler<span class="n" id="fMentions"></span></div>
       <div class="filter" data-filter="assigned">Bana Etiketlenenler<span class="n" id="fAssigned"></span></div>
-      <div class="filter filter-yonetici" data-filter="tumAtanan" id="filterTumAtanan" style="display:none">👥 Etiketlenenler<span class="n" id="fTumAtanan"></span></div>
-      <button class="filter etiket-temizle" id="btnTumEtiketTemizle" style="display:none" onclick="tumEtiketleriKaldir()" title="Tüm sohbetlerdeki kişi etiketlerini kaldır">🧹 Tümünü Çıkar</button>
+      <div class="filter filter-yonetici" data-filter="tumAtanan" id="filterTumAtanan" style="display:none">👥 Etiketlenenler<span class="n" id="fTumAtanan"></span><span class="et-temizle" id="btnTumEtiketTemizle" onclick="event.stopPropagation();tumEtiketleriKaldir()" title="Bu listedeki TÜM kişi etiketlerini kaldır">✕</span></div>
       <div class="filter filter-favori" data-filter="favoriler">⭐ Favoriler<span class="n" id="fFavori"></span></div>
       <div class="filter filter-buradayim" data-filter="buradayim">🟢 İlgilenilen<span class="n" id="fBuradayim"></span></div>
       <div class="filter" data-filter="unread">Okunmamış<span class="n" id="fUnread"></span></div>
@@ -7231,8 +7232,6 @@ function applyUser(){
   const fta=document.getElementById('filterTumAtanan');
   const yon = (currentUser.role==='admin'||currentUser.role==='pzr_yonetici');
   if(fta) fta.style.display = yon ? '' : 'none';
-  const bte=document.getElementById('btnTumEtiketTemizle');
-  if(bte) bte.style.display = yon ? '' : 'none';
   // ── KONTROL SEKMESİ + ALT SEKME YETKİLERİ ──
   // Roller: admin (yönetici), pazarlama (lineTip), muhasebeci, agent (temsilci)
   const rol = currentUser.role;
