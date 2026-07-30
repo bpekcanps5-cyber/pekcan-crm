@@ -11468,10 +11468,7 @@ const GOREV_BILGI = {
 };
 function gorevBul(ad){
   if(!ad || !window._panelGorevler) return null;
-  if(_panelGorevler[ad]) return _panelGorevler[ad];
-  const lk=String(ad).toLocaleLowerCase('tr');
-  for(const k in _panelGorevler){ if(String(k).toLocaleLowerCase('tr')===lk) return _panelGorevler[k]; }
-  return null;
+  return (typeof _panelAra==='function') ? _panelAra(window._panelGorevler, ad) : (_panelGorevler[ad]||null);
 }
 // Panel kullanicisinin adi icin GOREV RENGI (yoksa null)
 function gorevRengi(ad){ const g=gorevBul(ad); return g&&GOREV_BILGI[g]?GOREV_BILGI[g].renk:null; }
@@ -12801,12 +12798,28 @@ function handleNewChatResult(d){
 /* Panel kullanıcılarının profil fotoğrafı + sohbet başlığında kişi bilgisi kartı */
 window.panelProfilFoto=function(kullanici){
   if(!kullanici) return null;
-  var adaylar=[kullanici, String(kullanici).toLowerCase()];
-  for(var i=0;i<adaylar.length;i++){
-    try{ var v=localStorage.getItem('profilFoto_'+adaylar[i]); if(v) return v; }catch(e){}
+  return _panelAra(window._panelFotolar, kullanici);
+};
+// Ortak, dayanikli arama: tam eslesme -> normalize eslesme -> ilk kelime eslesmesi
+function _panelNorm(x){
+  return String(x==null?'':x)
+    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'")
+    .replace(/\s+/g,' ').trim().toLocaleLowerCase('tr');
+}
+function _panelAra(harita, ad){
+  if(!harita || !ad) return null;
+  if(harita[ad]) return harita[ad];
+  const n=_panelNorm(ad);
+  if(!n) return null;
+  for(const k in harita){ if(_panelNorm(k)===n) return harita[k]; }
+  // son sans: ilk kelime (ornek "Efe Rıza Yılmaz" <-> "Efe Rıza")
+  const ilk=n.split(' ')[0];
+  if(ilk.length>=3){
+    for(const k in harita){ const kn=_panelNorm(k); if(kn===ilk || kn.split(' ')[0]===ilk) return harita[k]; }
   }
   return null;
-};
+}
+window._panelAra=_panelAra;
 /* Sohbet başlığı: önce kişi bilgisi kartı, foto oradan büyütülür */
 window.kisiBilgiKarti=function(opt){
   var eski=document.getElementById('kisiBilgiKatman'); if(eski) eski.remove();
@@ -13072,6 +13085,38 @@ function profilAyarlariAc(){
     if(denendi || sayac>40) clearInterval(t);   // ~20 saniye
   }, 500);
 })();
+</script>
+
+<script>
+/* ═══ TESHIS: konsola profilTeshis() yaz, her seyi soyler ═══ */
+window.profilTeshis = function(){
+  var b=(window._ben&&window._ben())||window.currentUser||{};
+  var F=window._panelFotolar||{}, G=window._panelGorevler||{};
+  console.log('%c─── PROFIL TESHIS ───','font-weight:bold;font-size:13px');
+  console.log('Ben:', {gorunenAd:b.displayName, kullaniciAd:b.username, rol:b.role});
+  console.log('Sunucudan gelen FOTO anahtar sayisi:', Object.keys(F).length);
+  console.log('FOTO anahtarlari:', Object.keys(F));
+  console.log('Benim fotom bulundu mu?', !!(window.panelProfilFoto&&(panelProfilFoto(b.displayName)||panelProfilFoto(b.username))));
+  console.log('GOREV anahtar sayisi:', Object.keys(G).length);
+  // acik sohbetteki gonderenler
+  try{
+    if(window.activeJid && window.chats && chats[activeJid]){
+      var g={}, c=chats[activeJid];
+      (c.messages||[]).slice(-60).forEach(function(m){ if(m.sender) g[m.sender]=(g[m.sender]||0)+1; });
+      console.log('Acik sohbetteki gonderenler ve foto durumu:');
+      Object.keys(g).forEach(function(ad){
+        console.log('   '+ad+'  ->  foto:'+(panelProfilFoto(ad)?'VAR':'yok')+'  gorev:'+(gorevBul(ad)||'-'));
+      });
+    }
+  }catch(e){ console.warn(e); }
+  // yerelde eski foto var mi
+  try{
+    var y=[]; for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); if(k&&k.indexOf('profilFoto_')===0) y.push(k); }
+    console.log('Tarayicidaki eski foto anahtarlari:', y);
+  }catch(e){}
+  console.log('%c─── BITTI ───','font-weight:bold');
+  return 'Yukaridaki bilgileri kopyalayip gonder.';
+};
 </script>
 </body>
 </html>
