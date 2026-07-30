@@ -4926,6 +4926,17 @@ function connect(){
       });
       profilFotoTazele();
     }
+    else if(d.type==='kisiAdiGuncel'){
+      (d.liste||[]).forEach(function(k){
+        if(!k.ad) return;
+        [k.jid,k.numJid,k.num].filter(Boolean).forEach(function(a){ window._kisiAdlari[a]=k.ad; });
+      });
+      // acik sohbet + liste aninda yenilensin (eski mesajlar dahil)
+      try{ if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]); }catch(e){}
+      try{ renderList(); }catch(e){}
+      try{ if(document.getElementById('infoPanel').classList.contains('show')) openInfo(); }catch(e){}
+      console.log('[rehber] '+(d.liste||[]).length+' isim guncellendi');
+    }
     else if(d.type==='mesajSabitler'){ _mesajSabitler=d.durum||{}; sabitBandGuncelle(); }
     else if(d.type==='mesajSabitUpdate'){ if(d.liste&&d.liste.length) _mesajSabitler[d.jid]=d.liste; else delete _mesajSabitler[d.jid]; if(d.jid===activeJid) sabitBandGuncelle(); }
     else if(d.type==='buradayimUpdate'){ handleBuradayimUpdate(d.jid, d.liste); }
@@ -9757,7 +9768,7 @@ function renderMessages(c, searchQ){
     }
     let name='';
     if(isimGoster){
-      const sn=esc(m.sender);
+      const sn=esc(kisiAdiCoz(m));   // telefonda ad degistiyse GUNCEL adi kullan
       // İKİ FARKLI DURUM (karışmasın):
       //  1) GİDEN mesaj (fromMe) = PANEL KULLANICISI (sen/ekip, panelden yazdı) -> kalkan rozeti, "team-name"
       //  2) GELEN mesaj ama adı Pekcan/ofis = gruptaki ofis kişisi (TELEFONDAN yazdı) -> bina rozeti, "ofis-uye"
@@ -11455,6 +11466,22 @@ function telFormatla(num){
 
 // ═══ PANEL PROFIL FOTOGRAFLARI (sunucuda saklanir, herkes gorur) ═══
 window._panelFotolar = {};
+// ═══ REHBER ISIMLERI: telefonda ad degisince eski mesajlarda da yeni ad gorunsun ═══
+window._kisiAdlari = {};   // jid / numara -> guncel rehber ismi
+function kisiAdiCoz(m){
+  // gonderenin GUNCEL rehber ismi varsa onu kullan, yoksa mesajda yazan adi
+  try{
+    const H=window._kisiAdlari; if(!H) return m.sender||'';
+    const adaylar=[m.senderJid, m.senderNum, (m.senderJid||'').split('@')[0]].filter(Boolean);
+    for(const a of adaylar){
+      if(H[a]) return H[a];
+      const n=String(a).split('@')[0];
+      if(n && H[n+'@s.whatsapp.net']) return H[n+'@s.whatsapp.net'];
+      if(n && H[n]) return H[n];
+    }
+  }catch(e){}
+  return m.sender||'';
+}
 window._panelGorevler = {};   // ad/kullanici -> '2aylik'|'kalici'|'iptal'
 // GOREV TANIMLARI: renk + gorunen ad
 const GOREV_BILGI = {

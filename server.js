@@ -5942,9 +5942,45 @@ async function startWA(lineId = 'ofis') {
     }
     if (n) console.log(`📇 ${n} kayitli rehber ismi alindi (toplam rehber: ${savedContacts.size})`);
   }
+  // ═══ REHBER ISMI DEGISINCE PANELE ANINDA YANSIT ═══
+  // Telefonda bir kisinin adini degistirince WhatsApp 'contacts.update' gonderir.
+  // Eskiden sadece sunucu hafizasi guncelleniyordu; panel eski ismi gostermeye devam
+  // ediyordu (hem sohbet listesinde hem GRUP ICINDEKI gonderen adinda).
+  // Artik: degisen isimler panellere yayinlanir + kisi sohbetinin adi guncellenir.
+  function isimDegisikligiYayinla(contacts) {
+    if (!Array.isArray(contacts) || !contacts.length) return;
+    const degisenler = [];
+    for (const ct of contacts) {
+      const jid = ct.id; if (!jid) continue;
+      const yeniAd = (ct.name || ct.verifiedName || '').trim();
+      if (!yeniAd) continue;
+      const num = jid.split('@')[0];
+      const numJid = num ? (num + '@s.whatsapp.net') : '';
+      degisenler.push({ jid, num, numJid, ad: yeniAd });
+
+      // KISI sohbetinin adini guncelle (panelden elle isim verilmediyse)
+      try {
+        const C = hatChats(lineId);
+        for (const aday of [jid, numJid]) {
+          if (!aday) continue;
+          const ch = C.get(aday);
+          if (ch && !ch.isGroup && !ch.customName && ch.name !== yeniAd) {
+            ch.name = yeniAd;
+            if (db.isReady()) db.saveChat(ch, lineId).catch(() => {});
+            broadcastHat(lineId, { type: 'msgUpdate', jid: aday, ozet: { name: yeniAd } });
+          }
+        }
+      } catch (e) {}
+    }
+    if (degisenler.length) {
+      console.log(`📇 ${degisenler.length} kisi ismi GUNCELLENDI -> panellere yayinlandi`);
+      broadcastHat(lineId, { type: 'kisiAdiGuncel', liste: degisenler });
+    }
+  }
+
   sock.ev.on('contacts.set', ({ contacts }) => { console.log(`📇 contacts.set tetiklendi: ${contacts?.length||0} kisi`); kaydetKisiler(contacts); });
-  sock.ev.on('contacts.upsert', (contacts) => { console.log(`📇 contacts.upsert tetiklendi: ${contacts?.length||0} kisi`); kaydetKisiler(contacts); });
-  sock.ev.on('contacts.update', (contacts) => { kaydetKisiler(contacts); });
+  sock.ev.on('contacts.upsert', (contacts) => { console.log(`📇 contacts.upsert tetiklendi: ${contacts?.length||0} kisi`); kaydetKisiler(contacts); isimDegisikligiYayinla(contacts); });
+  sock.ev.on('contacts.update', (contacts) => { kaydetKisiler(contacts); isimDegisikligiYayinla(contacts); });
 
 
   // Baglaninca WhatsApp son sohbetleri ve mesajlari gonderir - bunlari panele yukle
