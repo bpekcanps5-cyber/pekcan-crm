@@ -2692,6 +2692,72 @@ wss.on('connection', (ws) => {
       // ACIKLAMA TAZELE: panel bir grubu HER ACTIGINDA gonderir. Guncel aciklama/ad/uye
       // (ve foto eksikse foto) ARKA PLANDA cekilir (15sn tazelik). Basarisiz olursa 2sn
       // sonra BIR KEZ daha dener -> gruba girince aciklama KESIN gelir.
+      // ═══ KISI ADINI TAZELE (grup icindeki gonderen adi icin "yenile" tusu) ═══
+      // Telefonda ismi degistirince WhatsApp bildirim gondermeyebiliyor. Bu tus,
+      // rehberi WhatsApp'tan ZORLA yeniden cekip guncel ismi bulur ve panellere yayar.
+      else if (msg.type === 'kisiAdiTazele') {
+        const hedef = String(msg.jid || '').trim();
+        if (!hedef || !SOCK || !CONNECTED) {
+          ws.send(JSON.stringify({ type: 'kisiAdiSonuc', jid: hedef, ok: false, error: 'WhatsApp bağlı değil' }));
+          return;
+        }
+        const num = hedef.split('@')[0];
+        const numJid = num ? (num + '@s.whatsapp.net') : '';
+        const oncekiAd = savedContacts.get(hedef) || savedContacts.get(numJid) || contactNames.get(hedef) || '';
+        try {
+          // 1) Telefondaki rehberi ZORLA yeniden senkronla (contacts app-state)
+          try {
+            await Promise.race([
+              SOCK.resyncAppState(['critical_unblock_low'], false),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('zaman asimi')), 12000)),
+            ]);
+          } catch (e) { console.log('   ⚠️ rehber senkron: ' + e.message); }
+
+          // 2) Isletme hesabiysa isletme adini da dene
+          let isletmeAd = '';
+          try {
+            if (typeof SOCK.getBusinessProfile === 'function') {
+              const bp = await Promise.race([
+                SOCK.getBusinessProfile(numJid || hedef),
+                new Promise((r) => setTimeout(() => r(null), 6000)),
+              ]);
+              if (bp && (bp.business_name || bp.name)) isletmeAd = String(bp.business_name || bp.name).trim();
+            }
+          } catch (e) {}
+
+          // 3) Senkron sonrasi en guncel ismi topla (rehber > isletme > pushName)
+          const yeniAd = (savedContacts.get(hedef) || savedContacts.get(numJid) || isletmeAd
+                          || contactNames.get(hedef) || contactNames.get(numJid) || '').trim();
+
+          if (yeniAd) {
+            savedContacts.set(hedef, yeniAd);
+            contactNames.set(hedef, yeniAd);
+            if (numJid) { savedContacts.set(numJid, yeniAd); contactNames.set(numJid, yeniAd); }
+            // kisi sohbetinin adini da guncelle (elle isim verilmediyse)
+            try {
+              for (const aday of [hedef, numJid]) {
+                if (!aday) continue;
+                const ch = C.get(aday);
+                if (ch && !ch.isGroup && !ch.customName && ch.name !== yeniAd) {
+                  ch.name = yeniAd;
+                  if (db.isReady()) db.saveChat(ch, _LID).catch(() => {});
+                  broadcastHat(_LID, { type: 'msgUpdate', jid: aday, ozet: { name: yeniAd } });
+                }
+              }
+            } catch (e) {}
+            // TUM panellere yay: eski mesajlarda bile yeni ad gorunsun
+            broadcastHat(_LID, { type: 'kisiAdiGuncel', liste: [{ jid: hedef, num, numJid, ad: yeniAd }] });
+          }
+          console.log(`   📇 KISI ADI TAZELE: ${num} -> "${yeniAd || '(bulunamadi)'}"` + (oncekiAd && oncekiAd !== yeniAd ? ` (eski: "${oncekiAd}")` : ''));
+          ws.send(JSON.stringify({
+            type: 'kisiAdiSonuc', jid: hedef, ok: true,
+            ad: yeniAd || null, degisti: !!(yeniAd && yeniAd !== oncekiAd),
+          }));
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'kisiAdiSonuc', jid: hedef, ok: false, error: e.message }));
+        }
+      }
+
       else if (msg.type === 'aciklamaTazele') {
         const chat = C.get(msg.jid);
         if (chat && chat.isGroup) {

@@ -4186,6 +4186,7 @@
     <div class="modal-btns" style="flex-direction:column;gap:8px">
       <button class="btn primary" id="senderDM" style="width:100%">💬 Birebir mesaj gönder</button>
       <button class="btn ghost" id="senderCopy" style="width:100%">📋 Numarayı kopyala</button>
+      <button class="btn ghost" id="senderAdYenile" style="width:100%">🔄 İsmi Yenile <span style="opacity:.6;font-weight:500;font-size:11.5px">(telefondan çek)</span></button>
       <button class="btn ghost" id="senderClose2" style="width:100%">Kapat</button>
     </div>
   </div>
@@ -4925,6 +4926,17 @@ function connect(){
         if(d.veri) window._panelFotolar[k]=d.veri; else delete window._panelFotolar[k];
       });
       profilFotoTazele();
+    }
+    else if(d.type==='kisiAdiSonuc'){
+      const b=document.getElementById('senderAdYenile');
+      if(b){ b.disabled=false; b.innerHTML='🔄 İsmi Yenile <span style="opacity:.6;font-weight:500;font-size:11.5px">(telefondan çek)</span>'; }
+      if(!d.ok){ showToast(d.error||'Yenilenemedi'); }
+      else if(d.ad){
+        const n=document.getElementById('senderName2'); if(n) n.textContent=d.ad;
+        showToast(d.degisti ? ('✓ İsim güncellendi: '+d.ad) : ('İsim aynı: '+d.ad));
+      } else {
+        showToast('Telefonda bu numara için kayıtlı isim bulunamadı');
+      }
     }
     else if(d.type==='kisiAdiGuncel'){
       (d.liste||[]).forEach(function(k){
@@ -11548,6 +11560,17 @@ function imSenderHtml(ad){
 }
 
 // PANEL KULLANICISI BILGI KARTI: ad + foto (yakinlastirilabilir) + GOREV
+// ═══ KISININ ISMINI TELEFONDAN YENIDEN CEK ═══
+function kisiAdiYenile(){
+  if(!_senderInfoJid){ showToast('Kişi seçili değil'); return; }
+  if(!connected){ showToast('WhatsApp bağlı değil'); return; }
+  const b=document.getElementById('senderAdYenile');
+  if(b){ b.disabled=true; b.innerHTML='⏳ Rehber taranıyor…'; }
+  ws.send(JSON.stringify({type:'kisiAdiTazele', jid:_senderInfoJid}));
+  // 20sn icinde cevap gelmezse tusu geri ac
+  setTimeout(()=>{ const x=document.getElementById('senderAdYenile');
+    if(x&&x.disabled){ x.disabled=false; x.innerHTML='🔄 İsmi Yenile'; } }, 20000);
+}
 function panelKisiGoster(ad){
   const veri=(typeof panelProfilFoto==='function'?panelProfilFoto(ad):null)||'';
   const g=(typeof gorevBul==='function')?gorevBul(ad):null;
@@ -11579,7 +11602,7 @@ function panelKisiGoster(ad){
     t.style.background = gb ? (gb.renk+'1a') : 'var(--panel-2)';
     t.style.fontSize='15px'; t.style.letterSpacing='1.2px';
   }
-  ['senderDM','senderCopy'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
+  ['senderDM','senderCopy','senderAdYenile'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
   // foto varsa "Buyut" tusu gorunur
   let bt=document.getElementById('senderBuyut');
   if(!bt){
@@ -11663,10 +11686,14 @@ function showSenderInfo(jid, name){
   // LID ise DM ve kopyala anlamsiz, gizle
   document.getElementById('senderDM').style.display=isLid?'none':'block';
   document.getElementById('senderCopy').style.display=isLid?'none':'block';
+  // isim yenileme: LID'de anlamsiz (numara gizli)
+  const _ay=document.getElementById('senderAdYenile');
+  if(_ay){ _ay.style.display=isLid?'none':'block'; _ay.disabled=false; _ay.innerHTML='🔄 İsmi Yenile <span style="opacity:.6;font-weight:500;font-size:11.5px">(telefondan çek)</span>'; }
   document.getElementById('senderModal').classList.add('show');
 }
 document.getElementById('senderClose2').onclick=()=>document.getElementById('senderModal').classList.remove('show');
 document.getElementById('senderCopy').onclick=()=>{ if(_senderInfoNum){ copyContactNum(_senderInfoNum); } document.getElementById('senderModal').classList.remove('show'); };
+document.getElementById('senderAdYenile').onclick=kisiAdiYenile;
 document.getElementById('senderDM').onclick=()=>{
   document.getElementById('senderModal').classList.remove('show');
   if(_senderInfoNum){ messageContact(_senderInfoNum, document.getElementById('senderName2').textContent); }
