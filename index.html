@@ -2018,39 +2018,13 @@
   .sender-name.clickable{cursor:pointer}
   .sender-name.clickable:hover{filter:brightness(1.15)}
 
-  /* Mor "Etiketlenenler" etiketinin ICINDEKI temizleme carpisi */
-  .filter .et-temizle{display:inline-grid;place-items:center;width:16px;height:16px;margin-left:7px;
-    border-radius:5px;font-size:10px;font-weight:700;line-height:1;cursor:pointer;
-    background:rgba(255,255,255,.14);color:inherit;opacity:.65;transition:all .13s}
-  .filter .et-temizle:hover{opacity:1;background:rgba(196,89,94,.85);color:#fff;transform:scale(1.12)}
-  .filter .et-temizle:active{transform:scale(.92)}
-
-  /* Yazma kutusu: bos alana basinca da yaziya odaklan (sagda olu alan kalmasin) */
-  .composer{cursor:text}
-  .composer .composer-arac-satir,.composer button,.composer .composer-sol{cursor:default}
-
-  /* ═══ SOL SERIT ALT TUSLARI: HER ZAMAN GORUNUR + RAHAT TIKLANIR ═══
-     Sorun: etiket listesi 42vh'ye kadar buyuyunce alttaki katla-tusu ve profil
-     asagi itilip kirpiliyordu; ayrica tuslar cok kucuktu (34x26). */
-  .rail{overflow:visible !important;padding-bottom:14px !important}
-  /* Etiket listesi ONCE kucululsun, alt tuslar asla ezilmesin */
-  .rail-etiketler{min-height:0 !important;flex-shrink:1 !important;max-height:34vh !important}
-  .rail-spacer{flex:1 1 auto !important;min-height:6px !important}
-
-  /* Katlama tusu: buyuk ve sabit */
-  #railKapaBtn{width:44px !important;height:38px !important;margin:0 0 10px !important;
-    flex-shrink:0 !important;position:relative;z-index:20 !important;border-radius:12px !important}
-  #railKapaBtn svg{width:17px !important;height:17px !important;pointer-events:none}
+  /* ═══ SOHBET BASLIGINDAKI IKON TUSLARI (etiket / arama) BUYUTULDU ═══ */
+  .conv-header .icon-sm{width:42px !important;height:42px !important;border-radius:12px !important}
+  .conv-header .icon-sm svg{width:22px !important;height:22px !important}
+  .conv-header .icon-sm:hover{background:var(--panel-2) !important;color:var(--text) !important}
   /* gorunmeyen genis tiklama alani */
-  #railKapaBtn::before{content:'';position:absolute;inset:-8px -10px}
-
-  /* Profil tusu: buyuk, sabit, en ustte */
-  .rail .avatar,#settingsAvatar{width:46px !important;height:46px !important;
-    flex-shrink:0 !important;position:relative;z-index:25 !important;margin-bottom:2px !important}
-  #settingsAvatar::before{content:'';position:absolute;inset:-8px;border-radius:50%}
-
-  /* Ikisini birlikte alta cakala: serit kisa kalsa bile gorunurler */
-  .rail{justify-content:flex-start}
+  .conv-header .icon-sm{position:relative}
+  .conv-header .icon-sm::before{content:'';position:absolute;inset:-5px}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -2808,9 +2782,6 @@
     border-radius:inherit !important;opacity:0 !important;transition:opacity .16s ease !important;
     background:rgba(11,16,22,.55) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23fff'%3E%3Cpath d='M9 3l-1.8 2H4a2 2 0 00-2 2v11a2 2 0 002 2h16a2 2 0 002-2V7a2 2 0 00-2-2h-3.2L15 3H9zm3 5a5 5 0 110 10 5 5 0 010-10zm0 2a3 3 0 100 6 3 3 0 000-6z'/%3E%3C/svg%3E") center/16px no-repeat !important}
   #settingsAvatar:hover::after{opacity:1 !important}
-  /* DUZELTME: kaplama tiklamayi engellemesin + tus her zaman ustte olsun */
-  #settingsAvatar::after{pointer-events:none !important}
-  #settingsAvatar{z-index:5 !important;pointer-events:auto !important}
 
   #sidebarEtiketBar #railEtiketler{width:auto !important;max-width:100% !important;
     flex-direction:row !important;flex-wrap:wrap !important;justify-content:center !important;
@@ -2954,49 +2925,10 @@
   html[data-skin="orman"] .msg .md-bold,html[data-skin="mor"] .msg .md-bold{
     color:#4fc3f7 !important;-webkit-text-fill-color:#4fc3f7 !important}
 
-  /* Etiket listesi aç/kapa düğmesi */
-  #railEtiketAcKapa{width:34px;height:22px;margin:2px 0 0;border:none;cursor:pointer;
-    display:grid;place-items:center;border-radius:11px;background:transparent;color:var(--faint);
-    transition:background .14s ease,color .14s ease}
-  #railEtiketAcKapa:hover{background:var(--panel-2);color:var(--text)}
-  #railEtiketAcKapa svg{width:15px;height:15px;transition:transform .18s ease}
-  html.etiket-kapali #railEtiketler{display:none !important}
-  html.rail-kapali #sidebarEtiketBar #railEtiketler{display:flex !important}
-  html.etiket-kapali #railEtiketAcKapa svg{transform:rotate(-90deg)}
-  html.etiket-kapali #railEtiketAcKapa{color:var(--brand);background:var(--brand-soft)}
-
-  /* Tüm rail'i sola katla + geri açma tutamağı */
-  html.rail-kapali .rail{width:0 !important;min-width:0 !important;padding:0 !important;
-    border-right:none !important;overflow:hidden !important;opacity:0 !important}
-  #railAcHandle{position:fixed;left:0;bottom:22px;top:auto;transform:none;width:30px;height:72px;
-    border-radius:0 10px 10px 0;background:var(--panel-2);border:1px solid var(--border);border-left:none;
-    color:var(--muted);display:none;place-items:center;cursor:pointer;z-index:500;padding:0;
-    box-shadow:2px 0 8px -4px rgba(11,20,26,.3);z-index:900}
-  #railAcHandle:hover{color:var(--brand);background:var(--brand-soft)}
-  #railAcHandle svg{width:15px;height:15px;pointer-events:none}
-  /* Tiklama alanini gorunmeden genislet (kenarda isabet zor oluyordu) */
-  #railAcHandle::before{content:'';position:absolute;left:0;top:-14px;bottom:-14px;width:46px}
-  html.rail-kapali #railAcHandle{display:grid}
-
-  /* Rail kapalıyken: etiketler sohbet listesinin altında yatay şerit */
-  #sidebarEtiketBar{display:none;flex-direction:column;align-items:center;gap:6px;padding:9px 12px 11px;
-    border-top:1px solid var(--border);background:var(--panel);flex-shrink:0}
-  html.rail-kapali #sidebarEtiketBar{display:flex}
-  html.rail-kapali:not(.etiket-kapali) #sidebarEtiketBar:has(#railEtiketler:empty){display:none}
-  #sidebarEtiketBar .seb-baslik{font-size:10.5px;font-weight:700;letter-spacing:.1em;
-    text-transform:uppercase;color:var(--faint)}
-  #sidebarEtiketBar #railEtiketler{flex-direction:row !important;flex-wrap:wrap !important;
-    align-items:center !important;justify-content:center !important;align-content:center !important;
-    gap:12px 14px !important;max-height:96px !important;overflow-y:auto !important;
-    padding:2px 0 !important;width:100% !important;margin:0 auto !important;text-align:center !important}
-  #sidebarEtiketBar .seb-baslik{text-align:center}
-  /* DUZELTME: kenar cubugundaki ac/kapa tusu GORUNUR kalsin (yoksa etiket bir daha acilmiyordu) */
-  #sidebarEtiketBar #railEtiketAcKapa{display:grid !important;width:30px;height:24px;
-    background:var(--panel-2) !important;border:1px solid var(--border) !important;color:var(--muted) !important}
-  #sidebarEtiketBar #railEtiketAcKapa:hover{background:var(--brand-soft) !important;color:var(--brand) !important}
-  /* Etiketler kapaliyken bar YINE gorunsun ki acma tusuna ulasilabilsin */
-  html.rail-kapali.etiket-kapali #sidebarEtiketBar{display:flex !important}
-  html.rail-kapali.etiket-kapali #sidebarEtiketBar .seb-baslik{opacity:.6}
+  /* ═══ ETIKET LISTESI: SERITTE SABIT (katlama/tasima sistemi kaldirildi) ═══
+     Liste kendi icinde kaydirilir; alttaki profil tusu asla ezilmez. */
+  .rail-etiketler{max-height:calc(100vh - 320px) !important;overflow-y:auto;min-height:0;flex-shrink:1}
+  .rail-etiketler::-webkit-scrollbar{width:0}
   #railKapaBtn{width:34px;height:26px;margin:0 0 8px;cursor:pointer;
     display:grid;place-items:center;border-radius:13px;color:var(--muted);
     background:var(--panel-2);border:1px solid var(--border)}
@@ -3299,7 +3231,7 @@
       <div class="filter" data-filter="people">Kişiler<span class="n" id="fPeople"></span></div>
       <div class="filter" data-filter="mentions">Bahsedilmeler<span class="n" id="fMentions"></span></div>
       <div class="filter" data-filter="assigned">Bana Etiketlenenler<span class="n" id="fAssigned"></span></div>
-      <div class="filter filter-yonetici" data-filter="tumAtanan" id="filterTumAtanan" style="display:none">👥 Etiketlenenler<span class="n" id="fTumAtanan"></span><span class="et-temizle" id="btnTumEtiketTemizle" onclick="event.stopPropagation();tumEtiketleriKaldir()" title="Bu listedeki TÜM kişi etiketlerini kaldır">✕</span></div>
+      <div class="filter filter-yonetici" data-filter="tumAtanan" id="filterTumAtanan" style="display:none">👥 Etiketlenenler<span class="n" id="fTumAtanan"></span></div>
       <div class="filter filter-favori" data-filter="favoriler">⭐ Favoriler<span class="n" id="fFavori"></span></div>
       <div class="filter filter-buradayim" data-filter="buradayim">🟢 İlgilenilen<span class="n" id="fBuradayim"></span></div>
       <div class="filter" data-filter="unread">Okunmamış<span class="n" id="fUnread"></span></div>
@@ -7268,8 +7200,7 @@ function applyUser(){
   if(tb) tb.style.display = currentUser.role==='admin' ? 'block' : 'none';
   // "Etiketlenenler" filtresi (herkesin atandığı gruplar) SADECE yöneticide görünür
   const fta=document.getElementById('filterTumAtanan');
-  const yon = (currentUser.role==='admin'||currentUser.role==='pzr_yonetici');
-  if(fta) fta.style.display = yon ? '' : 'none';
+  if(fta) fta.style.display = (currentUser.role==='admin'||currentUser.role==='pzr_yonetici') ? '' : 'none';
   // ── KONTROL SEKMESİ + ALT SEKME YETKİLERİ ──
   // Roller: admin (yönetici), pazarlama (lineTip), muhasebeci, agent (temsilci)
   const rol = currentUser.role;
@@ -11408,15 +11339,6 @@ function profilFotoUygula(){
   });
 }
 // Panel kullanicisinin adina tiklayinca: fotografini buyuk goster
-// TUM ETIKETLERI (kisi atamalarini) TEK TUSLA KALDIR — yonetici
-function tumEtiketleriKaldir(){
-  let n=0; try{ n=Object.values(chats).filter(c=>c.atananlar&&c.atananlar.length).length; }catch(e){}
-  if(!n){ showToast('Kaldırılacak etiket yok'); return; }
-  if(!confirm(n+' sohbetteki kişi etiketlerinin HEPSİ kaldırılacak.\n\nBu işlem geri alınamaz. Devam edilsin mi?')) return;
-  if(!connected){ showToast('Bağlantı yok'); return; }
-  ws.send(JSON.stringify({type:'tumAtamalariKaldir'}));
-  showToast('🧹 Etiketler kaldırılıyor…');
-}
 function panelKisiGoster(ad){
   const veri=window._panelFotolar[ad]||'';
   if(veri){ try{ openLightbox(veri); return; }catch(e){} }
@@ -12469,89 +12391,16 @@ function handleNewChatResult(d){
      ═══════════════════════════════════════════════════════════ -->
 
 <script>
-/* Etiket listesini aç/kapa (rail) — durum hatırlanır */
+/* KALDIRILDI: sol serit katlama + etiket barini tasima sistemi.
+   Etiketler artik SERITTE SABIT durur. Eski katlama durumu temizlenir. */
 (function(){
-  /* Rail kapalıyken etiket listesini sohbet listesinin altına taşı */
-  function etiketBarTasi(kapali){
-    var liste=document.getElementById('railEtiketler');
-    var rail=document.querySelector('.rail');
-    var sidebar=document.querySelector('.sidebar');
-    if(!liste||!rail||!sidebar)return;
-    if(kapali){
-      var bar=document.getElementById('sidebarEtiketBar');
-      if(!bar){
-        bar=document.createElement('div');
-        bar.id='sidebarEtiketBar';
-        bar.innerHTML='<span class="seb-baslik">Etiketler</span>';
-        sidebar.appendChild(bar);
-      }
-      if(liste.parentNode!==bar) bar.appendChild(liste);
-    } else {
-      var sp=rail.querySelector('.rail-spacer');
-      if(liste.parentNode!==rail){
-        if(sp) rail.insertBefore(liste, sp); else rail.appendChild(liste);
-        var ak=document.getElementById('railEtiketAcKapa');
-        if(ak) rail.insertBefore(ak, liste);
-      }
-    }
-  }
-  function kur(){
-    var liste=document.getElementById('railEtiketler');
-    if(!liste)return;
-    if(document.getElementById('railEtiketAcKapa')&&document.getElementById('railKapaBtn')&&document.getElementById('railAcHandle')){
-      etiketBarTasi(document.documentElement.classList.contains('rail-kapali'));
-      return;
-    }
-    if(document.getElementById('railEtiketAcKapa')){ kurKapatma(); return; }
-    try{ if(localStorage.getItem('railEtiketKapali')==='1') document.documentElement.classList.add('etiket-kapali'); }catch(e){}
-    var b=document.createElement('button');
-    b.id='railEtiketAcKapa';
-    b.title='Etiket listesini aç/kapa';
-    b.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>';
-    b.onclick=function(){
-      var k=document.documentElement.classList.toggle('etiket-kapali');
-      try{ localStorage.setItem('railEtiketKapali', k?'1':'0'); }catch(e){}
-    };
-    liste.parentNode.insertBefore(b, liste);
-
-    kurKapatma();
-  }
-  function kurKapatma(){
-    var liste=document.getElementById('railEtiketler');
-    var rail=(liste&&liste.closest('.rail'))||document.querySelector('.rail');
-    if(!rail) return;
-    try{ if(localStorage.getItem('railKapali')==='1') document.documentElement.classList.add('rail-kapali'); }catch(e){}
-    if(!document.getElementById('railKapaBtn')){
-      var k=document.createElement('button');
-      k.id='railKapaBtn';
-      k.title='Sol paneli kapat';
-      k.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.4 7.4L14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>';
-      k.onclick=function(){
-        document.documentElement.classList.add('rail-kapali');
-        try{ localStorage.setItem('railKapali','1'); }catch(e){}
-        etiketBarTasi(true);
-      };
-      var sp=rail.querySelector('.rail-spacer');
-      var av=rail.querySelector('#settingsAvatar');
-      if(av) rail.insertBefore(k, av); else if(sp) rail.insertBefore(k, sp.nextSibling); else rail.appendChild(k);
-    }
-    if(!document.getElementById('railAcHandle')){
-      var h=document.createElement('button');
-      h.id='railAcHandle';
-      h.title='Sol paneli aç';
-      h.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.6 16.6L10 18l6-6-6-6-1.4 1.4L13.2 12z"/></svg>';
-      h.onclick=function(){
-        document.documentElement.classList.remove('rail-kapali');
-        try{ localStorage.setItem('railKapali','0'); }catch(e){}
-        etiketBarTasi(false);
-      };
-      document.body.appendChild(h);
-    }
-    if(document.documentElement.classList.contains('rail-kapali')) etiketBarTasi(true);
-  }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',kur);
-  kur(); setTimeout(kur,400); setTimeout(kur,1200);
-  setInterval(kur,1500);
+  try{ localStorage.removeItem('railKapali'); localStorage.removeItem('railEtiketKapali'); localStorage.removeItem('etiketKapali'); }catch(e){}
+  var h=document.documentElement;
+  h.classList.remove('rail-kapali'); h.classList.remove('etiket-kapali');
+  // eski surumden kalan ogeler varsa temizle
+  ['railKapaBtn','railAcHandle','railEtiketAcKapa','sidebarEtiketBar'].forEach(function(id){
+    var el=document.getElementById(id); if(el && el.parentNode) el.parentNode.removeChild(el);
+  });
 })();
 </script>
 <script>
@@ -12747,71 +12596,6 @@ window.icMesajKisiBilgi=function(kullanici){
   kisiBilgiKarti({ad:ad, alt:alt, foto:foto, bashar:(av?av.textContent.trim():''),
     renk:(av?getComputedStyle(av).backgroundColor:''), etiket:'Panel kullanıcısı'});
 };
-</script>
-
-<script>
-/* ── TIKLAMA DUZELTMELERI ── */
-(function(){
-  // 1) Yazma kutusunun BOS ALANINA basinca yaziya odaklan (sagda olu alan kalmiyor)
-  document.addEventListener('click', function(e){
-    var comp = e.target.closest && e.target.closest('.composer');
-    if(!comp) return;
-    // buton/ikon/alan tiklamalarina karisma
-    if(e.target.closest('button, a, input, textarea, .composer-sol, .send-btn')) return;
-    var ta = comp.querySelector('textarea');
-    if(ta){ ta.focus(); try{ ta.selectionStart = ta.selectionEnd = ta.value.length; }catch(_){} }
-  });
-
-  // 2) Profil tusu: menuyu ACARKEN KONUMLANDIR (orijinal davranis). Konum verilmezse
-  //    menu ekran disinda kaliyor ve "acilmiyor" gibi gorunuyordu.
-  function ayarMenusunuAc(av){
-    var m = document.getElementById('settingsMenu');
-    if(!m || !av) return;
-    var r = av.getBoundingClientRect();
-    m.style.left = (r.right + 10) + 'px';
-    m.style.bottom = (window.innerHeight - r.bottom) + 'px';
-    m.classList.toggle('show');
-  }
-  function profilTusuBagla(){
-    var av = document.getElementById('settingsAvatar');
-    if(!av || av.__bagli) return;
-    av.__bagli = true;
-    av.addEventListener('click', function(e){
-      e.preventDefault(); e.stopPropagation();
-      ayarMenusunuAc(av);
-    }, true);
-  }
-  profilTusuBagla();
-  setTimeout(profilTusuBagla, 1000);
-  setTimeout(profilTusuBagla, 3000);
-  // Disari tiklayinca kapansin (kendi capture handler'imiz orijinali devre disi biraktigi icin)
-  document.addEventListener('click', function(e){
-    var m = document.getElementById('settingsMenu');
-    if(!m || !m.classList.contains('show')) return;
-    if(m.contains(e.target)) return;
-    if(e.target.closest && e.target.closest('#settingsAvatar')) return;
-    m.classList.remove('show');
-  });
-
-  // 3) Etiket ac/kapa: tus nerede olursa olsun calissin (rail'de ya da kenar cubugunda)
-  document.addEventListener('click', function(e){
-    var t = e.target.closest && e.target.closest('#railEtiketAcKapa');
-    if(!t) return;
-    e.preventDefault(); e.stopPropagation();
-    var kapali = document.documentElement.classList.toggle('etiket-kapali');
-    try{ localStorage.setItem('etiketKapali', kapali ? '1' : '0'); }catch(_){}
-  }, true);
-
-  // 4) Sol acma oku: kapsayici alandan da calissin
-  document.addEventListener('click', function(e){
-    var h = e.target.closest && e.target.closest('#railAcHandle');
-    if(!h) return;
-    e.preventDefault();
-    document.documentElement.classList.remove('rail-kapali');
-    try{ localStorage.setItem('railKapali','0'); }catch(_){}
-    if(typeof window.etiketBarTasi==='function'){ try{ window.etiketBarTasi(false); }catch(_){} }
-  }, true);
-})();
 </script>
 </body>
 </html>
