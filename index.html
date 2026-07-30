@@ -11573,16 +11573,44 @@ function panelKisiGoster(ad){
 async function profilFotoKaydet(veri){
   try{
     const r=await fetch('/api/profile/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,veri:veri})});
+
+    // ── NET TESHIS: sunucu bu adresi tanimiyorsa (server.js guncel degil) ──
+    if(r.status===404 || r.status===405){
+      console.error('[profil] /api/profile/avatar YOK (HTTP '+r.status+') -> server.js guncellenmemis');
+      showToast('⚠️ Sunucu güncel değil: server.js yüklenip pm2 restart yapılmalı');
+      return;
+    }
+    const ct=(r.headers.get('content-type')||'');
+    if(ct.indexOf('application/json')<0){
+      const bas=(await r.text()).slice(0,120);
+      console.error('[profil] JSON degil, gelen:',bas);
+      showToast('⚠️ Sunucu bu özelliği tanımıyor (server.js güncellenmemiş)');
+      return;
+    }
+
     const d=await r.json();
     if(d.ok){
       const _b=_ben()||{};
       const _adlar=[_b.displayName,_b.username].filter(Boolean);
+      if(!_adlar.length){ console.warn('[profil] kullanici adi bos, onbellege yazilamadi'); }
       _adlar.forEach(function(k){ if(veri) window._panelFotolar[k]=veri; else delete window._panelFotolar[k]; });
-      profilFotoUygula();
-      if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]);
+      console.log('[profil] kaydedildi. anahtarlar:',_adlar);
+      try{ profilFotoTazele(); }catch(e){}
+      try{ panelFotolariYukle(); }catch(e){}   // sunucudan da teyit al
       showToast(veri?'✓ Profil fotoğrafı güncellendi (herkes görecek)':'Profil fotoğrafı kaldırıldı');
-    } else showToast(d.error||'Kaydedilemedi');
-  }catch(e){ showToast('Sunucu hatası'); }
+      // acik profil penceresi varsa aninda yenile
+      try{
+        var pm=document.getElementById('profilModal');
+        if(pm&&pm.classList.contains('show')&&typeof profilAyarlariAc==='function') profilAyarlariAc();
+      }catch(e){}
+    } else {
+      console.error('[profil] sunucu reddetti:',d.error);
+      showToast(d.error||'Kaydedilemedi');
+    }
+  }catch(e){
+    console.error('[profil] istek hatasi',e);
+    showToast('Sunucu hatası — F12 Console\'a bak');
+  }
 }
 
 function showSenderInfo(jid, name){
@@ -12980,6 +13008,69 @@ function profilAyarlariAc(){
     if(m) m.onclick=function(e){ if(e.target===m) m.classList.remove('show'); };
   }
   bagla(); setTimeout(bagla,600); setTimeout(bagla,2000);
+})();
+</script>
+
+<script>
+/* ═══════════ ESKI FOTOGRAFI SUNUCUYA TASI (tek seferlik gecis) ═══════════
+   Eski kod fotografi tarayiciya 'profilFoto_<ad>' anahtariyla yaziyordu, ama
+   window.currentUser bos oldugu icin anahtar 'profilFoto_kullanici' olmus.
+   Bu yuzden foto sadece o tarayicida, sol alt avatarda gorunuyordu; sunucuda
+   olmadigi icin profil penceresinde / gruplarda / ic mesajlarda cikmiyordu.
+   Burada: yerelde foto varsa ve sunucuda yoksa -> otomatik yukle. */
+(function(){
+  var denendi = false;
+
+  function yereldekiFotoyuBul(){
+    try{
+      // 1) her turlu 'profilFoto_' anahtarini tara ('kullanici' dahil)
+      for(var i=0;i<localStorage.length;i++){
+        var k=localStorage.key(i);
+        if(k && k.indexOf('profilFoto_')===0){
+          var v=localStorage.getItem(k);
+          if(v && v.indexOf('data:image/')===0) return {anahtar:k, veri:v};
+        }
+      }
+    }catch(e){}
+    return null;
+  }
+
+  function sunucudaVarMi(){
+    var b=(window._ben&&window._ben())||window.currentUser||{};
+    var f=window._panelFotolar||{};
+    return !!(f[b.displayName]||f[b.username]);
+  }
+
+  function tasi(){
+    if(denendi) return;
+    var b=(window._ben&&window._ben())||window.currentUser||null;
+    if(!b || !(b.username||b.displayName)) return;          // kullanici henuz hazir degil
+    if(!window._panelFotolar) return;                        // sunucu listesi henuz gelmedi
+    if(sunucudaVarMi()){ denendi=true; return; }             // zaten sunucuda -> is yok
+
+    var y=yereldekiFotoyuBul();
+    if(!y) { denendi=true; return; }                         // yerelde de yok -> is yok
+
+    denendi = true;
+    console.log('[profil] eski foto bulundu ('+y.anahtar+'), sunucuya tasiniyor…');
+    if(typeof profilFotoKaydet==='function'){
+      profilFotoKaydet(y.veri);
+      // dogru anahtarla da yerel kopya birak (geriye uyum)
+      try{
+        if(b.username) localStorage.setItem('profilFoto_'+b.username, y.veri);
+        if(y.anahtar==='profilFoto_kullanici') localStorage.removeItem('profilFoto_kullanici');
+      }catch(e){}
+      if(typeof showToast==='function') showToast('📷 Profil fotoğrafın sunucuya taşındı — artık herkes görecek');
+    }
+  }
+
+  // kullanici + sunucu listesi hazir olana kadar birkac kez dene
+  var sayac=0;
+  var t=setInterval(function(){
+    sayac++;
+    try{ tasi(); }catch(e){}
+    if(denendi || sayac>40) clearInterval(t);   // ~20 saniye
+  }, 500);
 })();
 </script>
 </body>
