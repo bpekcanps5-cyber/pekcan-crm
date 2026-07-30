@@ -2047,19 +2047,35 @@
   #settingsAvatar::after{pointer-events:none !important}
   #settingsAvatar::before{content:'';position:absolute;inset:-6px;border-radius:50%;z-index:1}
 
-  /* ═══ GOREV SIMGESI: kucuk logo (yazi yok) ═══ */
-  .gorev-ik{
-    display:inline-grid;place-items:center;vertical-align:middle;
-    width:15px;height:15px;border-radius:4.5px;
-    margin-left:6px;flex-shrink:0;color:#fff;
-    box-shadow:0 1px 3px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.28);
-    transition:transform .13s ease;cursor:help;
+  /* ═══ GOREV HAPI: tam yuvarlak, dolu renk, ust kenardan isik ═══ */
+  .gorev-hap{
+    display:inline-flex;align-items:center;vertical-align:middle;
+    margin-left:7px;flex-shrink:0;cursor:help;
+    padding:2.5px 8px 3px;border-radius:999px;
+    font-size:8.5px;font-weight:800;line-height:1;
+    letter-spacing:.075em;text-transform:uppercase;white-space:nowrap;
+    color:#fff;font-family:inherit;
+    background:linear-gradient(165deg,
+      color-mix(in srgb, var(--gc) 82%, #fff) 0%,
+      var(--gc) 55%,
+      color-mix(in srgb, var(--gc) 84%, #000) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.42),
+      inset 0 -1px 0 rgba(0,0,0,.16),
+      0 1px 3px color-mix(in srgb, var(--gc) 45%, transparent);
+    text-shadow:0 1px 1px rgba(0,0,0,.28);
+    transition:transform .14s ease, box-shadow .14s ease;
+    transform:translateY(-.5px);
   }
-  .gorev-ik svg{width:10px;height:10px;display:block}
-  .gorev-ik:hover{transform:scale(1.18)}
+  .gorev-hap:hover{
+    transform:translateY(-1.5px);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.5),
+      inset 0 -1px 0 rgba(0,0,0,.16),
+      0 3px 8px color-mix(in srgb, var(--gc) 55%, transparent);
+  }
   /* Ic mesajda bir tik kucuk */
-  .im-sender .gorev-ik{width:14px;height:14px;border-radius:4px;margin-left:5px}
-  .im-sender .gorev-ik svg{width:9px;height:9px}
+  .im-sender .gorev-hap{font-size:8px;padding:2px 7px 2.5px;margin-left:6px}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -6248,7 +6264,10 @@ function satisExcelIndir(){
 }
 
 // Sol liste: konusmalar (kiminle, son mesaj, okunmamis)
+let _internalListSon=null;
 function renderInternalList(d){
+  if(d) _internalListSon=d; else d=_internalListSon;
+  if(!d) return;
   d=d||{};
   _internalUsers = d.users||_internalUsers;
   _internalMe = d.me||_internalMe;
@@ -11460,7 +11479,7 @@ function gorevRengi(ad){ const g=gorevBul(ad); return g&&GOREV_BILGI[g]?GOREV_BI
 function gorevEtiketi(ad){
   const g=gorevBul(ad); if(!g||!GOREV_BILGI[g]) return '';
   const b=GOREV_BILGI[g];
-  return '<span class="gorev-ik" title="'+b.ad+' — '+b.kisa+'" style="background:'+b.renk+'">'+(b.ikon||'')+'</span>';
+  return '<span class="gorev-hap" title="'+b.kisa+'" style="--gc:'+b.renk+'">'+b.ad+'</span>';
 }
 async function panelFotolariYukle(){
   try{
@@ -11469,11 +11488,22 @@ async function panelFotolariYukle(){
     if(d.ok){
       window._panelFotolar=d.fotolar||{};
       window._panelGorevler=d.gorevler||{};
-      profilFotoTazele();
-    }
-  }catch(e){}
+      console.log('[profil] foto:',Object.keys(window._panelFotolar).length,'gorev:',Object.keys(window._panelGorevler).length);
+      try{ profilFotoTazele(); }catch(e){ console.warn('[profil] tazeleme hatasi',e); }
+    } else { console.warn('[profil] yuklenemedi:',d.error); }
+  }catch(e){ console.warn('[profil] istek hatasi',e); }
 }
 // Kendi avatarini ekranda uygula (rail + ayarlar)
+// ═══ Fotograf/gorev degisince EKRANDAKI HER YERI tazele ═══
+// (Bu fonksiyon eksikti; cagrilinca hata veriyor ve fotograf yuklemesi coküyordu.)
+function profilFotoTazele(){
+  try{ profilFotoUygula(); }catch(e){}
+  try{ if(typeof activeJid!=='undefined' && activeJid && chats[activeJid]) renderMessagesDebounced(chats[activeJid]); }catch(e){}
+  try{ if(_internalListSon) renderInternalList(_internalListSon); }catch(e){}
+  try{ if(typeof renderList==='function') renderList(); }catch(e){}
+  try{ if(typeof imAktifKisi!=='undefined' && imAktifKisi && typeof openInternalChat==='function'){} }catch(e){}
+}
+window.profilFotoTazele = profilFotoTazele;
 function profilFotoUygula(){
   const _b=_ben()||{};
   const veri=(window._panelFotolar&&(window._panelFotolar[_b.displayName]||window._panelFotolar[_b.username]))||'';
