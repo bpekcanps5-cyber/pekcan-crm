@@ -2025,6 +2025,30 @@
   /* gorunmeyen genis tiklama alani */
   .conv-header .icon-sm{position:relative}
   .conv-header .icon-sm::before{content:'';position:absolute;inset:-5px}
+
+  /* IC MESAJ gonderen: foto + tiklanabilir + gorev etiketi */
+  .im-sender.im-tikla{cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .im-sender.im-tikla:hover{filter:brightness(1.25)}
+  .im-foto{width:17px;height:17px;border-radius:50%;background-size:cover;background-position:center;flex-shrink:0;box-shadow:0 0 0 1px rgba(255,255,255,.22)}
+
+  /* Gorev etiketi secim menusu */
+  .gorev-menu{position:fixed;z-index:4000;background:var(--panel);border:1px solid var(--border);
+    border-radius:10px;box-shadow:var(--shadow-lg);padding:5px;min-width:175px;animation:gmIn .13s ease}
+  @keyframes gmIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+  .gm-item{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:7px;cursor:pointer;
+    font-size:13px;font-weight:650;letter-spacing:.02em;transition:background .13s}
+  .gm-item:hover{background:var(--panel-2)}
+  .gm-item.aktif{background:var(--panel-2)}
+  .gm-nokta{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+
+  /* Profil tusu: tam ortasi dahil her noktasi tiklanabilir */
+  #settingsAvatar{position:relative;cursor:pointer}
+  #settingsAvatar *{pointer-events:none !important}
+  #settingsAvatar::after{pointer-events:none !important}
+  #settingsAvatar::before{content:'';position:absolute;inset:-6px;border-radius:50%;z-index:1}
+  #settingsMenu .sm-item#smProfilGor span:first-child,
+  #settingsMenu .sm-item#smProfilDegis span:first-child,
+  #settingsMenu .sm-item#smProfilKaldir span:first-child{width:18px;display:inline-block;text-align:center}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -4839,6 +4863,13 @@ function connect(){
     }
     else if(d.type==='favoriler'){ favoriler.clear(); (d.liste||[]).forEach(j=>favoriler.add(j)); renderList(); }
     else if(d.type==='favoriUpdate'){ if(d.favori) favoriler.add(d.jid); else favoriler.delete(d.jid); renderList(); }
+    else if(d.type==='gorevGuncel'){
+      if(d.gorev){ window._panelGorevler[d.username]=d.gorev; if(d.ad) window._panelGorevler[d.ad]=d.gorev; }
+      else { delete window._panelGorevler[d.username]; if(d.ad) delete window._panelGorevler[d.ad]; }
+      try{ profilFotoTazele(); }catch(e){}
+      profilFotoTazele();
+      if(typeof loadUserList==='function' && document.getElementById('userModal') && document.getElementById('userModal').classList.contains('show')) loadUserList();
+    }
     else if(d.type==='profilFoto'){ if(d.veri) window._panelFotolar[d.username]=d.veri; else delete window._panelFotolar[d.username]; profilFotoUygula(); if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]); }
     else if(d.type==='mesajSabitler'){ _mesajSabitler=d.durum||{}; sabitBandGuncelle(); }
     else if(d.type==='mesajSabitUpdate'){ if(d.liste&&d.liste.length) _mesajSabitler[d.jid]=d.liste; else delete _mesajSabitler[d.jid]; if(d.jid===activeJid) sabitBandGuncelle(); }
@@ -6351,7 +6382,7 @@ function drawInternalMessages(){
     // İSİM BAŞLIĞI: gelen mesajda (karşı taraf), grubun ilk mesajında karşı tarafın adı
     let isimHtml='';
     if(!ben && !ayniGonderen){
-      isimHtml='<div class="im-sender" style="color:'+colorFor(karsiAd)+'">'+esc(karsiAd)+'</div>';
+      isimHtml=imSenderHtml(karsiAd);
     }
     // dosya var mı? (mediaUrl/media_url)
     const medya = m.mediaUrl || m.media_url || '';
@@ -6633,7 +6664,7 @@ function drawGroupMessages(){
     const u=_internalUsers.find(x=>x.username===gonderen);
     const ad=u?(u.displayName||u.username):gonderen;
     let isimHtml='';
-    if(!ben && !ayni){ isimHtml='<div class="im-sender" style="color:'+colorFor(ad)+'">'+esc(ad)+'</div>'; }
+    if(!ben && !ayni){ isimHtml=imSenderHtml(ad); }
     const mid=m.id||'';
     // SİLİNMİŞ
     if(m.deleted){
@@ -7826,6 +7857,11 @@ function userListeCiz(){
       actions+='<button class="um-btn" onclick="userDuzenleAc('+u.id+',\''+esc(u.username).replace(/'/g,"\\'")+'\',\''+esc(u.display_name||'').replace(/'/g,"\\'")+'\')">Düzenle</button>';
       // ROL DEĞİŞTİR menüsü (yönetici / pazarlama yöneticisi / normal)
       actions+='<button class="um-btn" onclick="rolMenuAc(event,'+u.id+',\''+esc(u.role||'agent')+'\')">Rol ▾</button>';
+      const _ug=u.gorev||'';
+      const _ugb=(typeof GOREV_BILGI!=='undefined'&&GOREV_BILGI[_ug])?GOREV_BILGI[_ug]:null;
+      actions+='<button class="um-btn" onclick="gorevMenuAc(event,'+u.id+',\''+esc(_ug)+'\')"'
+        +(_ugb?' style="color:'+_ugb.renk+';border-color:'+_ugb.renk+'55;background:'+_ugb.renk+'1a"':'')
+        +'>🏷️ '+(_ugb?_ugb.ad:'Görev')+' ▾</button>';
       actions+=boToggle;
       actions+='<button class="um-btn danger" onclick="delUser('+u.id+',\''+esc(u.username)+'\')">Sil</button>';
     } else {
@@ -7835,6 +7871,40 @@ function userListeCiz(){
   }).join('');
 }
 // ROL DEĞİŞTİRME menüsü (mevcut kullanıcıyı yönetici/pazarlama yöneticisi/normal yap)
+// GOREV ETIKETI menusu (2 AYLIK / KALICI / IPTAL / yok) — mevcut rolden bagimsiz
+function gorevMenuAc(ev, id, suanki){
+  ev.stopPropagation();
+  document.querySelectorAll('.gorev-menu').forEach(x=>x.remove());
+  const m=document.createElement('div'); m.className='gorev-menu';
+  const secenekler=[['2aylik','2 AYLIK'],['kalici','KALICI'],['iptal','İPTAL'],['','Görev yok']];
+  m.innerHTML=secenekler.map(([v,ad])=>{
+    const b=(typeof GOREV_BILGI!=='undefined'&&GOREV_BILGI[v])?GOREV_BILGI[v]:null;
+    const aktif=(suanki||'')===v;
+    return '<div class="gm-item'+(aktif?' aktif':'')+'" data-v="'+v+'"'
+      +(b?' style="color:'+b.renk+'"':'')+'>'
+      +(b?'<span class="gm-nokta" style="background:'+b.renk+'"></span>':'<span class="gm-nokta" style="background:var(--faint)"></span>')
+      +ad+(aktif?' ✓':'')+'</div>';
+  }).join('');
+  document.body.appendChild(m);
+  const r=ev.currentTarget.getBoundingClientRect();
+  m.style.left=Math.min(r.left,window.innerWidth-190)+'px';
+  m.style.top=(r.bottom+6)+'px';
+  m.querySelectorAll('.gm-item').forEach(it=>{
+    it.onclick=()=>{ gorevAta(id, it.dataset.v); m.remove(); };
+  });
+  setTimeout(()=>{
+    const kapat=(e)=>{ if(!m.contains(e.target)){ m.remove(); document.removeEventListener('click',kapat); } };
+    document.addEventListener('click',kapat);
+  },0);
+}
+function gorevAta(id, gorev){
+  fetch('/api/users/gorev',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({token:authToken,id,gorev})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){ showToast('🏷️ Görev güncellendi'); loadUserList(); try{ panelFotolariYukle(); }catch(e){} }
+      else showToast(d.error||'İşlem başarısız');
+    }).catch(()=>showToast('Sunucu hatası'));
+}
 function rolMenuAc(ev, id, suankiRol){
   ev.stopPropagation();
   // basit seçim: askConfirm yerine küçük bir prompt menüsü
@@ -9632,9 +9702,10 @@ function renderMessages(c, searchQ){
       if(m.fromMe){
         // PANEL KULLANICISI: kalkan ikonlu yeşil pill (tıklanmaz — WhatsApp kişisi değil, ekip üyesi)
         const panelRozet='<span class="panel-rozet" title="Panel kullanıcısı"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></span>';
-        const _pf=(window._panelFotolar&&(_panelFotolar[sn]))||'';
+        const _gr=gorevRengi(sn);
+        const _pf=(typeof panelProfilFoto==='function'?panelProfilFoto(sn):null)||'';
         const _pfAv=_pf?'<span class="tn-foto" style="background-image:url(\''+_pf+'\')"></span>':'';
-        name='<div class="sender-name team-name clickable" onclick="panelKisiGoster(\''+sn.replace(/'/g,"\\'")+'\')" title="Fotoğrafı gör">'+_pfAv+panelRozet+sn+'</div>';
+        name='<div class="sender-name team-name clickable'+(_gr?' gorevli':'')+'"'+(_gr?' style="color:'+_gr+' !important;border-color:'+_gr+'4d;background:'+_gr+'1a"':'')+' onclick="panelKisiGoster(\''+sn.replace(/'/g,"\\'")+'\')" title="Kişi bilgisi">'+_pfAv+panelRozet+sn+gorevEtiketi(sn)+'</div>';
       } else {
         // GELEN grup mesajı: ofis ekibinden mi? (adı Pekcan vb. VEYA sunucu işaretledi)
         const ofisMu = m.senderOfis || ofisIsmiMi(m.sender);
@@ -11321,11 +11392,37 @@ function telFormatla(num){
 
 // ═══ PANEL PROFIL FOTOGRAFLARI (sunucuda saklanir, herkes gorur) ═══
 window._panelFotolar = {};
+window._panelGorevler = {};   // ad/kullanici -> '2aylik'|'kalici'|'iptal'
+// GOREV TANIMLARI: renk + gorunen ad
+const GOREV_BILGI = {
+  '2aylik': {ad:'2 AYLIK', kisa:'2 Aylıkçı', renk:'#f0c040'},
+  'kalici': {ad:'KALICI',  kisa:'Yıllıkçı',  renk:'#4a9fe0'},
+  'iptal':  {ad:'İPTAL',   kisa:'İptalci',   renk:'#e35b5b'}
+};
+function gorevBul(ad){
+  if(!ad || !window._panelGorevler) return null;
+  if(_panelGorevler[ad]) return _panelGorevler[ad];
+  const lk=String(ad).toLocaleLowerCase('tr');
+  for(const k in _panelGorevler){ if(String(k).toLocaleLowerCase('tr')===lk) return _panelGorevler[k]; }
+  return null;
+}
+// Panel kullanicisinin adi icin GOREV RENGI (yoksa null)
+function gorevRengi(ad){ const g=gorevBul(ad); return g&&GOREV_BILGI[g]?GOREV_BILGI[g].renk:null; }
+// Kucuk gorev etiketi (isim yaninda)
+function gorevEtiketi(ad){
+  const g=gorevBul(ad); if(!g||!GOREV_BILGI[g]) return '';
+  const b=GOREV_BILGI[g];
+  return '<span class="gorev-et" style="color:'+b.renk+';border-color:'+b.renk+'55;background:'+b.renk+'1f">'+b.ad+'</span>';
+}
 async function panelFotolariYukle(){
   try{
     const r=await fetch('/api/profile/avatars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
     const d=await r.json();
-    if(d.ok){ window._panelFotolar=d.fotolar||{}; profilFotoUygula(); if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]); }
+    if(d.ok){
+      window._panelFotolar=d.fotolar||{};
+      window._panelGorevler=d.gorevler||{};
+      profilFotoTazele();
+    }
   }catch(e){}
 }
 // Kendi avatarini ekranda uygula (rail + ayarlar)
@@ -11339,14 +11436,59 @@ function profilFotoUygula(){
   });
 }
 // Panel kullanicisinin adina tiklayinca: fotografini buyuk goster
+// IC MESAJDA gonderen adi: gorev rengi + kucuk foto + gorev etiketi + tiklanabilir
+function imSenderHtml(ad){
+  const gr=(typeof gorevRengi==='function'&&gorevRengi(ad))||colorFor(ad);
+  const et=(typeof gorevEtiketi==='function')?gorevEtiketi(ad):'';
+  const f=(typeof panelProfilFoto==='function')?panelProfilFoto(ad):null;
+  const av=f?'<span class="im-foto" style="background-image:url(\''+f+'\')"></span>':'';
+  return '<div class="im-sender im-tikla" style="color:'+gr+'" title="Kişi bilgisi" onclick="panelKisiGoster(\''+String(ad).replace(/'/g,"\\'")+'\')">'+av+esc(ad)+et+'</div>';
+}
+
+// PANEL KULLANICISI BILGI KARTI: ad + foto (yakinlastirilabilir) + GOREV
 function panelKisiGoster(ad){
-  const veri=window._panelFotolar[ad]||'';
-  if(veri){ try{ openLightbox(veri); return; }catch(e){} }
+  const veri=(typeof panelProfilFoto==='function'?panelProfilFoto(ad):null)||'';
+  const g=(typeof gorevBul==='function')?gorevBul(ad):null;
+  const gb=(g&&typeof GOREV_BILGI!=='undefined')?GOREV_BILGI[g]:null;
+
   const av=document.getElementById('senderAv');
-  if(av){ av.style.backgroundImage=''; av.style.background=gradientFor(ad); av.textContent=initials(ad); }
-  const n=document.getElementById('senderName2'); if(n) n.textContent=ad;
-  const t=document.getElementById('senderPhone2'); if(t) t.textContent='Panel kullanıcısı';
+  if(av){
+    if(veri){
+      av.style.background='';
+      av.style.backgroundImage='url("'+veri+'")';
+      av.style.backgroundSize='cover'; av.style.backgroundPosition='center';
+      av.textContent=''; av.style.cursor='zoom-in';
+      av.onclick=function(){ try{ openLightbox(veri); }catch(e){} };
+      av.title='Fotoğrafı büyüt';
+    } else {
+      av.style.backgroundImage=''; av.style.background=gradientFor(ad);
+      av.textContent=initials(ad); av.style.cursor='default'; av.onclick=null; av.title='';
+    }
+    av.style.boxShadow = gb ? ('0 0 0 3px '+gb.renk) : '';
+  }
+  const n=document.getElementById('senderName2');
+  if(n){ n.textContent=ad; n.style.color = gb ? gb.renk : ''; }
+  // GOREV bilgisi numara alaninda gosterilir
+  const t=document.getElementById('senderPhone2');
+  if(t){
+    t.textContent = gb ? gb.ad : 'PANEL KULLANICISI';
+    t.style.color = gb ? gb.renk : 'var(--muted)';
+    t.style.borderColor = gb ? (gb.renk+'55') : 'var(--border)';
+    t.style.background = gb ? (gb.renk+'1a') : 'var(--panel-2)';
+    t.style.fontSize='15px'; t.style.letterSpacing='1.2px';
+  }
   ['senderDM','senderCopy'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
+  // foto varsa "Buyut" tusu gorunur
+  let bt=document.getElementById('senderBuyut');
+  if(!bt){
+    bt=document.createElement('button'); bt.id='senderBuyut'; bt.className='btn primary';
+    bt.style.width='100%'; bt.textContent='🔍 Fotoğrafı Büyüt';
+    const kap=document.getElementById('senderClose2');
+    if(kap&&kap.parentNode) kap.parentNode.insertBefore(bt,kap);
+  }
+  bt.style.display = veri ? '' : 'none';
+  bt.onclick = function(){ if(veri){ try{ openLightbox(veri); }catch(e){} } };
+
   const m=document.getElementById('senderModal'); if(m) m.classList.add('show');
 }
 // Kendi fotografini sunucuya kaydet / kaldir
@@ -11365,6 +11507,14 @@ async function profilFotoKaydet(veri){
 }
 
 function showSenderInfo(jid, name){
+  // panel-kisi karti stillerini SIFIRLA (ayni modal ikisi icin de kullaniliyor)
+  const _av=document.getElementById('senderAv');
+  if(_av){ _av.style.boxShadow=''; _av.style.cursor='default'; _av.onclick=null; _av.title=''; }
+  const _n=document.getElementById('senderName2'); if(_n) _n.style.color='';
+  const _t=document.getElementById('senderPhone2');
+  if(_t){ _t.style.color='var(--text)'; _t.style.borderColor='var(--border)'; _t.style.background='var(--panel-2)'; _t.style.fontSize='21px'; _t.style.letterSpacing='.6px'; }
+  const _b=document.getElementById('senderBuyut'); if(_b) _b.style.display='none';
+  ['senderDM','senderCopy'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display=''; });
   if(!jid){ showToast('Bu kişinin bilgisi yok'); return; }
   const isLid = jid.endsWith('@lid');
   const num = jid.split('@')[0];
@@ -12596,6 +12746,103 @@ window.icMesajKisiBilgi=function(kullanici){
   kisiBilgiKarti({ad:ad, alt:alt, foto:foto, bashar:(av?av.textContent.trim():''),
     renk:(av?getComputedStyle(av).backgroundColor:''), etiket:'Panel kullanıcısı'});
 };
+</script>
+
+<script>
+/* ═══════════ PROFIL: tus + kendi profilini goruntule + foto degistir ═══════════ */
+(function(){
+  function benimAd(){ return (window.currentUser&&(currentUser.displayName||currentUser.username))||''; }
+  function benimFoto(){
+    var ad=benimAd();
+    if(typeof panelProfilFoto==='function'){ var f=panelProfilFoto(ad); if(f) return f; }
+    try{ return localStorage.getItem('profilFoto_'+((currentUser&&currentUser.username)||'')); }catch(e){}
+    return null;
+  }
+
+  // ── Gizli dosya secici (bir kere olusturulur) ──
+  function girisAl(){
+    var i=document.getElementById('__profilFotoInput');
+    if(i) return i;
+    i=document.createElement('input');
+    i.type='file'; i.accept='image/*'; i.id='__profilFotoInput'; i.style.display='none';
+    i.addEventListener('change', function(){
+      var f=i.files&&i.files[0]; i.value='';
+      if(!f) return;
+      if(!/^image\//.test(f.type)){ showToast('Sadece resim seçebilirsin'); return; }
+      var fr=new FileReader();
+      fr.onload=function(){
+        var img=new Image();
+        img.onload=function(){
+          // 256x256 kare, JPEG — sunucuda az yer tutsun
+          var S=256, c=document.createElement('canvas'); c.width=S; c.height=S;
+          var x=c.getContext('2d');
+          var k=Math.min(img.width,img.height);
+          x.drawImage(img,(img.width-k)/2,(img.height-k)/2,k,k,0,0,S,S);
+          var veri=c.toDataURL('image/jpeg',.86);
+          if(typeof profilFotoKaydet==='function') profilFotoKaydet(veri);
+        };
+        img.onerror=function(){ showToast('Resim okunamadı'); };
+        img.src=fr.result;
+      };
+      fr.readAsDataURL(f);
+    });
+    document.body.appendChild(i);
+    return i;
+  }
+  window.profilFotoSec = function(){ girisAl().click(); };
+
+  // ── Kendi profilini goruntule (ad + foto + gorev) ──
+  window.kendiProfilimiGor = function(){
+    var m=document.getElementById('settingsMenu'); if(m) m.classList.remove('show');
+    var ad=benimAd();
+    if(typeof panelKisiGoster==='function'){ panelKisiGoster(ad); return; }
+    var f=benimFoto();
+    if(f){ try{ openLightbox(f); }catch(e){} }
+  };
+
+  // ── Ayarlar menusune iki secenek ekle (bir kere) ──
+  function menuyeEkle(){
+    var m=document.getElementById('settingsMenu');
+    if(!m || m.__profilEkli) return;
+    m.__profilEkli = true;
+    var g=document.createElement('div');
+    g.className='sm-item'; g.id='smProfilGor';
+    g.innerHTML='<span>👤</span><span>Profilimi Görüntüle</span>';
+    g.onclick=function(e){ e.stopPropagation(); kendiProfilimiGor(); };
+    var d=document.createElement('div');
+    d.className='sm-item'; d.id='smProfilDegis';
+    d.innerHTML='<span>📷</span><span>Profil Fotoğrafını Değiştir</span>';
+    d.onclick=function(e){ e.stopPropagation(); m.classList.remove('show'); profilFotoSec(); };
+    var k=document.createElement('div');
+    k.className='sm-item'; k.id='smProfilKaldir';
+    k.innerHTML='<span>🗑️</span><span>Fotoğrafı Kaldır</span>';
+    k.onclick=function(e){ e.stopPropagation(); m.classList.remove('show');
+      if(confirm('Profil fotoğrafın kaldırılsın mı?') && typeof profilFotoKaydet==='function') profilFotoKaydet(null); };
+    m.insertBefore(k, m.firstChild);
+    m.insertBefore(d, m.firstChild);
+    m.insertBefore(g, m.firstChild);
+  }
+  menuyeEkle(); setTimeout(menuyeEkle,800); setTimeout(menuyeEkle,2500);
+
+  // ── Profil tusu: TAM ORTA dahil her yerden calissin ──
+  function tusBagla(){
+    var av=document.getElementById('settingsAvatar');
+    if(!av || av.__tamBagli) return;
+    av.__tamBagli=true;
+    // ic ogeler tiklamayi yutmasin
+    Array.prototype.forEach.call(av.children||[], function(c){ c.style.pointerEvents='none'; });
+    av.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation();
+      var m=document.getElementById('settingsMenu'); if(!m) return;
+      menuyeEkle();
+      var r=av.getBoundingClientRect();
+      m.style.left=(r.right+10)+'px';
+      m.style.bottom=(window.innerHeight-r.bottom)+'px';
+      m.classList.toggle('show');
+    }, true);
+  }
+  tusBagla(); setTimeout(tusBagla,700); setTimeout(tusBagla,2200);
+})();
 </script>
 </body>
 </html>

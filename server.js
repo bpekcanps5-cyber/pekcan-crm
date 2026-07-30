@@ -311,6 +311,17 @@ const sessions = new Map(); // token -> { username, displayName, role, ts }
 // BAĞIMSIZ OKUMA yan-rolü olan kullanıcı adları (bellek-içi; açılışta DB'den dolar, restart'a dayanıklı).
 let bagimsizOkumaKullanicilar = new Set();
 const profilFotolar = {}; // username -> data-url (panel profil fotograflari)
+const kullaniciGorevleri = {}; // username/displayName -> '2aylik'|'kalici'|'iptal'
+async function gorevleriYukle() {
+  try {
+    const us = await db.listUsers();
+    for (const u of us) {
+      if (!u.gorev) continue;
+      kullaniciGorevleri[u.username] = u.gorev;
+      if (u.display_name) kullaniciGorevleri[u.display_name] = u.gorev;
+    }
+  } catch (e) {}
+}
 async function bagimsizOkumaYukle() {
   try { const us = await db.listUsers(); bagimsizOkumaKullanicilar = new Set(us.filter(u => u.bagimsiz_okuma).map(u => u.username)); }
   catch (e) { /* db henüz hazır değilse boş kalır, sonra tekrar yüklenir */ }
@@ -407,7 +418,7 @@ app.post('/api/login', express.json(), async (req, res) => {
       startWA(lineId).catch(e => console.error(`Hat baslatilamadi (${lineId}):`, e.message));
     }
   }
-  res.json({ ok: true, token, displayName: user.display_name, role: user.role, username: user.username, bagimsizOkuma: !!user.bagimsiz_okuma, lineId, lineTip });
+  res.json({ ok: true, token, displayName: user.display_name, role: user.role, username: user.username, bagimsizOkuma: !!user.bagimsiz_okuma, gorev: user.gorev || null, lineId, lineTip });
 });
 
 // Token gecerli mi (panel acilinca kontrol)
@@ -437,7 +448,7 @@ app.post('/api/whoami', express.json(), async (req, res) => {
       startWA(lineId).catch(() => {});
     }
   }
-  res.json({ ok: true, displayName: s.displayName, role: s.role, username: s.username, bagimsizOkuma: bagimsizOkumaKullanicilar.has(s.username), lineId, lineTip });
+  res.json({ ok: true, displayName: s.displayName, role: s.role, username: s.username, bagimsizOkuma: bagimsizOkumaKullanicilar.has(s.username), gorev: kullaniciGorevleri[s.username] || null, lineId, lineTip });
 });
 
 // Cikis (token sil)
@@ -1384,6 +1395,30 @@ app.post('/api/users/bagimsizokuma', express.json(), async (req, res) => {
   }
 });
 
+// ═══ GOREV ETIKETI (2aylik / kalici / iptal) — yonetici atar, herkeste renkli gorunur ═══
+app.post('/api/users/gorev', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  const gorev = req.body?.gorev || null;
+  if (gorev && !db.GECERLI_GOREV.includes(gorev)) return res.json({ ok: false, error: 'Geçersiz görev' });
+  try {
+    const users = await db.listUsers();
+    const u = users.find(x => String(x.id) === String(req.body?.id));
+    if (!u) return res.json({ ok: false, error: 'Kullanıcı bulunamadı' });
+    const r = await db.setUserGorev(u.id, gorev);
+    if (!r.ok) return res.json({ ok: false, error: r.error || 'Kaydedilemedi' });
+    // bellegi guncelle
+    if (r.gorev) { kullaniciGorevleri[u.username] = r.gorev; if (u.display_name) kullaniciGorevleri[u.display_name] = r.gorev; }
+    else { delete kullaniciGorevleri[u.username]; if (u.display_name) delete kullaniciGorevleri[u.display_name]; }
+    for (const [, s2] of sessions) { if (s2.username === u.username) s2.gorev = r.gorev; }
+    // tum panellere aninda bildir
+    for (const [, l] of lines) {
+      try { broadcastHat(l.id || 'ofis', { type: 'gorevGuncel', username: u.username, ad: u.display_name || u.username, gorev: r.gorev }); } catch (e) {}
+    }
+    console.log(`   🏷️  GOREV: ${u.username} -> ${r.gorev || '(yok)'}`);
+    res.json({ ok: true, gorev: r.gorev });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
 // ═══ PANEL PROFIL FOTOGRAFI ═══
 // Kendi fotografini kaydet/kaldir. Sunucuda durur -> her cihazdan gorunur, HERKES gorur.
 app.post('/api/profile/avatar', express.json({ limit: '3mb' }), async (req, res) => {
@@ -1408,9 +1443,13 @@ app.post('/api/profile/avatars', express.json(), async (req, res) => {
   if (!sessions.get(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
   try {
     const rows = await db.listUserAvatars();
-    const harita = {};
-    for (const r of rows) { if (r.avatar) { harita[r.username] = r.avatar; if (r.display_name) harita[r.display_name] = r.avatar; } }
-    res.json({ ok: true, fotolar: harita });
+    const harita = {}, gorevler = {}, adlar = {};
+    for (const r of rows) {
+      if (r.avatar) { harita[r.username] = r.avatar; if (r.display_name) harita[r.display_name] = r.avatar; }
+      if (r.gorev)  { gorevler[r.username] = r.gorev; if (r.display_name) gorevler[r.display_name] = r.gorev; }
+      if (r.display_name) adlar[r.username] = r.display_name;
+    }
+    res.json({ ok: true, fotolar: harita, gorevler, adlar });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
@@ -6666,6 +6705,7 @@ server.listen(PORT, async () => {
   db.init();
   const dbOk = await db.test();
   await bagimsizOkumaYukle(); // bağımsız okuma yan-rolü listesini belleğe al
+  await gorevleriYukle();     // görev etiketlerini (2aylik/kalici/iptal) belleğe al
   db.startKeepAlive(15);
   db.startCleanup();
 

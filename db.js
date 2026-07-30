@@ -49,6 +49,12 @@ async function test() {
       pool.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS ozel_unread INTEGER DEFAULT 0')
         .then(() => console.log('   ✓ chats.ozel_unread kolonu hazır (bağımsız okuma rolü)'))
         .catch((e) => console.log('   ⚠️ ozel_unread eklenemedi:', e.message));
+      pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS gorev TEXT")
+        .then(() => console.log('   ✓ users.gorev kolonu hazır (2aylik / kalici / iptal / muhasebe)'))
+        .catch((e) => console.log('   ⚠️ gorev eklenemedi:', e.message));
+      pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS gorev TEXT DEFAULT ''")
+        .then(() => console.log('   ✓ users.gorev kolonu hazır (2 aylık / kalıcı / iptal)'))
+        .catch((e) => console.log('   ⚠️ gorev eklenemedi:', e.message));
       pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT')
         .then(() => console.log('   ✓ users.avatar kolonu hazır (panel profil fotoğrafı)'))
         .catch((e) => console.log('   ⚠️ avatar eklenemedi:', e.message));
@@ -600,7 +606,7 @@ async function checkLogin(username, password) {
   if (!aktif) return null;
   try {
     const r = await pool.query(
-      'SELECT id, username, display_name, role, bagimsiz_okuma FROM users WHERE username=$1 AND password=$2',
+      'SELECT id, username, display_name, role, bagimsiz_okuma, gorev FROM users WHERE username=$1 AND password=$2',
       [username, password]
     );
     return r.rows[0] || null;
@@ -631,7 +637,7 @@ async function listUsers() {
     // kullanici tipini (ofis/pazarlama) de getir — kullanici_hatlari ile birlestir.
     // Eslesme yoksa varsayilan 'ofis'.
     const r = await pool.query(`
-      SELECT u.id, u.username, u.display_name, u.role, u.created_at, u.bagimsiz_okuma,
+      SELECT u.id, u.username, u.display_name, u.role, u.created_at, u.bagimsiz_okuma, COALESCE(u.gorev,'') AS gorev, u.gorev,
              COALESCE(kh.tip, 'ofis') AS tip,
              COALESCE(kh.line_id, 'ofis') AS line_id
       FROM users u
@@ -1053,9 +1059,18 @@ async function setUserAvatar(username, veri) {
 async function listUserAvatars() {
   if (!aktif) return [];
   try {
-    const r = await pool.query("SELECT username, display_name, avatar FROM users WHERE avatar IS NOT NULL AND avatar <> ''");
+    const r = await pool.query("SELECT username, display_name, avatar, gorev FROM users");
     return r.rows;
   } catch (e) { return []; }
+}
+
+// GOREV (ek etiket): '2aylik' | 'kalici' | 'iptal' | null. role'den BAGIMSIZ.
+const GECERLI_GOREV = ['2aylik', 'kalici', 'iptal', 'muhasebe'];
+async function setUserGorev(id, gorev) {
+  if (!aktif) return { ok: false };
+  const g = gorev && GECERLI_GOREV.includes(gorev) ? gorev : null;
+  try { await pool.query('UPDATE users SET gorev=$1 WHERE id=$2', [g, id]); return { ok: true, gorev: g }; }
+  catch (e) { return { ok: false, error: e.message }; }
 }
 
 // BAĞIMSIZ OKUMA yan-rolünü aç/kapat (yönetici). role'den bağımsız bir bayrak.
@@ -1668,7 +1683,7 @@ module.exports = {
   loadAll, loadMessages, deleteMessage, wipeAll, wipeGroups, searchMessages,
   cleanupOld, startCleanup,
   ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, setBagimsizOkuma, updateUser,
-  setUserAvatar, listUserAvatars,
+  setUserAvatar, listUserAvatars, setUserGorev, GECERLI_GOREV,
   getOwnPassword, listUsersWithPasswords,
   saveInternalMessage, loadInternalConversation, listInternalConversations,
   markInternalRead, internalUnreadCount,
