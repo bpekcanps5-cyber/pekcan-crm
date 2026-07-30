@@ -1433,7 +1433,7 @@ app.post('/api/profile/avatar', express.json({ limit: '3mb' }), async (req, res)
     if (!veri) delete profilFotolar[s.username];
     // herkese aninda bildir: acik panellerde foto hemen guncellensin
     for (const [, l] of lines) {
-      try { broadcastHat(l.id || 'ofis', { type: 'profilFoto', username: s.username, veri: veri || null }); } catch (e) {}
+      try { broadcastHat(l.id || 'ofis', { type: 'profilFoto', username: s.username, displayName: s.displayName || '', veri: veri || null }); } catch (e) {}
     }
     res.json({ ok: true });
   } catch (e) { res.json({ ok: false, error: e.message }); }

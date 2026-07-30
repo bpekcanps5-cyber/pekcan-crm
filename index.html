@@ -4885,7 +4885,12 @@ function connect(){
       profilFotoTazele();
       if(typeof loadUserList==='function' && document.getElementById('userModal') && document.getElementById('userModal').classList.contains('show')) loadUserList();
     }
-    else if(d.type==='profilFoto'){ if(d.veri) window._panelFotolar[d.username]=d.veri; else delete window._panelFotolar[d.username]; profilFotoUygula(); if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]); }
+    else if(d.type==='profilFoto'){
+      [d.username,d.displayName,d.ad].filter(Boolean).forEach(function(k){
+        if(d.veri) window._panelFotolar[k]=d.veri; else delete window._panelFotolar[k];
+      });
+      profilFotoTazele();
+    }
     else if(d.type==='mesajSabitler'){ _mesajSabitler=d.durum||{}; sabitBandGuncelle(); }
     else if(d.type==='mesajSabitUpdate'){ if(d.liste&&d.liste.length) _mesajSabitler[d.jid]=d.liste; else delete _mesajSabitler[d.jid]; if(d.jid===activeJid) sabitBandGuncelle(); }
     else if(d.type==='buradayimUpdate'){ handleBuradayimUpdate(d.jid, d.liste); }
@@ -5146,6 +5151,10 @@ function handleSyncStatus(d){
 // kapatilinca silinir -> her yeniden acilista giris bilgisi sorulur (kullanici istegi).
 let authToken = sessionStorage.getItem('pekcan_token') || null;
 let currentUser = null; // { displayName, role, username }
+// 'let' window'a yazmaz -> window.currentUser undefined kaliyordu. Senkron tutuyoruz.
+function _cuSenk(){ try{ window.currentUser = currentUser; }catch(e){} }
+function _ben(){ try{ return (typeof currentUser!=='undefined' && currentUser) ? currentUser : (window.currentUser||null); }catch(e){ return window.currentUser||null; } }
+window._ben = _ben;
 let _wsStarted = false;
 
 // Mesaji atan ekip uyesinin adi (giris yapan kullanici). Mesajlarda gonderen olarak kullanilir.
@@ -6258,7 +6267,7 @@ function renderInternalList(d){
       const okunmaCls = unread>0?' im-okunmamis':' im-okundu';
       const sabitIk = _imSabitliler.includes(it.other_user)?'<span class="im-pin-ik">📌</span>':'';
       return '<div class="chat'+aktif+okunmaCls+'" onclick="openInternalChat(\''+esc(it.other_user)+'\')">'
-        + (function(){ var f=window.panelProfilFoto&&window.panelProfilFoto(it.other_user);
+        + (function(){ var f=window.panelProfilFoto&&(window.panelProfilFoto(it.other_user)||window.panelProfilFoto(ad));
              return f ? '<div class="avatar" style="background-image:url(\''+f+'\');background-size:cover;background-position:center"></div>'
                       : '<div class="avatar" style="background:'+gradientFor(ad)+'">'+esc(initials(ad))+'</div>'; })()
         + '<div class="chat-main"><div class="chat-top"><span class="chat-name">'+esc(ad)+'</span>'+sabitIk+'</div>'
@@ -7203,6 +7212,7 @@ async function doLogin(){
 }
 
 function applyUser(){
+  _cuSenk();
   if(!currentUser) return;
   const pzrYonetici = currentUser.role==='pzr_yonetici'; // pazarlama yöneticisi
   // ayarlar menusunde ismi goster
@@ -11442,8 +11452,8 @@ async function panelFotolariYukle(){
 }
 // Kendi avatarini ekranda uygula (rail + ayarlar)
 function profilFotoUygula(){
-  const ad=(currentUser&&(currentUser.displayName||currentUser.username))||'';
-  const veri=window._panelFotolar[ad]||window._panelFotolar[(currentUser&&currentUser.username)||'']||'';
+  const _b=_ben()||{};
+  const veri=(window._panelFotolar&&(window._panelFotolar[_b.displayName]||window._panelFotolar[_b.username]))||'';
   ['settingsAvatar','railAvatar'].forEach(id=>{
     const el=document.getElementById(id); if(!el) return;
     if(veri){ el.style.backgroundImage='url("'+veri+'")'; el.classList.add('foto-var'); }
@@ -11512,8 +11522,9 @@ async function profilFotoKaydet(veri){
     const r=await fetch('/api/profile/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,veri:veri})});
     const d=await r.json();
     if(d.ok){
-      const ad=(currentUser&&(currentUser.displayName||currentUser.username))||'';
-      if(veri){ window._panelFotolar[ad]=veri; } else { delete window._panelFotolar[ad]; }
+      const _b=_ben()||{};
+      const _adlar=[_b.displayName,_b.username].filter(Boolean);
+      _adlar.forEach(function(k){ if(veri) window._panelFotolar[k]=veri; else delete window._panelFotolar[k]; });
       profilFotoUygula();
       if(activeJid&&chats[activeJid]) renderMessagesDebounced(chats[activeJid]);
       showToast(veri?'✓ Profil fotoğrafı güncellendi (herkes görecek)':'Profil fotoğrafı kaldırıldı');
@@ -12766,11 +12777,14 @@ window.icMesajKisiBilgi=function(kullanici){
 <script>
 /* ═══════════ PROFIL: tus + kendi profilini goruntule + foto degistir ═══════════ */
 (function(){
-  function benimAd(){ return (window.currentUser&&(currentUser.displayName||currentUser.username))||''; }
+  function _b(){ return (window._ben&&window._ben())||window.currentUser||null; }
+  function benimAd(){ var b=_b()||{}; return b.displayName||b.username||''; }
   function benimFoto(){
-    var ad=benimAd();
-    if(typeof panelProfilFoto==='function'){ var f=panelProfilFoto(ad); if(f) return f; }
-    try{ return localStorage.getItem('profilFoto_'+((currentUser&&currentUser.username)||'')); }catch(e){}
+    var b=_b()||{};
+    if(typeof panelProfilFoto==='function'){
+      var f=panelProfilFoto(b.displayName)||panelProfilFoto(b.username);
+      if(f) return f;
+    }
     return null;
   }
 
