@@ -2046,24 +2046,20 @@
   #settingsAvatar *{pointer-events:none !important}
   #settingsAvatar::after{pointer-events:none !important}
   #settingsAvatar::before{content:'';position:absolute;inset:-6px;border-radius:50%;z-index:1}
-  #settingsMenu .sm-item#smProfilGor span:first-child,
-  #settingsMenu .sm-item#smProfilDegis span:first-child,
-  #settingsMenu .sm-item#smProfilKaldir span:first-child{width:18px;display:inline-block;text-align:center}
 
-  /* ═══ GOREV ETIKETI: kucuk, sonik, isim gibi durmasin ═══ */
-  .gorev-et{
-    display:inline-block;vertical-align:middle;
-    font-size:8.5px;font-weight:700;line-height:1;
-    letter-spacing:.07em;text-transform:uppercase;
-    padding:2px 5px;border-radius:4px;
-    border:1px solid;opacity:.78;
-    margin-left:6px;flex-shrink:0;
-    font-family:inherit;font-variant:normal;
-    transform:translateY(-.5px);
+  /* ═══ GOREV SIMGESI: kucuk logo (yazi yok) ═══ */
+  .gorev-ik{
+    display:inline-grid;place-items:center;vertical-align:middle;
+    width:15px;height:15px;border-radius:4.5px;
+    margin-left:6px;flex-shrink:0;color:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.28);
+    transition:transform .13s ease;cursor:help;
   }
-  .gorev-et:hover{opacity:1}
-  /* Ic mesajda bir tik daha kucuk */
-  .im-sender .gorev-et{font-size:8px;padding:1.5px 4.5px;margin-left:5px}
+  .gorev-ik svg{width:10px;height:10px;display:block}
+  .gorev-ik:hover{transform:scale(1.18)}
+  /* Ic mesajda bir tik kucuk */
+  .im-sender .gorev-ik{width:14px;height:14px;border-radius:4px;margin-left:5px}
+  .im-sender .gorev-ik svg{width:9px;height:9px}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -4141,6 +4137,29 @@
   </div>
 </div>
 
+
+<div class="modal-bg" id="profilModal">
+  <div class="modal" style="width:400px">
+    <h3 style="display:flex;align-items:center;gap:9px;margin-bottom:4px">👤 Profil</h3>
+    <p style="color:var(--muted);font-size:12.5px;margin-bottom:18px">Fotoğrafın tüm ekipte görünür.</p>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px;margin-bottom:20px">
+      <div id="pmAvatar" style="width:104px;height:104px;border-radius:50%;background-size:cover;background-position:center;display:grid;place-items:center;color:#fff;font-weight:700;font-size:36px;box-shadow:0 6px 20px rgba(0,0,0,.35)"></div>
+      <div style="text-align:center">
+        <div id="pmAd" style="font-size:19px;font-weight:750;letter-spacing:-.02em"></div>
+        <div id="pmAlt" style="font-size:12.5px;color:var(--muted);margin-top:3px"></div>
+      </div>
+      <div id="pmGorev"></div>
+    </div>
+
+    <div class="modal-btns" style="flex-direction:column;gap:8px">
+      <button class="btn primary" id="pmDegis" style="width:100%">📷 Fotoğrafı Değiştir</button>
+      <button class="btn ghost" id="pmBuyut" style="width:100%">🔍 Fotoğrafı Büyüt</button>
+      <button class="btn ghost" id="pmKaldir" style="width:100%;color:#e35b5b">🗑️ Fotoğrafı Kaldır</button>
+      <button class="btn ghost" id="pmKapat" style="width:100%">Kapat</button>
+    </div>
+  </div>
+</div>
 <div class="modal-bg" id="senderModal">
   <div class="modal">
     <div id="senderHero" style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:16px">
@@ -11420,9 +11439,13 @@ window._panelFotolar = {};
 window._panelGorevler = {};   // ad/kullanici -> '2aylik'|'kalici'|'iptal'
 // GOREV TANIMLARI: renk + gorunen ad
 const GOREV_BILGI = {
-  '2aylik': {ad:'2 AYLIK', kisa:'2 Aylıkçı', renk:'#f0c040'},
-  'kalici': {ad:'KALICI',  kisa:'Yıllıkçı',  renk:'#4a9fe0'},
-  'iptal':  {ad:'İPTAL',   kisa:'İptalci',   renk:'#e35b5b'}
+  // ikon: kucuk logo (yazi yerine) — takvim / kalkan / carpi
+  '2aylik': {ad:'2 AYLIK', kisa:'2 Aylıkçı', renk:'#f0c040',
+    ikon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M8 3v4M16 3v4M3 11h18"/></svg>'},
+  'kalici': {ad:'KALICI',  kisa:'Yıllıkçı',  renk:'#4a9fe0',
+    ikon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 4 6v6c0 5.2 3.4 9.4 8 10.5 4.6-1.1 8-5.3 8-10.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></svg>'},
+  'iptal':  {ad:'İPTAL',   kisa:'İptalci',   renk:'#e35b5b',
+    ikon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><path d="M8.2 8.2l7.6 7.6M15.8 8.2l-7.6 7.6"/></svg>'}
 };
 function gorevBul(ad){
   if(!ad || !window._panelGorevler) return null;
@@ -11437,7 +11460,7 @@ function gorevRengi(ad){ const g=gorevBul(ad); return g&&GOREV_BILGI[g]?GOREV_BI
 function gorevEtiketi(ad){
   const g=gorevBul(ad); if(!g||!GOREV_BILGI[g]) return '';
   const b=GOREV_BILGI[g];
-  return '<span class="gorev-et" style="color:'+b.renk+';border-color:'+b.renk+'55;background:'+b.renk+'1f">'+b.ad+'</span>';
+  return '<span class="gorev-ik" title="'+b.ad+' — '+b.kisa+'" style="background:'+b.renk+'">'+(b.ikon||'')+'</span>';
 }
 async function panelFotolariYukle(){
   try{
@@ -12829,27 +12852,24 @@ window.icMesajKisiBilgi=function(kullanici){
     if(f){ try{ openLightbox(f); }catch(e){} }
   };
 
-  // ── Ayarlar menusune iki secenek ekle (bir kere) ──
+  // ── Ayarlar menusune TEK "Profil" girisi (en uste, basligin ALTINA) ──
   function menuyeEkle(){
     var m=document.getElementById('settingsMenu');
     if(!m || m.__profilEkli) return;
     m.__profilEkli = true;
-    var g=document.createElement('div');
-    g.className='sm-item'; g.id='smProfilGor';
-    g.innerHTML='<span>👤</span><span>Profilimi Görüntüle</span>';
-    g.onclick=function(e){ e.stopPropagation(); kendiProfilimiGor(); };
-    var d=document.createElement('div');
-    d.className='sm-item'; d.id='smProfilDegis';
-    d.innerHTML='<span>📷</span><span>Profil Fotoğrafını Değiştir</span>';
-    d.onclick=function(e){ e.stopPropagation(); m.classList.remove('show'); profilFotoSec(); };
-    var k=document.createElement('div');
-    k.className='sm-item'; k.id='smProfilKaldir';
-    k.innerHTML='<span>🗑️</span><span>Fotoğrafı Kaldır</span>';
-    k.onclick=function(e){ e.stopPropagation(); m.classList.remove('show');
-      if(confirm('Profil fotoğrafın kaldırılsın mı?') && typeof profilFotoKaydet==='function') profilFotoKaydet(null); };
-    m.insertBefore(k, m.firstChild);
-    m.insertBefore(d, m.firstChild);
-    m.insertBefore(g, m.firstChild);
+    var it=document.createElement('div');
+    it.className='set-item'; it.id='smProfil';
+    it.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>Profil';
+    it.onclick=function(e){ e.stopPropagation(); m.classList.remove('show'); profilAyarlariAc(); };
+    var bas=m.querySelector('.settings-head');
+    if(bas && bas.nextSibling) m.insertBefore(it, bas.nextSibling);
+    else m.insertBefore(it, m.firstChild);
+    // eski "Profil Fotografi" ogesi varsa kaldir (tek yerde toplaniyor)
+    var eski=document.getElementById('smFotoDegis'); if(eski&&eski.parentNode) eski.parentNode.removeChild(eski);
+    m.querySelectorAll('.set-item,.sm-item').forEach(function(x){
+      var t=(x.textContent||'').trim();
+      if(x!==it && (t==='Profil Fotoğrafı')) x.parentNode.removeChild(x);
+    });
   }
   menuyeEkle(); setTimeout(menuyeEkle,800); setTimeout(menuyeEkle,2500);
 
@@ -12871,6 +12891,65 @@ window.icMesajKisiBilgi=function(kullanici){
     }, true);
   }
   tusBagla(); setTimeout(tusBagla,700); setTimeout(tusBagla,2200);
+})();
+</script>
+
+<script>
+/* ═══ PROFIL AYARLARI PENCERESI ═══ */
+function profilAyarlariAc(){
+  var b=(window._ben&&window._ben())||window.currentUser||{};
+  var ad=b.displayName||b.username||'';
+  var foto=(typeof panelProfilFoto==='function')?(panelProfilFoto(b.displayName)||panelProfilFoto(b.username)):null;
+  var g=(typeof gorevBul==='function')?gorevBul(ad):null;
+  var gb=(g&&typeof GOREV_BILGI!=='undefined')?GOREV_BILGI[g]:null;
+
+  var av=document.getElementById('pmAvatar');
+  if(av){
+    if(foto){
+      av.style.background=''; av.style.backgroundImage='url("'+foto+'")';
+      av.textContent=''; av.style.cursor='zoom-in';
+      av.onclick=function(){ try{ openLightbox(foto); }catch(e){} };
+    } else {
+      av.style.backgroundImage=''; av.style.background=(typeof gradientFor==='function')?gradientFor(ad):'var(--panel-2)';
+      av.textContent=(typeof initials==='function')?initials(ad):'?';
+      av.style.cursor='default'; av.onclick=null;
+    }
+    av.style.boxShadow = gb ? ('0 0 0 3px '+gb.renk+',0 6px 20px rgba(0,0,0,.35)') : '0 6px 20px rgba(0,0,0,.35)';
+  }
+  var n=document.getElementById('pmAd'); if(n) n.textContent=ad||'—';
+  var alt=document.getElementById('pmAlt');
+  if(alt){
+    var rolAd={admin:'Yönetici',pzr_yonetici:'Pazarlama Yöneticisi',muhasebeci:'Muhasebeci',agent:'Temsilci'}[b.role]||'Kullanıcı';
+    alt.textContent='@'+(b.username||'')+' · '+rolAd;
+  }
+  var gv=document.getElementById('pmGorev');
+  if(gv){
+    gv.innerHTML = gb
+      ? '<span style="display:inline-block;font-size:11px;font-weight:750;letter-spacing:.1em;padding:5px 13px;border-radius:7px;color:'+gb.renk+';border:1px solid '+gb.renk+'55;background:'+gb.renk+'1a">'+gb.ad+'</span>'
+      : '<span style="font-size:11.5px;color:var(--faint)">Görev atanmamış</span>';
+  }
+  var bt=document.getElementById('pmBuyut'); if(bt) bt.style.display = foto ? '' : 'none';
+  var kl=document.getElementById('pmKaldir'); if(kl) kl.style.display = foto ? '' : 'none';
+  if(bt) bt.onclick=function(){ if(foto){ try{ openLightbox(foto); }catch(e){} } };
+
+  var m=document.getElementById('profilModal'); if(m) m.classList.add('show');
+}
+(function(){
+  function bagla(){
+    var d=document.getElementById('pmDegis'), k=document.getElementById('pmKaldir'), c=document.getElementById('pmKapat'), m=document.getElementById('profilModal');
+    if(!d||d.__b) return;
+    d.__b=1;
+    d.onclick=function(){ if(typeof profilFotoSec==='function') profilFotoSec(); };
+    if(k) k.onclick=function(){
+      if(confirm('Profil fotoğrafın kaldırılsın mı?') && typeof profilFotoKaydet==='function'){
+        profilFotoKaydet(null);
+        if(m) m.classList.remove('show');
+      }
+    };
+    if(c) c.onclick=function(){ if(m) m.classList.remove('show'); };
+    if(m) m.onclick=function(e){ if(e.target===m) m.classList.remove('show'); };
+  }
+  bagla(); setTimeout(bagla,600); setTimeout(bagla,2000);
 })();
 </script>
 </body>
