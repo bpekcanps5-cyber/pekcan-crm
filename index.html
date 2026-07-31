@@ -13047,16 +13047,6 @@ window.icMesajKisiBilgi=function(kullanici){
     var m=document.getElementById('settingsMenu');
     if(!m || m.__profilEkli) return;
     m.__profilEkli = true;
-    // ROBOT tusu (sadece yonetici)
-    if(currentUser && currentUser.role==='admin' && !document.getElementById('smRobot')){
-      var rb=document.createElement('div');
-      rb.className='set-item'; rb.id='smRobot';
-      rb.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.72V7h4a3 3 0 0 1 3 3v1h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-1H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1v-1a3 3 0 0 1 3-3h4V5.72c-.6-.34-1-.98-1-1.72a2 2 0 0 1 2-2zM8.5 12a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm7 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>'
-        +'<span style="flex:1">Robot</span><span id="robotDurumRozet" class="robot-rozet">…</span>';
-      rb.onclick=function(e){ e.stopPropagation(); var m2=document.getElementById('settingsMenu'); if(m2) m2.classList.remove('show'); robotAyarAc(); };
-      var bas2=m.querySelector('.settings-head');
-      if(bas2 && bas2.nextSibling) m.insertBefore(rb, bas2.nextSibling); else m.insertBefore(rb, m.firstChild);
-    }
     var it=document.createElement('div');
     it.className='set-item'; it.id='smProfil';
     it.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>Profil';
@@ -13323,6 +13313,49 @@ function robotUyariGoster(d){
   }
   bagla(); setTimeout(bagla,700); setTimeout(bagla,2400);
   setTimeout(()=>{ if(window.authToken) robotDurumOku(); }, 3000);
+})();
+</script>
+
+<script>
+/* ═══ ROBOT tusunu ayarlar menusune ekle (kullanici yuklenene kadar israrla dener) ═══ */
+(function(){
+  function ben(){ return (window._ben&&window._ben())||window.currentUser||null; }
+  function ekle(){
+    var m=document.getElementById('settingsMenu');
+    if(!m) return false;
+    if(document.getElementById('smRobot')) return true;      // zaten var
+    var b=ben();
+    if(!b || !b.role) return false;                          // kullanici henuz hazir degil -> tekrar dene
+    if(b.role!=='admin' && b.role!=='pzr_yonetici') return true; // yetkisi yok -> ekleme, denemeyi bitir
+
+    var rb=document.createElement('div');
+    rb.className='set-item'; rb.id='smRobot';
+    rb.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.72V7h4a3 3 0 0 1 3 3v1h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-1H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1v-1a3 3 0 0 1 3-3h4V5.72c-.6-.34-1-.98-1-1.72a2 2 0 0 1 2-2zM8.5 12a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm7 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>'
+      +'<span style="flex:1">Robot</span><span id="robotDurumRozet" class="robot-rozet">…</span>';
+    rb.onclick=function(e){
+      e.stopPropagation();
+      var mm=document.getElementById('settingsMenu'); if(mm) mm.classList.remove('show');
+      if(typeof robotAyarAc==='function') robotAyarAc();
+    };
+    // "Profil" ogesinin hemen altina koy (yoksa basliktan sonra)
+    var pr=document.getElementById('smProfil');
+    if(pr && pr.parentNode===m && pr.nextSibling) m.insertBefore(rb, pr.nextSibling);
+    else {
+      var bas=m.querySelector('.settings-head');
+      if(bas && bas.nextSibling) m.insertBefore(rb, bas.nextSibling); else m.insertBefore(rb, m.firstChild);
+    }
+    try{ if(typeof robotDurumOku==='function') robotDurumOku(); }catch(e){}
+    console.log('[robot] ayarlar menusune eklendi');
+    return true;
+  }
+  if(!ekle()){
+    var n=0;
+    var t=setInterval(function(){ n++; if(ekle()||n>60) clearInterval(t); }, 500);  // 30sn dene
+  }
+  // menu her acildiginda da kontrol et (baska kod menuyu yeniden kurmus olabilir)
+  document.addEventListener('click', function(e){
+    if(e.target.closest && e.target.closest('#settingsAvatar')) setTimeout(ekle, 60);
+  }, true);
 })();
 </script>
 </body>
