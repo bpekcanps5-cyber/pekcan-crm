@@ -2129,6 +2129,10 @@
   .msg .sender-name.clickable .ofis-rozet{
     display:inline-grid !important;vertical-align:-3px;margin-right:3px;pointer-events:none;
   }
+
+  /* İPTAL ROBOTU rozeti: kalkan yerine robot, hafif farkli ton */
+  .panel-rozet.robot-rz{background:#e0a458 !important}
+  .panel-rozet.robot-rz svg{width:11px;height:11px}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -9894,7 +9898,11 @@ function renderMessages(c, searchQ){
       // İkisi AYRI görünür: panel kullanıcısı ≠ gruptaki ofis ismi.
       if(m.fromMe){
         // PANEL KULLANICISI: kalkan ikonlu yeşil pill (tıklanmaz — WhatsApp kişisi değil, ekip üyesi)
-        const panelRozet='<span class="panel-rozet" title="Panel kullanıcısı"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></span>';
+        // ROBOT ise kalkan yerine kucuk robot ikonu (ayirt edilsin)
+        const _robotMu = !!(m.robot || sn==='İPTAL ROBOTU');
+        const panelRozet = _robotMu
+          ? '<span class="panel-rozet robot-rz" title="Otomatik gönderildi"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a1.4 1.4 0 0 1 1.4 1.4c0 .55-.32 1.03-.79 1.26V6H17a3 3 0 0 1 3 3v.6h.4a1 1 0 0 1 1 1v2.8a1 1 0 0 1-1 1H20V15a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-.6h-.4a1 1 0 0 1-1-1v-2.8a1 1 0 0 1 1-1H4V9a3 3 0 0 1 3-3h4.39V4.66A1.4 1.4 0 0 1 12 2zM9 10.6a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6zm6 0a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6z"/></svg></span>'
+          : '<span class="panel-rozet" title="Panel kullanıcısı"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></span>';
         const _gr=gorevRengi(sn);
         const _pf=(typeof panelProfilFoto==='function'?panelProfilFoto(sn):null)||'';
         const _pfAv=_pf?'<span class="tn-foto" style="background-image:url(\''+_pf+'\')"></span>':'';
