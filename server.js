@@ -5693,6 +5693,8 @@ const savedContacts = new Map(); // jid -> SADECE telefon rehberine kayitli isim
 const panelKullaniciAdlari = new Set(); // normalize edilmiş displayName + username
 function _normAd(s){ return (s||'').toLocaleLowerCase('tr').replace(/i̇/g,'i').replace(/ı/g,'i').replace(/İ/g,'i').replace(/ş/g,'s').replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ö/g,'o').replace(/ç/g,'c').replace(/\s+/g,' ').trim(); }
 async function panelKullanicilariYenile(){
+  // İPTAL ROBOTU'nu da panel kullanicisi say -> mesajlari ekip uyesi gibi gorunur
+  try { panelKullaniciAdlari.add(_normAd('İPTAL ROBOTU')); } catch (e) {}
   try{
     const users = await db.listUsers();
     panelKullaniciAdlari.clear();

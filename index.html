@@ -2129,26 +2129,6 @@
   .msg .sender-name.clickable .ofis-rozet{
     display:inline-grid !important;vertical-align:-3px;margin-right:3px;pointer-events:none;
   }
-
-  /* ═══ İPTAL ROBOTU mesaji: ayirt edilebilir kimlik ═══ */
-  .msg .sender-name.robot-ad{
-    display:inline-flex !important;align-items:center;gap:5px;
-    padding:2.5px 9px 2.5px 6px;border-radius:8px;margin-bottom:5px;
-    font-size:12.5px;font-weight:750;letter-spacing:.02em;
-    color:#ffd9a0 !important;
-    background:linear-gradient(135deg,rgba(245,158,11,.26),rgba(245,158,11,.13));
-    border:1px solid rgba(245,158,11,.45);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
-    white-space:nowrap;max-width:100%;
-  }
-  .msg .sender-name.robot-ad svg{width:13px;height:13px;flex-shrink:0;opacity:.95}
-  .robot-oto{
-    font-size:8px;font-weight:800;letter-spacing:.09em;
-    padding:1.5px 5px;border-radius:20px;margin-left:3px;
-    background:rgba(245,158,11,.9);color:#2a1a00;
-  }
-  /* robot mesajinin balonu da hafif ayrilsin */
-  .msg.out:has(.robot-ad){box-shadow:0 1px .5px rgba(11,20,26,.13),inset 2px 0 0 rgba(245,158,11,.7)}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -9904,13 +9884,6 @@ function renderMessages(c, searchQ){
         // PANEL KULLANICISI: kalkan ikonlu yeşil pill (tıklanmaz — WhatsApp kişisi değil, ekip üyesi)
         const panelRozet='<span class="panel-rozet" title="Panel kullanıcısı"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></span>';
         const _gr=gorevRengi(sn);
-        // ROBOT mesaji mi? (ozel kimlik: farkli renk + rozet)
-        if(m.robot || sn==='İPTAL ROBOTU'){
-          name='<div class="sender-name robot-ad" title="Bu mesajı İPTAL ROBOTU otomatik gönderdi">'
-            +'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.72V7h4a3 3 0 0 1 3 3v1h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-1H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1v-1a3 3 0 0 1 3-3h4V5.72c-.6-.34-1-.98-1-1.72a2 2 0 0 1 2-2zM8.5 12a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm7 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>'
-            +'İPTAL ROBOTU<span class="robot-oto">OTOMATİK</span></div>';
-          return name;
-        }
         const _pf=(typeof panelProfilFoto==='function'?panelProfilFoto(sn):null)||'';
         const _pfAv=_pf?'<span class="tn-foto" style="background-image:url(\''+_pf+'\')"></span>':'';
         name='<div class="sender-name team-name clickable'+(_gr?' gorevli':'')+'"'+(_gr?' style="color:'+_gr+' !important;border-color:'+_gr+'4d;background:'+_gr+'1a"':'')+' onclick="panelKisiGoster(\''+sn.replace(/'/g,"\\'")+'\')" title="Kişi bilgisi">'+_pfAv+panelRozet+sn+gorevEtiketi(sn)+'</div>';
