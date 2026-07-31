@@ -537,6 +537,57 @@ async function _pdfdenMetin(buf) {
   } catch (e) { console.log('   ⚠️ PDF okunamadi: ' + e.message); return ''; }
 }
 
+// ═══ ROBOTUN GONDERECEGI MESAJ ve KIMLIGI ═══
+const ROBOT_ADI = 'İPTAL ROBOTU';
+const ROBOT_MESAJ = '⏳ İptal işleminiz alınmıştır, yapılıp bilgi verilecektir.\nPekcan Sigorta | Daima Yanınızda';
+
+// "İPTAL" etiketini bul (isimde iptal gecen ilk etiket)
+function _iptalEtiketiBul() {
+  try {
+    const t = labels.find((l) => /iptal/i.test(String(l.name || '')));
+    return t ? t.id : null;
+  } catch (e) { return null; }
+}
+
+// Sohbete IPTAL etiketini ekle (zaten varsa dokunma)
+function _robotEtiketle(jid) {
+  const id = _iptalEtiketiBul();
+  if (!id) { _rlog('UYARI: "İptal" adinda etiket bulunamadi -> etiketlenemedi'); return false; }
+  const mevcut = chatLabels.get(jid) || [];
+  if (mevcut.includes(id)) return true;           // zaten etiketli
+  const yeni = [...mevcut, id];
+  chatLabels.set(jid, yeni);
+  db.addChatLabel(jid, id).catch(() => {});
+  broadcastHat('ofis', { type: 'chatLabelUpdate', jid, labelIds: yeni });
+  return true;
+}
+
+// Robot adina mesaj gonder (WhatsApp'a gider + panelde ROBOT olarak gorunur)
+async function _robotMesajGonder(jid, lineId) {
+  const line = lines.get(lineId) || lines.get('ofis');
+  const sock = (line && line.sock) || SOCK;
+  const bagli = (line && line.connected) !== undefined ? line.connected : CONNECTED;
+  if (!sock || !bagli) { _rlog('WhatsApp bagli degil -> mesaj gonderilemedi'); return false; }
+  try {
+    const gonderilen = await Promise.race([
+      sock.sendMessage(jid, { text: ROBOT_MESAJ }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('gonderim zaman asimi')), 25000)),
+    ]);
+    if (!gonderilen || !gonderilen.key) { _rlog('mesaj gonderilemedi (WhatsApp kabul etmedi)'); return false; }
+    // panele ROBOT kimligiyle yaz
+    addMessage(jid, {
+      id: gonderilen.key.id,
+      text: ROBOT_MESAJ,
+      fromMe: true,
+      sender: ROBOT_ADI,
+      robot: true,
+      time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+      durum: 1,
+    }, {}, lineId);
+    return true;
+  } catch (e) { _rlog('mesaj hatasi: ' + e.message); return false; }
+}
+
 // Medya kaydedildikten sonra her yoldan buraya ugranir (tek merkez).
 // fromMe OLSA BILE inceler — bildirimden ibaret, zarari yok; test de mumkun olur.
 function robotMedyaGeldi({ m, kind, url, jid, lineId }) {
@@ -626,22 +677,11 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
   // yani tek bir gonderim tek bildirim uretir.
 
   // ── SADECE PANELE BILDIRIM. MUSTERIYE HICBIR SEY GONDERILMEZ. ──
-  const _uyariPaket = {
-    type: 'robotIptalUyari',
-    hedefler: [...robotKullanicilar],   // sadece robotu ACIK olanlar gorsun
-    jid, mesajId,
-    chatAd: chatAd || '',
-    plaka: sonuc.plaka || '',
-    noter: sonuc.noter || '',
-    puan: sonuc.puan,
-    tur,
-    dosyaAdi: dosyaAdi || '',
-    ts: Date.now(),
-  };
-  broadcastHat(lineId, _uyariPaket);
-  // guvence: diger hatlardaki yoneticiler de gorsun
-  try { for (const [, l] of lines) { const lid = l.id || 'ofis'; if (lid !== lineId) broadcastHat(lid, _uyariPaket); } } catch (e) {}
-  _rlog(`✅ BILDIRIM GONDERILDI -> ${chatAd || jid} (puan ${sonuc.puan})`);
+  // ═══ OTOMATIK ISLEM: bildirim YOK. Etiketle + robot mesajini at. ═══
+  const etiketOk = _robotEtiketle(jid);
+  const mesajOk = await _robotMesajGonder(jid, lineId);
+  _rlog(`✅ ${chatAd || jid} — plaka:${sonuc.plaka || '?'} puan:${sonuc.puan} | ` +
+        `etiket:${etiketOk ? 'OK' : 'HATA'} mesaj:${mesajOk ? 'GONDERILDI' : 'HATA'}`);
 }
 
 const kullaniciGorevleri = {}; // username/displayName -> '2aylik'|'kalici'|'iptal'

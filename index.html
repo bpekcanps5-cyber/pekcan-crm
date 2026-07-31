@@ -2129,6 +2129,26 @@
   .msg .sender-name.clickable .ofis-rozet{
     display:inline-grid !important;vertical-align:-3px;margin-right:3px;pointer-events:none;
   }
+
+  /* ═══ İPTAL ROBOTU mesaji: ayirt edilebilir kimlik ═══ */
+  .msg .sender-name.robot-ad{
+    display:inline-flex !important;align-items:center;gap:5px;
+    padding:2.5px 9px 2.5px 6px;border-radius:8px;margin-bottom:5px;
+    font-size:12.5px;font-weight:750;letter-spacing:.02em;
+    color:#ffd9a0 !important;
+    background:linear-gradient(135deg,rgba(245,158,11,.26),rgba(245,158,11,.13));
+    border:1px solid rgba(245,158,11,.45);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
+    white-space:nowrap;max-width:100%;
+  }
+  .msg .sender-name.robot-ad svg{width:13px;height:13px;flex-shrink:0;opacity:.95}
+  .robot-oto{
+    font-size:8px;font-weight:800;letter-spacing:.09em;
+    padding:1.5px 5px;border-radius:20px;margin-left:3px;
+    background:rgba(245,158,11,.9);color:#2a1a00;
+  }
+  /* robot mesajinin balonu da hafif ayrilsin */
+  .msg.out:has(.robot-ad){box-shadow:0 1px .5px rgba(11,20,26,.13),inset 2px 0 0 rgba(245,158,11,.7)}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -4211,15 +4231,17 @@
   <div class="modal" style="width:440px">
     <h3 style="display:flex;align-items:center;gap:9px;margin-bottom:4px">🤖 Robot</h3>
     <p style="color:var(--muted);font-size:12.5px;margin-bottom:16px;line-height:1.6">
-      Gruplara <b>araç satış sözleşmesi</b> (noter belgesi) düşünce seni uyarır.<br>
-      <b style="color:#e35b5b">Müşteriye hiçbir şey yazmaz</b> — sadece sana bildirim gelir.<br>
-      <span style="color:var(--faint)">Bu ayar <b>sana özeldir</b>; diğer yöneticileri etkilemez.</span>
+      Gruplara <b>araç satış sözleşmesi</b> (noter belgesi) düşünce robot <b>otomatik olarak</b>:<br>
+      <span style="color:#e0a458">① Sohbeti <b>İPTAL</b> etiketine atar</span> &nbsp;
+      <span style="color:#e0a458">② Müşteriye bilgi mesajını gönderir</span><br>
+      <span style="color:var(--faint)">Mesajlar panelde <b>İPTAL ROBOTU</b> adıyla, turuncu rozetle görünür.
+      Bildirim gelmez — tüm işlemler aşağıdaki kayıtlarda.</span>
     </p>
 
     <div class="robot-satir">
       <div style="flex:1">
-        <div style="font-size:14px;font-weight:650">İptal belgesi algılama</div>
-        <div style="font-size:11.5px;color:var(--muted);margin-top:2px">Fotoğraf ve PDF'leri okur</div>
+        <div style="font-size:14px;font-weight:650">Otomatik iptal işlemi</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:2px">Etiketler + mesaj gönderir</div>
       </div>
       <div class="robot-switch" id="robotSwitch"><span></span></div>
     </div>
@@ -4228,17 +4250,19 @@
       background:rgba(227,91,91,.12);border:1px solid rgba(227,91,91,.3);font-size:12px;color:#e89a9a;line-height:1.55"></div>
 
     <div style="margin-top:16px;padding:12px 13px;border-radius:9px;background:var(--panel-2);font-size:12px;color:var(--muted);line-height:1.6">
-      <b style="color:var(--text)">Nasıl çalışıyor:</b> Belgedeki
-      <i>ARAÇ SATIŞ SÖZLEŞMESİ, PLAKA NO, ŞASİ NO, MOTOR NO, SATIŞ BEDELİ, NOTERLİĞİ</i>
-      gibi sabit ifadeleri arar. Yeterince eşleşme bulursa bildirim gönderir.
-      Aynı sohbette 10 dakika içinde tekrar uyarmaz.
+      <b style="color:var(--text)">Gönderilecek mesaj:</b><br>
+      <span style="display:block;margin-top:7px;padding:9px 11px;border-radius:8px;background:rgba(0,0,0,.28);color:var(--text);font-size:12.5px;line-height:1.55">
+      ⏳ İptal işleminiz alınmıştır, yapılıp bilgi verilecektir.<br>Pekcan Sigorta | Daima Yanınızda</span>
+      <div style="margin-top:10px;font-size:11.5px">
+      <b style="color:var(--text)">Ayırt etme:</b> Ruhsat, poliçe, dekont ve kimlik gibi belgelere
+      <b>tepki vermez</b>. Sadece noter satış sözleşmesini tanır.</div>
     </div>
 
     <div id="robotTestSonuc" style="display:none;margin-top:14px;padding:13px;border-radius:10px;
       background:var(--panel-2);border:1px solid var(--border);font-size:12.5px;line-height:1.7"></div>
 
     <div class="modal-btns" style="margin-top:16px;flex-direction:column;gap:8px">
-      <button class="btn primary" id="robotTest" style="width:100%">🔍 Kendini Test Et</button>
+      <button class="btn primary" id="robotTest" style="width:100%">📋 Kayıtları Göster / Test Et</button>
       <button class="btn ghost" id="robotKapat" style="width:100%">Kapat</button>
     </div>
   </div>
@@ -5017,13 +5041,7 @@ function connect(){
       });
       profilFotoTazele();
     }
-    else if(d.type==='robotIptalUyari'){
-      // KISIYE OZEL: sadece robotu KENDISI acmis olanlar bildirim gorur
-      const _b=(window._ben&&window._ben())||currentUser||{};
-      const _hedef = Array.isArray(d.hedefler) ? d.hedefler : null;
-      const _bana = _hedef ? _hedef.includes(_b.username) : !!window._robotAktif;
-      if(_bana) robotUyariGoster(d);
-    }
+    else if(d.type==='robotIptalUyari'){ /* bildirim kaldirildi — kayitlar Ayarlar > Robot'ta */ }
     else if(d.type==='kisiAdiSonuc'){
       const b=document.getElementById('senderAdYenile');
       if(b){ b.disabled=false; b.innerHTML='🔄 İsmi Yenile <span style="opacity:.6;font-weight:500;font-size:11.5px">(telefondan çek)</span>'; }
@@ -9886,6 +9904,13 @@ function renderMessages(c, searchQ){
         // PANEL KULLANICISI: kalkan ikonlu yeşil pill (tıklanmaz — WhatsApp kişisi değil, ekip üyesi)
         const panelRozet='<span class="panel-rozet" title="Panel kullanıcısı"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></span>';
         const _gr=gorevRengi(sn);
+        // ROBOT mesaji mi? (ozel kimlik: farkli renk + rozet)
+        if(m.robot || sn==='İPTAL ROBOTU'){
+          name='<div class="sender-name robot-ad" title="Bu mesajı İPTAL ROBOTU otomatik gönderdi">'
+            +'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.72V7h4a3 3 0 0 1 3 3v1h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-1H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1v-1a3 3 0 0 1 3-3h4V5.72c-.6-.34-1-.98-1-1.72a2 2 0 0 1 2-2zM8.5 12a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm7 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>'
+            +'İPTAL ROBOTU<span class="robot-oto">OTOMATİK</span></div>';
+          return name;
+        }
         const _pf=(typeof panelProfilFoto==='function'?panelProfilFoto(sn):null)||'';
         const _pfAv=_pf?'<span class="tn-foto" style="background-image:url(\''+_pf+'\')"></span>':'';
         name='<div class="sender-name team-name clickable'+(_gr?' gorevli':'')+'"'+(_gr?' style="color:'+_gr+' !important;border-color:'+_gr+'4d;background:'+_gr+'1a"':'')+' onclick="panelKisiGoster(\''+sn.replace(/'/g,"\\'")+'\')" title="Kişi bilgisi">'+_pfAv+panelRozet+sn+gorevEtiketi(sn)+'</div>';
@@ -13374,7 +13399,7 @@ async function robotKendiniTestEt(){
   try{
     const r=await fetch('/api/robot/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
     const d=await r.json();
-    if(btn){ btn.disabled=false; btn.textContent='🔍 Kendini Test Et'; }
+    if(btn){ btn.disabled=false; btn.textContent='📋 Kayıtları Göster / Test Et'; }
     if(!d.ok){ kutu.innerHTML='<span style="color:#e35b5b">'+esc(d.error||'Test başarısız')+'</span>'; return; }
     const R=d.rapor;
     const ik=(v)=>v?'<span style="color:#3ddba4">✔</span>':'<span style="color:#e35b5b">✘</span>';
@@ -13390,16 +13415,16 @@ async function robotKendiniTestEt(){
         +'<b>Eksik:</b> Fotoğrafları okuyamaz. Sunucuda bir kez çalıştır:'
         +'<code style="display:block;margin-top:7px;padding:7px 9px;background:rgba(0,0,0,.4);border-radius:6px;color:#ddd;font-size:11.5px;user-select:all">cd /root/pekcan-crm && npm install tesseract.js pdf-parse && pm2 restart pekcan</code></div>';
     }
-    h+='<div style="margin-top:12px;font-weight:700;color:var(--text)">Son olaylar</div>';
+    h+='<div style="margin-top:12px;font-weight:700;color:var(--text)">📋 Robot Kayıtları</div>';
     if(R.gunluk && R.gunluk.length){
       h+='<div style="margin-top:6px;max-height:150px;overflow-y:auto;font-size:11.5px;color:var(--muted);font-family:ui-monospace,monospace;line-height:1.6">'
         +R.gunluk.map(x=>esc(x)).join('<br>')+'</div>';
     } else {
-      h+='<div style="margin-top:6px;color:var(--muted);font-size:12px">Henüz hiç belge işlenmemiş. Bir fotoğraf/PDF gönder, sonra tekrar test et.</div>';
+      h+='<div style="margin-top:6px;color:var(--muted);font-size:12px">Henüz hiç belge işlenmemiş.</div>';
     }
     kutu.innerHTML=h;
   }catch(e){
-    if(btn){ btn.disabled=false; btn.textContent='🔍 Kendini Test Et'; }
+    if(btn){ btn.disabled=false; btn.textContent='📋 Kayıtları Göster / Test Et'; }
     if(kutu) kutu.innerHTML='<span style="color:#e35b5b">Sunucuya ulaşılamadı — server.js güncellenmemiş olabilir</span>';
   }
 }
