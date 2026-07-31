@@ -368,54 +368,56 @@ function _norm(t) {
 }
 
 // Anahtar kelimeler ve puanlari (10 ornek belgenin TAMAMINDA bulunanlar)
-// OCR harfleri karistirir; bu yuzden UZUN cumleler yerine KISA, saglam parcalar
-// aranir. Hepsi bosluksuz metinde de denenir (OCR bosluklari yiyebiliyor).
-const _ROBOT_ANAHTAR = [
-  // ── belge turu ──
-  { k: 'SATISSOZLESMESI', p: 6 },
-  { k: 'SOZLESMESI',      p: 3 },
-  { k: 'ARACSATIS',       p: 4 },
-  { k: 'DUZENLEMESEKLINDE', p: 3 },
-  // ── arac alanlari (bunlar iri basili, OCR rahat okur) ──
-  { k: 'PLAKANO',    p: 3 },
-  { k: 'PLAKA',      p: 1 },
-  { k: 'SASINO',     p: 3 },
-  { k: 'MOTORNO',    p: 3 },
-  { k: 'SATISBEDELI', p: 3 },
-  { k: 'KASKODEGERI', p: 2 },
-  { k: 'KASKOKODU',   p: 2 },
-  { k: 'MARKASI',     p: 1 },
-  { k: 'MODELI',      p: 1 },
-  { k: 'YAKITCINSI',  p: 2 },
-  { k: 'TESCILBELGESI', p: 2 },
-  // ── noter ──
-  { k: 'NOTERLIGI', p: 3 },
-  { k: 'NOTERI',    p: 2 },
-  { k: 'NOTER',     p: 1 },
-  { k: 'YEVMIYE',   p: 1 },
-  { k: 'YEVNO',     p: 1 },
-  // ── taraflar / genel ──
-  { k: 'TURKIYECUMHURIYETI', p: 2 },
-  { k: 'CUMHURIYETI', p: 1 },
-  { k: 'ODEMESEKLI',  p: 2 },
-  { k: 'SATICI',      p: 2 },
-  { k: 'ALICI',       p: 2 },
-  { k: 'TICARETBAKANLIGINDAN', p: 2 },
-  { k: 'OKURYAZAR',   p: 1 },
-  { k: 'HUSUSI',      p: 1 },
-  { k: 'YOLCUNAKLI',  p: 2 },
+// ═══ AYIRT ETME MANTIGI ═══
+// SORUN: RUHSAT (arac tescil belgesi) da PLAKA, MARKASI, SASI NO, MOTOR NO,
+// hatta NOTERLIGI / NOTER SATIS TARIHI / NOTERIN ADI icerir. Bu yuzden "arac
+// alanlarini sayma" yontemi ruhsati sozlesme saniyordu.
+// COZUM: (1) ZORUNLU isaret sarti — sadece sozlesmede bulunan bir ifade YOKSA
+//        hicbir sekilde algilama yapilmaz. (2) Ruhsata ozel ifadeler puan DUSURUR.
+
+// (1) Bunlardan EN AZ BIRI olmali. Ruhsatta bunlarin hicbiri yoktur.
+const _ROBOT_ZORUNLU = [
+  'SATISSOZLESMESI', 'SATISBEDELI', 'ODEMESEKLI', 'KASKODEGERI',
+  'KASKOKODU', 'TICARETBAKANLIGINDAN', 'BEYANVEKABULEDERLER', 'SADECESENET',
 ];
-const ROBOT_ESIK = 8;   // bu puanin ustu -> "iptal belgesi" say
+
+// (2) Olumlu isaretler (sozlesmeye ozel)
+const _ROBOT_ARTI = [
+  ['SATISSOZLESMESI', 7], ['SOZLESMESI', 4], ['ARACSATIS', 4],
+  ['SATISBEDELI', 6], ['KASKODEGERI', 5], ['KASKOKODU', 4],
+  ['ODEMESEKLI', 5], ['SADECESENET', 4], ['TICARETBAKANLIGINDAN', 5],
+  ['BEYANVEKABULEDERLER', 4], ['TESLIMALDIGINI', 3], ['OKURYAZAR', 2],
+  ['YETKIBELGESI', 2], ['ESKIKAMACI', 3], ['YENIKAMACI', 3], ['ESKISTURU', 2],
+  ['YEVMIYE', 2], ['VEKALETNAME', 2], ['SATICI', 2], ['ALICI', 2],
+  ['EMAKBUZ', 2], ['EDEVLET', 2], ['NOTERI', 1], ['NOTERLIGI', 1],
+];
+
+// (3) Olumsuz isaretler — SADECE RUHSATTA bulunur, puani dusurur
+const _ROBOT_EKSI = [
+  ['TESCILSIRANO', 8], ['ILKTESCILTARIHI', 8], ['HAKVEMENFAAT', 8],
+  ['NETAGIRLIGI', 6], ['AZAMIYUKLU', 6], ['KATARAGIRLIGI', 6],
+  ['KOLTUKSAYISI', 6], ['SILINDIRHACMI', 6], ['MOTORGUCU', 6],
+  ['TIPONAYNO', 6], ['GUCAGIRLIKORANI', 6], ['AYAKTAYOLCU', 6],
+  ['ROMORK', 6], ['ARACSINIFI', 5], ['MODELYILI', 5], ['VERILDIGIIL', 5],
+  ['KULLANIMAMACI', 4], ['TICARIADI', 4],
+];
+const ROBOT_ESIK = 12;
 
 function robotPuanla(metin) {
   const n = _norm(metin);
   const nb = _normBulanik(metin);   // OCR karisikliklarina dayanikli bicim
-  let puan = 0; const bulunan = [];
-  for (const a of _ROBOT_ANAHTAR) {
-    // anahtar kelimeler de ayni bicime cevrilerek aranir
-    const ak = _normBulanik(a.k);
-    if (nb.includes(ak)) { puan += a.p; bulunan.push(a.k); }
+  const bulunan = [], negatif = [];
+
+  // ── ZORUNLU SART: sozlesmeye ozel bir ifade yoksa ASLA algilanmaz (ruhsat korumasi)
+  const zorunluVar = _ROBOT_ZORUNLU.some((z) => nb.includes(_normBulanik(z)));
+  if (!zorunluVar) {
+    return { puan: 0, bulunan: [], negatif: ['ZORUNLU_ISARET_YOK'], plaka: '', noter: '', esik: ROBOT_ESIK };
   }
+
+  let puan = 0;
+  for (const [k, v] of _ROBOT_ARTI) { if (nb.includes(_normBulanik(k))) { puan += v; bulunan.push(k); } }
+  for (const [k, v] of _ROBOT_EKSI) { if (nb.includes(_normBulanik(k))) { puan -= v; negatif.push(k); } }
+
   // plaka yakala (bildirimde gostermek icin)
   let plaka = '';
   const pm = n.match(/PLAKA NO\s*:?\s*([0-9]{2}\s?[A-Z]{1,3}\s?[0-9]{2,4})/);
@@ -424,7 +426,7 @@ function robotPuanla(metin) {
   let noter = '';
   const nm = n.match(/([A-ZĞÜŞÖÇİ]+\s?[0-9]+\.?\s?NOTER)/);
   if (nm) noter = nm[1];
-  return { puan, bulunan, plaka, noter, esik: ROBOT_ESIK };
+  return { puan, bulunan, negatif, plaka, noter, esik: ROBOT_ESIK };
 }
 
 // OCR motorunu HAZIRLA (yoksa robot sessizce devre disi kalir, sunucu etkilenmez)
@@ -587,7 +589,9 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
               (sonuc.plaka ? ` plaka:${sonuc.plaka}` : '') +
               (arguments[0] && arguments[0]._t ? ` (${((Date.now() - arguments[0]._t) / 1000).toFixed(1)}sn)` : ''));
   if (!gecti) {
-    _rlog(`puan ${sonuc.puan}/${ROBOT_ESIK} YETERSIZ — bulunan: ${sonuc.bulunan.join(', ') || '(hicbiri)'}`);
+    _rlog(`puan ${sonuc.puan}/${ROBOT_ESIK} YETERSIZ` +
+      ((sonuc.negatif && sonuc.negatif.length) ? ` — RED: ${sonuc.negatif.slice(0, 4).join(', ')}` : '') +
+      ` — bulunan: ${sonuc.bulunan.join(', ') || '(hicbiri)'}`);
     return;
   }
 
