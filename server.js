@@ -539,6 +539,11 @@ async function _pdfdenMetin(buf) {
 
 // ═══ ROBOTUN GONDERECEGI MESAJ ve KIMLIGI ═══
 const ROBOT_ADI = 'İPTAL ROBOTU';
+// Toplu gelen belgelere TEK mesaj: bir sohbete mesaj atildiktan sonra bu sure
+// boyunca yeni belge gelse de TEKRAR mesaj atilmaz (etiket yine uygulanir).
+// Sure gectikten sonra gelen belge = yeni is -> mesaj tekrar gonderilir.
+const ROBOT_MESAJ_ARALIK = 3 * 60 * 1000;   // 3 dakika
+const _robotMesajSon = new Map();           // jid -> son mesaj zamani
 const ROBOT_MESAJ = '⏳ İptal işleminiz alınmıştır, yapılıp bilgi verilecektir.\nPekcan Sigorta | Daima Yanınızda';
 
 // "İPTAL" etiketini bul — TURKCE DUYARLI.
@@ -694,11 +699,30 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
   // yani tek bir gonderim tek bildirim uretir.
 
   // ── SADECE PANELE BILDIRIM. MUSTERIYE HICBIR SEY GONDERILMEZ. ──
-  // ═══ OTOMATIK ISLEM: bildirim YOK. Etiketle + robot mesajini at. ═══
+  // ═══ OTOMATIK ISLEM: bildirim YOK. Etiketle + (gerekiyorsa) mesaj at. ═══
+  // ETIKET her belgede uygulanir (zaten varsa dokunmaz).
   const etiketOk = _robotEtiketle(jid);
-  const mesajOk = await _robotMesajGonder(jid, lineId);
+
+  // MESAJ: ayni sohbete kisa sure icinde tekrar atilmaz (2-3 belge birlikte
+  // gelince musteri ayni mesaji ust uste almasin).
+  const sonMesaj = _robotMesajSon.get(jid) || 0;
+  const gecenSn = Math.round((Date.now() - sonMesaj) / 1000);
+  let mesajDurum;
+  if (Date.now() - sonMesaj < ROBOT_MESAJ_ARALIK) {
+    mesajDurum = `ATLANDI (${gecenSn}sn once gonderilmis)`;
+  } else {
+    const ok = await _robotMesajGonder(jid, lineId);
+    if (ok) _robotMesajSon.set(jid, Date.now());
+    mesajDurum = ok ? 'GONDERILDI' : 'HATA';
+  }
+  // hafiza temizligi
+  if (_robotMesajSon.size > 300) {
+    const simdi = Date.now();
+    for (const [k, t] of _robotMesajSon) { if (simdi - t > ROBOT_MESAJ_ARALIK * 4) _robotMesajSon.delete(k); }
+  }
+
   _rlog(`✅ ${chatAd || jid} — plaka:${sonuc.plaka || '?'} puan:${sonuc.puan} | ` +
-        `etiket:${etiketOk ? 'OK' : 'HATA'} mesaj:${mesajOk ? 'GONDERILDI' : 'HATA'}`);
+        `etiket:${etiketOk ? 'OK' : 'HATA'} mesaj:${mesajDurum}`);
 }
 
 const kullaniciGorevleri = {}; // username/displayName -> '2aylik'|'kalici'|'iptal'
