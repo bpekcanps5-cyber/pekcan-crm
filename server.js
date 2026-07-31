@@ -427,41 +427,134 @@ const _ROBOT_EKSI = [
 ];
 const ROBOT_ESIK = 12;
 
-// ═══ MOTOR NO CIKARMA (2026-07) ═══════════════════════════════════════
-// Belge ZATEN okundugu icin bu islem EK SURE ALMAZ — metin elimizde,
-// sadece uzerinde arama yapiliyor (milisaniyenin altinda).
+// ═══ MOTOR NO CIKARMA (2026-07, 10 gercek sozlesme uzerinde ayarlandi) ═══
+// Belge ZATEN okundugu icin bu islem EK SURE ALMAZ (milisaniyenin altinda).
 //
-// TUZAK: OCR harf/rakam karistiriyor (O<->0, S<->5, B<->8, I<->1).
-// Bu yuzden ETIKETI ("MOTOR NO") bulanik bicimde ariyoruz ama DEGERI
-// bozulmamis metinden aliyoruz — yoksa CKU076652 -> CKUO766S2 olurdu.
-function _motorAdayAyikla(parca) {
-  const adaylar = String(parca || '').match(/[A-Z0-9]{4,20}/g) || [];
-  for (const t of adaylar) {
-    const rakam = (t.match(/[0-9]/g) || []).length;
-    if (t.length >= 5 && t.length <= 20 && rakam >= 3) return t;
+// ONCEKI SURUMDEKI 3 HATA ve COZUMU:
+//  1) SASI NUMARASINI CEKIYORDU. "MOTOR NO :" satirinin degeri okunamayinca
+//     kod bir ALT satira bakiyordu, o da "SASI NO" satiriydi.
+//     -> Artik alt satir baska bir alan basligiysa (SASI, YAKIT, TIPI...) BAKILMAZ.
+//     -> Ayrica sasi numarasi DUNYA STANDARDINDA TAM 17 HANEDIR; 17 haneli
+//        hicbir aday motor no kabul edilmez. Kesin koruma.
+//  2) SAG SUTUNU CEKIYORDU. Belge iki sutunlu: "MOTOR NO : X" satirinin
+//     saginda "YAKIT CINSI : DIZEL" veya "TIPI : F2" yaziyor. OCR bunlari tek
+//     satir yapiyor. -> Artik satirin devami, baska bir alan basligi gorulunce
+//     KESILIYOR.
+//  3) HIC CEKEMIYORDU. OCR "MOTOR NO"yu bazen "M0T0R N0" veya sadece "MOTOR"
+//     okuyor, bazen degeri "AA 04087" diye ikiye boluyor.
+//     -> Etiket bulanik araniyor, ikinci turda "NO" olmadan da araniyor,
+//        ve ardisik iki parca birlestirilerek de deneniyor.
+//
+// 10 ornekteki gercek degerler (hepsi 7-14 hane):
+//   AA04087 / 27191031254585 / DCX008764 / 10Z1AM0190646 / DDV017720
+//   K9KV7D257229 / K9KU876D129276 / Z12XEP19SC7473 / DCX023657 / D058248
+// Karsilik gelen sasi numaralari ise hepsi 17 hane.
+
+// Motor no satirinda bunlardan biri gorulurse "baska alan basladi" -> DUR.
+const _MOTOR_DUR = ['SASI', 'YAKIT', 'TIPI', 'MODELI', 'SINIFI', 'ESKI', 'YENI',
+                    'BELGESI', 'KASKO', 'PLAKA', 'MARKASI', 'CINSI', 'SATIS',
+                    'ODEME', 'TESCIL', 'TARIH', 'YEVMIYE', 'NOTER'];
+// DIKKAT — TUZAK: _normBulanik "L" harfini "I" yapiyor (PLAKA -> PIAKA).
+// Bu yuzden metni bulaniklastirip yukaridaki DUZ yazimla karsilastirmak
+// TUTMAZ. Durak kelimelerini de ayni bicime cevirip oyle karsilastiriyoruz.
+const _MOTOR_DUR_F = _MOTOR_DUR.map((s) => _normBulanik(s));
+function _durKelimeMi(f) { return !!f && _MOTOR_DUR_F.some((s) => f.startsWith(s)); }
+
+// Aday gecerli bir motor no mu?
+function _motorGecerliMi(t, sasi) {
+  if (!t) return false;
+  if (t.length === 17) return false;              // 17 hane = SASI numarasi
+  if (t.length < 5 || t.length > 16) return false;
+  if ((t.match(/[0-9]/g) || []).length < 2) return false;
+  if (sasi && t === sasi) return false;
+  return true;
+}
+
+// Bir metin parcasindan ilk gecerli adayi cikar.
+// Tek kelimeyi de, ardisik iki kelimenin birlesimini de dener
+// (OCR "AA04087" -> "AA 04087" diye bolebiliyor).
+function _motorAdayAyikla(parca, sasi) {
+  const kelime = String(parca || '').match(/[A-Z0-9]+/g) || [];
+  for (let k = 0; k < kelime.length; k++) {
+    const f1 = _normBulanik(kelime[k]);
+    if (_durKelimeMi(f1)) break;                       // baska alan basligi -> DUR
+    if (_motorGecerliMi(kelime[k], sasi)) return kelime[k];
+    // OCR degeri ikiye bolmus olabilir ("AA04087" -> "AA 04087")
+    if (kelime[k + 1] && !_durKelimeMi(_normBulanik(kelime[k + 1]))
+        && _motorGecerliMi(kelime[k] + kelime[k + 1], sasi)) return kelime[k] + kelime[k + 1];
   }
   return '';
 }
-function _motorNoBul(metin) {
-  const satirlar = String(metin || '').split(/[\r\n]+/);
-  const hedef = _normBulanik('MOTORNO');
+
+// Satirin ilk kelimesi baska bir alan basligi mi? (alt satira bakmadan once)
+function _baskaAlanMi(satir) {
+  const kelime = String(satir || '').trim().split(/\s+/).filter(Boolean);
+  // ilk iki kelimeye bak: ": BELGESI" gibi basi isaretli satirlar da yakalansin
+  for (let k = 0; k < Math.min(2, kelime.length); k++) {
+    const f = _normBulanik(kelime[k]);
+    if (_durKelimeMi(f)) return true;
+  }
+  return false;
+}
+
+// Etiketten sonraki degeri al; baska bir alan basligi gorulunce KES.
+function _etiketSonrasi(satir, anahtar) {
+  const kelime = satir.replace(/:/g, ' : ').split(/\s+/).filter(Boolean);
+  let bas = -1;
+  for (let k = 0; k < kelime.length; k++) {
+    const f = _normBulanik(kelime[k]);
+    if (f.includes('MOTORLU')) continue;
+    // Etiket IKI KELIME olabilir ("MOTOR"+"NO", "SASI"+"NO") -> onceki kelimeyle
+    // birlestirip de bakiyoruz. Tek kelimeye bakmak SASI NO'yu kaciriyordu.
+    const ikili = (k > 0 ? _normBulanik(kelime[k - 1]) : '') + f;
+    if (f.includes(anahtar) || ikili.includes(anahtar)) { bas = k; break; }
+  }
+  if (bas < 0) return '';
+  const parca = [];
+  for (let k = bas + 1; k < kelime.length; k++) {
+    const f = _normBulanik(kelime[k]);
+    if (f === 'NO' || f === 'N' || f === 'O') continue;      // etiketin devami
+    if (!f && !/[0-9]/.test(kelime[k])) continue;            // ":" gibi isaretler
+    if (_durKelimeMi(f)) break;                              // baska alan -> DUR
+    parca.push(kelime[k]);
+  }
+  return parca.join(' ');
+}
+
+// Genel arayici: verilen etikete gore deger bulur.
+function _alanDegeriBul(satirlar, anahtar, dogrula) {
   for (let i = 0; i < satirlar.length; i++) {
     const satir = _norm(satirlar[i]);
-    if (!_normBulanik(satir).includes(hedef)) continue;
-    // ":" varsa sonrasi, yoksa "MOTOR NO" ifadesinden sonrasi
-    let kalan;
-    const ik = satir.indexOf(':');
-    if (ik >= 0) kalan = satir.slice(ik + 1);
-    else {
-      const mm = satir.match(/M\s*[O0]\s*T\s*[O0]\s*R\s*N\s*[O0]/);
-      kalan = mm ? satir.slice(mm.index + mm[0].length) : '';
-    }
-    let d = _motorAdayAyikla(kalan);
+    const bulanik = _normBulanik(satir);
+    if (!bulanik.includes(anahtar)) continue;
+    if (anahtar === 'MOTOR' && bulanik.includes('MOTORLU')) continue;
+    let d = dogrula(_etiketSonrasi(satir, anahtar));
     if (d) return d;
-    // OCR degeri ALT SATIRA bolmus olabilir
-    if (satirlar[i + 1]) { d = _motorAdayAyikla(_norm(satirlar[i + 1])); if (d) return d; }
+    // ayni satirda yok: ALT satira bak — ama alt satir baska bir alan degilse
+    const alt = satirlar[i + 1];
+    if (alt && !_baskaAlanMi(alt)) { d = dogrula(_norm(alt)); if (d) return d; }
   }
   return '';
+}
+
+// Sasi numarasi (motor no ile karistirilmasin diye ayrica bulunur)
+function _sasiNoBul(satirlar) {
+  return _alanDegeriBul(satirlar, 'SASINO', (p) => {
+    const k = String(p || '').match(/[A-Z0-9]{17}/);
+    return k ? k[0] : '';
+  });
+}
+
+function _motorNoBul(metin) {
+  const satirlar = String(metin || '').split(/[\r\n]+/);
+  const sasi = _sasiNoBul(satirlar);
+  const ayikla = (p) => _motorAdayAyikla(p, sasi);
+  // 1. tur: tam etiket ("MOTOR NO")
+  let d = _alanDegeriBul(satirlar, 'MOTORNO', ayikla);
+  if (d) return d;
+  // 2. tur: OCR "NO" kismini yutmus olabilir -> sadece "MOTOR"
+  //         ("Motorlu Arac Tescil Belgesi" cumlesi haric tutuluyor)
+  return _alanDegeriBul(satirlar, 'MOTOR', ayikla);
 }
 
 function robotPuanla(metin) {
@@ -472,7 +565,7 @@ function robotPuanla(metin) {
   // ── ZORUNLU SART: sozlesmeye ozel bir ifade yoksa ASLA algilanmaz (ruhsat korumasi)
   const zorunluVar = _ROBOT_ZORUNLU.some((z) => nb.includes(_normBulanik(z)));
   if (!zorunluVar) {
-    return { puan: 0, bulunan: [], negatif: ['ZORUNLU_ISARET_YOK'], plaka: '', noter: '', motorNo: '', esik: ROBOT_ESIK };
+    return { puan: 0, bulunan: [], negatif: ['ZORUNLU_ISARET_YOK'], plaka: '', noter: '', motorNo: '', sasiNo: '', esik: ROBOT_ESIK };
   }
 
   let puan = 0;
@@ -487,8 +580,11 @@ function robotPuanla(metin) {
   let noter = '';
   const nm = n.match(/([A-ZĞÜŞÖÇİ]+\s?[0-9]+\.?\s?NOTER)/);
   if (nm) noter = nm[1];
-  const motorNo = _motorNoBul(metin);   // metin zaten elde -> ek sure yok
-  return { puan, bulunan, negatif, plaka, noter, motorNo, esik: ROBOT_ESIK };
+  // metin zaten elde -> ek sure yok
+  const satirlar = String(metin || '').split(/[\r\n]+/);
+  const sasiNo = _sasiNoBul(satirlar);
+  const motorNo = _motorNoBul(metin);
+  return { puan, bulunan, negatif, plaka, noter, motorNo, sasiNo, esik: ROBOT_ESIK };
 }
 
 // OCR motorunu HAZIRLA (yoksa robot sessizce devre disi kalir, sunucu etkilenmez)
@@ -577,13 +673,20 @@ async function _pdfdenMetin(buf) {
 
 // ═══ ROBOTUN GONDERECEGI MESAJ ve KIMLIGI ═══
 const ROBOT_ADI = 'İPTAL ROBOTU';
-// ═══ KILIT MANTIGI (grubun kendi is akisina gore) ═══
-// Robot mesaji atinca o sohbet KILITLENIR: yeni belge gelse de tekrar mesaj atmaz
-// (etiket yine uygulanir). Kilit, grupta AYIRAC mesaji (-----, =====) gorununce
-// ACILIR — cunku ayirac "islem bitti, grup temizlendi" demek. Ayiractan SONRA
-// gelen belge yeni bir is sayilir ve mesaj tekrar gonderilir.
-const _robotKilit = new Map();                 // jid -> kilitlenme zamani
-const ROBOT_KILIT_EMNIYET = 12 * 60 * 60 * 1000;  // ayirac hic gelmezse 12 saatte kendi acilir
+// ═══ PARTI MANTIGI (2026-07) ══════════════════════════════════════════
+// ESKI DAVRANIS: robot bir mesaj atinca sohbet 12 SAAT kilitleniyordu;
+// ayirac (-----) gelmeden bir daha mesaj atmiyordu. Sonradan gelen yeni
+// bir sozlesme cevapsiz kaliyordu.
+//
+// YENI DAVRANIS: sadece AYNI ANDA gelenler tek mesaj alir.
+// 5 belge birlikte gelirse -> 1 mesaj. Ondan SONRA gelen her belge
+// KENDI mesajini alir. Yine sonra gelen yine alir.
+//
+// "Ayni anda" olcusu: bir onceki belgeden en fazla ROBOT_GRUP_ARALIK sonra
+// gelmisse ayni partidendir (kayan pencere). Boylece agir dosyalar yavas
+// inse bile parti dagilmaz, ama 1 dakika sonra gelen yeni is sayilir.
+const _robotGrup = new Map();                  // jid -> { sonGelis, mesajAtildi, notlar:Set }
+const ROBOT_GRUP_ARALIK = 25 * 1000;           // 25 saniye
 
 // Mesaj sadece ---- / ==== / ____ gibi ayirac mi?
 function _robotAyiracMi(metin) {
@@ -593,10 +696,10 @@ function _robotAyiracMi(metin) {
 }
 // Ayirac gorulunce kilidi ac
 function robotKilidiAc(jid, metin) {
-  if (!jid || !_robotKilit.has(jid)) return;
+  if (!jid || !_robotGrup.has(jid)) return;
   if (!_robotAyiracMi(metin)) return;
-  _robotKilit.delete(jid);
-  _rlog(`kilit ACILDI (ayirac geldi) -> ${jid.split('@')[0]} — sonraki belge yeniden islenecek`);
+  _robotGrup.delete(jid);
+  _rlog(`ayirac geldi -> ${jid.split('@')[0]} — parti kapandi, sonraki belge yeni mesaj alir`);
 }
 const ROBOT_MESAJ = '⏳ İptal işleminiz alınmıştır, yapılıp bilgi verilecektir.\nPekcan Sigorta | Daima Yanınızda';
 
@@ -638,29 +741,28 @@ function _robotEtiketle(jid) {
   return true;
 }
 
-// ═══ PANELE OZEL NOT — MUSTERIYE ASLA GITMEZ ══════════════════════════
-// Burada sock.sendMessage YOK. Sadece panelin kendi mesaj listesine bir
-// satir eklenir ve aninda tum ekranlara yayinlanir (addMessage kendi
-// icinde broadcast ediyor). WhatsApp bu satirdan haberdar bile olmaz.
+// ═══ ARAC BILGISI — FOTOGRAFIN KENDI BILGISI ═══════════════════════════
+// Robotun sozlesmeden okudugu MOTOR NO / SASI NO, ayri bir mesaj olarak
+// DEGIL, belgenin KENDI uzerine yaziliyor. Panelde fotografin altinda,
+// buyutunce de alt kisminda gorunuyor — sanki fotografla beraber gelmis gibi.
 //
-// HIZ: robotun WhatsApp mesajini BEKLEMEZ. Belge okunur okunmaz ekrana
-// duser. Sohbet kilitliyken (robot susuyorken) bile calisir.
-function _robotPanelNotu(jid, lineId, motorNo) {
+// MUSTERIYE GITMEZ: burada sock.sendMessage YOK. Bilgi sadece panelin
+// mesaj kaydinda duruyor; WhatsApp bu alandan haberdar bile degil.
+// Yaniti/alintiyi da kirletmez, cunku metin/caption alanina DOKUNULMUYOR.
+function _robotAracBilgisi(jid, lineId, mesajId, motorNo, sasiNo) {
+  const ozet = (motorNo ? 'motor:' + motorNo : 'motor:?') + ' ' + (sasiNo ? 'sasi:' + sasiNo : 'sasi:?');
   try {
-    const metin = motorNo ? ('MOTOR NO: ' + motorNo) : 'MOTOR NO okunamadi';
-    addMessage(jid, {
-      id: 'pnot_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-      text: metin,
-      kind: 'panelnot',        // panele ozel tur -> WhatsApp'a gonderilmez
-      fromMe: true,
-      sender: ROBOT_ADI,
-      robot: true,
-      panelOnly: true,
-      time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-      durum: 1,
-    }, {}, lineId);
-    return metin;
-  } catch (e) { _rlog('panel notu yazilamadi: ' + e.message); return ''; }
+    if (!mesajId) { _rlog('belge mesaji bulunamadi (id yok) -> bilgi yazilamadi'); return ozet + ' (yazilamadi)'; }
+    if (!motorNo && !sasiNo) return ozet;
+    const C = hatChats(lineId);
+    const chat = C && C.get(jid);
+    const m = chat && chat.messages && chat.messages.find((x) => x.id === mesajId);
+    if (!m) { _rlog('belge mesaji bellekte yok -> bilgi yazilamadi'); return ozet + ' (yazilamadi)'; }
+    m.aracBilgi = { motor: motorNo || '', sasi: sasiNo || '' };
+    if (db.isReady()) db.saveMessage(jid, m, lineId).catch(() => {});
+    broadcastHat(lineId, { type: 'msgUpdate', jid, mesaj: stripBirMesaj(m) });
+    return ozet;
+  } catch (e) { _rlog('arac bilgisi yazilamadi: ' + e.message); return ozet + ' (hata)'; }
 }
 
 // Robot adina mesaj gonder (WhatsApp'a gider + panelde ROBOT olarak gorunur)
@@ -742,7 +844,7 @@ async function _robotKuyrukIsle() {
   }
 }
 
-async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, chatAd }) {
+async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, chatAd, _t }) {
   if (!robotAktif) return;
   const buf = await indir();
   if (!buf || !buf.length) { _rlog('HATA: dosya bos/okunamadi'); return; }
@@ -780,31 +882,42 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
   // ── SADECE PANELE BILDIRIM. MUSTERIYE HICBIR SEY GONDERILMEZ. ──
   // ═══ OTOMATIK ISLEM: bildirim YOK. Etiketle + (gerekiyorsa) mesaj at. ═══
   // ETIKET her belgede uygulanir (zaten varsa dokunmaz).
-  // ── EN ONCE PANEL NOTU ──
-  // Bilerek en basta: etiketi ve WhatsApp mesajini BEKLEMEZ, boylece belge
-  // okunur okunmaz motor no ekranda olur. Musteriye hicbir sey gitmez.
-  const panelNot = _robotPanelNotu(jid, lineId, sonuc.motorNo);
-
   const etiketOk = _robotEtiketle(jid);
 
-  // MESAJ: sohbet KILITLI mi? (mesaj atilmis ve heniz ayirac gelmemis)
-  const kilitTs = _robotKilit.get(jid) || 0;
-  const kilitli = kilitTs && (Date.now() - kilitTs < ROBOT_KILIT_EMNIYET);
-  if (kilitTs && !kilitli) _robotKilit.delete(jid);   // emniyet suresi doldu -> ac
+  // ── BU BELGE HANGI PARTIDEN? ──
+  // Olcu belgenin GELIS zamani (_t), islenme zamani degil. Boylece 5 belge
+  // birlikte gelip sirayla okunsa bile hepsi ayni partide sayilir.
+  const geldi = _t || Date.now();
+  let grup = _robotGrup.get(jid);
+  const ayniParti = !!(grup && (geldi - grup.sonGelis) <= ROBOT_GRUP_ARALIK);
+  if (!ayniParti) {
+    grup = { sonGelis: geldi, mesajAtildi: false, notlar: new Set() };
+    _robotGrup.set(jid, grup);
+  } else if (geldi > grup.sonGelis) {
+    grup.sonGelis = geldi;                     // kayan pencere: parti uzar
+  }
 
+  // ── MESAJ: her partiye BIR kere ──
   let mesajDurum;
-  if (kilitli) {
-    const dk = Math.round((Date.now() - kilitTs) / 60000);
-    mesajDurum = `ATLANDI (kilitli — ${dk}dk once mesaj atildi, ayirac bekleniyor)`;
+  if (grup.mesajAtildi) {
+    mesajDurum = 'ATLANDI (ayni parti — mesaj zaten atildi)';
   } else {
+    // YARIS ONLEME: iki belge ayni anda islenirse ikisi de mesaj atmasin diye
+    // gonderim BITMEDEN isaretliyoruz. Gidemezse geri aliyoruz.
+    grup.mesajAtildi = true;
     const ok = await _robotMesajGonder(jid, lineId);
-    if (ok) _robotKilit.set(jid, Date.now());
+    if (!ok) grup.mesajAtildi = false;         // gidemedi -> sonraki belge tekrar denesin
     mesajDurum = ok ? 'GONDERILDI' : 'HATA';
   }
+
+  // ── ARAC BILGISI: belgenin KENDI uzerine yazilir (ayri satir yok) ──
+  // Her belge kendi bilgisini tasidigi icin tekrar kontrolune gerek yok.
+  const panelNot = _robotAracBilgisi(jid, lineId, mesajId, sonuc.motorNo, sonuc.sasiNo);
+
   // hafiza temizligi
-  if (_robotKilit.size > 400) {
+  if (_robotGrup.size > 400) {
     const simdi = Date.now();
-    for (const [k, t] of _robotKilit) { if (simdi - t > ROBOT_KILIT_EMNIYET) _robotKilit.delete(k); }
+    for (const [k, g] of _robotGrup) { if (simdi - g.sonGelis > 60 * 60 * 1000) _robotGrup.delete(k); }
   }
 
   _rlog(`✅ ${chatAd || jid} — plaka:${sonuc.plaka || '?'} ${panelNot} puan:${sonuc.puan} | ` +
@@ -4263,7 +4376,7 @@ wss.on('connection', (ws) => {
                 reaction: r.reaction || null, myReaction: r.my_reaction || null, reactionBy: r.reaction_by || null,
                 forwarded: r.forwarded || false, mentionsMe: r.mentions_me || false,
                 edited: r.edited || false, deleted: r.deleted || false,
-                time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null, mentions: r.mentions || null, caption: r.caption || '', isaretli: r.isaretli || false,
+                time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null, mentions: r.mentions || null, caption: r.caption || '', isaretli: r.isaretli || false, aracBilgi: _aracBilgiCoz(r.arac_bilgi),
               }));
               // bellek + DB birlestir (id'ye gore tekilastir)
               const birlesik = new Map();
@@ -4325,7 +4438,7 @@ wss.on('connection', (ws) => {
                 forwarded: r.forwarded || false, mentionsMe: r.mentions_me || false,
                 edited: r.edited || false, deleted: r.deleted || false,
                 time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null,
-                mentions: r.mentions || null, caption: r.caption || '', isaretli: r.isaretli || false,
+                mentions: r.mentions || null, caption: r.caption || '', isaretli: r.isaretli || false, aracBilgi: _aracBilgiCoz(r.arac_bilgi),
               });
               eklenen++;
             }
@@ -4366,7 +4479,7 @@ wss.on('connection', (ws) => {
             forwarded: r.forwarded || false, mentionsMe: r.mentions_me || false,
             edited: r.edited || false, deleted: r.deleted || false,
             time: r.time || '', ts: Number(r.ts) || 0, key: r.key_data || null,
-            mentions: r.mentions || null, caption: r.caption || '', isaretli: r.isaretli || false,
+            mentions: r.mentions || null, caption: r.caption || '', isaretli: r.isaretli || false, aracBilgi: _aracBilgiCoz(r.arac_bilgi),
           }));
           // belleğe de ekle (varsa tekrar etme) ki bir daha sorulmasın
           if (eskiMsgs.length) {
@@ -5791,6 +5904,12 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
 }
 
 // Tek bir mesaji panele gondermeye hazirla (raw+key cikar).
+// DB'deki arac bilgisi JSON metnini nesneye cevir (bozuksa yok say)
+function _aracBilgiCoz(v) {
+  if (!v) return null;
+  try { const o = (typeof v === 'string') ? JSON.parse(v) : v; return (o && (o.motor || o.sasi)) ? o : null; }
+  catch (e) { return null; }
+}
 function stripBirMesaj(m) {
   const { raw, key, ...rest } = m;
   return rest;

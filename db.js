@@ -45,6 +45,11 @@ async function test() {
       pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS isaretli BOOLEAN DEFAULT false')
         .then(() => console.log('   ✓ messages.isaretli kolonu hazır (foto işaretleme kalıcı)'))
         .catch((e) => console.log('   ⚠️ isaretli kolonu eklenemedi:', e.message));
+      // ARAÇ BİLGİSİ: robotun sözleşmeden okuduğu MOTOR NO / ŞASİ NO, fotoğrafın
+      // kendi bilgisi olarak saklanır. Sadece panelde görünür, WhatsApp'a gitmez.
+      pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS arac_bilgi TEXT')
+        .then(() => console.log('   ✓ messages.arac_bilgi kolonu hazır (motor/şasi no)'))
+        .catch((e) => console.log('   ⚠️ arac_bilgi kolonu eklenemedi:', e.message));
       // BAĞIMSIZ OKUMA ROLÜ: sohbet için 2. okunmamış sayacı + kullanıcı için yan-rol bayrağı.
       pool.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS ozel_unread INTEGER DEFAULT 0')
         .then(() => console.log('   ✓ chats.ozel_unread kolonu hazır (bağımsız okuma rolü)'))
@@ -151,17 +156,21 @@ async function saveMessage(chatJid, m, lineId = 'ofis') {
   if (!aktif) return;
   const mentionsVal = (m.mentions && m.mentions.length) ? JSON.stringify(m.mentions) : null;
   const captionVal = m.caption || null;
+  // arac bilgisi (motor/sasi) JSON olarak saklanir; yoksa null
+  const aracVal = (m.aracBilgi && (m.aracBilgi.motor || m.aracBilgi.sasi))
+    ? JSON.stringify({ motor: m.aracBilgi.motor || '', sasi: m.aracBilgi.sasi || '' }) : null;
   // Once mentions + caption + reaction_by sutunlari DAHIL kaydetmeyi dene.
   const r = await q(
-    `INSERT INTO messages (line_id, id, chat_jid, from_me, kind, text, media_url, thumb, sender, sender_jid, sender_push, reply_to, contact_data, contacts_data, reaction, my_reaction, forwarded, mentions_me, edited, deleted, time, ts, key_data, mentions, caption, reaction_by, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26, now())
+    `INSERT INTO messages (line_id, id, chat_jid, from_me, kind, text, media_url, thumb, sender, sender_jid, sender_push, reply_to, contact_data, contacts_data, reaction, my_reaction, forwarded, mentions_me, edited, deleted, time, ts, key_data, mentions, caption, reaction_by, arac_bilgi, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27, now())
      ON CONFLICT (line_id, chat_jid, id) DO UPDATE SET
        text=EXCLUDED.text, kind=EXCLUDED.kind, media_url=COALESCE(EXCLUDED.media_url, messages.media_url),
        reaction=EXCLUDED.reaction, my_reaction=EXCLUDED.my_reaction,
        edited=EXCLUDED.edited, deleted=EXCLUDED.deleted,
        mentions=COALESCE(EXCLUDED.mentions, messages.mentions),
        caption=COALESCE(EXCLUDED.caption, messages.caption),
-       reaction_by=EXCLUDED.reaction_by`,
+       reaction_by=EXCLUDED.reaction_by,
+       arac_bilgi=COALESCE(EXCLUDED.arac_bilgi, messages.arac_bilgi)`,
     [lineId, m.id, chatJid, !!m.fromMe, m.kind || 'text', m.text || '', m.mediaUrl || null,
      m.thumb || null, m.sender || '', m.senderJid || '', m.senderPush || '',
      m.replyTo ? JSON.stringify(m.replyTo) : null,
@@ -169,7 +178,7 @@ async function saveMessage(chatJid, m, lineId = 'ofis') {
      m.contacts ? JSON.stringify(m.contacts) : null,
      m.reaction || null, m.myReaction || null, !!m.forwarded, !!m.mentionsMe,
      !!m.edited, !!m.deleted, m.time || '', m.ts || 0,
-     m.key ? JSON.stringify(m.key) : null, mentionsVal, captionVal, m.reactionBy || null],
+     m.key ? JSON.stringify(m.key) : null, mentionsVal, captionVal, m.reactionBy || null, aracVal],
     { sessiz: true } // hata olursa loglama, asagida fallback var
   );
   // mentions/reaction_by sutunlari HENUZ eklenmediyse (SQL calistirilmadi), q bos doner.
