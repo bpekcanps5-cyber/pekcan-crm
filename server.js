@@ -427,134 +427,176 @@ const _ROBOT_EKSI = [
 ];
 const ROBOT_ESIK = 12;
 
-// ═══ MOTOR NO CIKARMA (2026-07, 10 gercek sozlesme uzerinde ayarlandi) ═══
+// ═══ MOTOR NO / SASI NO CIKARMA (2026-07 v3) ═══════════════════════════
 // Belge ZATEN okundugu icin bu islem EK SURE ALMAZ (milisaniyenin altinda).
 //
-// ONCEKI SURUMDEKI 3 HATA ve COZUMU:
-//  1) SASI NUMARASINI CEKIYORDU. "MOTOR NO :" satirinin degeri okunamayinca
-//     kod bir ALT satira bakiyordu, o da "SASI NO" satiriydi.
-//     -> Artik alt satir baska bir alan basligiysa (SASI, YAKIT, TIPI...) BAKILMAZ.
-//     -> Ayrica sasi numarasi DUNYA STANDARDINDA TAM 17 HANEDIR; 17 haneli
-//        hicbir aday motor no kabul edilmez. Kesin koruma.
-//  2) SAG SUTUNU CEKIYORDU. Belge iki sutunlu: "MOTOR NO : X" satirinin
-//     saginda "YAKIT CINSI : DIZEL" veya "TIPI : F2" yaziyor. OCR bunlari tek
-//     satir yapiyor. -> Artik satirin devami, baska bir alan basligi gorulunce
-//     KESILIYOR.
-//  3) HIC CEKEMIYORDU. OCR "MOTOR NO"yu bazen "M0T0R N0" veya sadece "MOTOR"
-//     okuyor, bazen degeri "AA 04087" diye ikiye boluyor.
-//     -> Etiket bulanik araniyor, ikinci turda "NO" olmadan da araniyor,
-//        ve ardisik iki parca birlestirilerek de deneniyor.
+// v2'DE CIKAN GERCEK HATA (06KPY72 plakali Renault'ta yakalandi):
+//   "MOTOR UZERI482" gibi sacma bir deger yaziyordu. Sebep:
+//   _normBulanik "L" harfini "I" yapiyor -> _normBulanik('MOTORLU') = 'MOTORIU'.
+//   Kodda ise duz 'MOTORLU' ile karsilastiriliyordu, yani
+//   "IO028603 numarali Motorlu Arac Tescil Belgesi" cumlesi HIC ELENMIYORDU.
+//   Robot o cumleye tutunup oradan rastgele bir sey aliyordu.
 //
-// 10 ornekteki gercek degerler (hepsi 7-14 hane):
-//   AA04087 / 27191031254585 / DCX008764 / 10Z1AM0190646 / DDV017720
-//   K9KV7D257229 / K9KU876D129276 / Z12XEP19SC7473 / DCX023657 / D058248
-// Karsilik gelen sasi numaralari ise hepsi 17 hane.
+// v3'TE 4 KATMANLI KORUMA:
+//   1) MOTORLU elemesi artik bulanik-bulanik karsilastiriliyor (dogru calisiyor).
+//   2) ETIKET SATIR BASINDA OLMALI. Belge duzeninde alan basliklari hep
+//      soldadir. Cumle icinde gecen "motor" kelimesine artik tutunmuyor.
+//   3) DEGERIN SEKLI: gercek motor numaralari agirlikli olarak RAKAM.
+//      11 ornekte en dusuk rakam orani %57, en az rakam sayisi 5.
+//      Esik: en az 4 rakam ve en az %45 rakam. "UZERI482" -> 3 rakam, %37 -> ELENIR.
+//   4) SASI TUZAGI: sasi numarasi dunya standardinda 17 hane; 17 haneli
+//      hicbir aday motor no sayilmaz. Ayrica sasi ayrica bulunup disarida tutulur.
+//
+// YEDEK YOL: motor no bulunamazsa, belgede MOTOR NO satiri HER ZAMAN SASI NO
+// satirinin hemen ustundedir -> sasi satirini bulup bir ust satira bakilir.
 
-// Motor no satirinda bunlardan biri gorulurse "baska alan basladi" -> DUR.
 const _MOTOR_DUR = ['SASI', 'YAKIT', 'TIPI', 'MODELI', 'SINIFI', 'ESKI', 'YENI',
                     'BELGESI', 'KASKO', 'PLAKA', 'MARKASI', 'CINSI', 'SATIS',
-                    'ODEME', 'TESCIL', 'TARIH', 'YEVMIYE', 'NOTER'];
-// DIKKAT — TUZAK: _normBulanik "L" harfini "I" yapiyor (PLAKA -> PIAKA).
-// Bu yuzden metni bulaniklastirip yukaridaki DUZ yazimla karsilastirmak
-// TUTMAZ. Durak kelimelerini de ayni bicime cevirip oyle karsilastiriyoruz.
+                    'ODEME', 'TESCIL', 'TARIH', 'YEVMIYE', 'NOTER', 'NUMARALI',
+                    'TURK', 'LIRASI', 'ARAC'];
+// DIKKAT — TUZAK: _normBulanik L->I, 0->O, 5->S, 8->B cevirir (PLAKA -> PIAKA).
+// Bu yuzden karsilastirilacak her kelime AYNI bicime cevrilmis olmali.
 const _MOTOR_DUR_F = _MOTOR_DUR.map((s) => _normBulanik(s));
+const _MOTORLU_F = _normBulanik('MOTORLU');   // = 'MOTORIU'
 function _durKelimeMi(f) { return !!f && _MOTOR_DUR_F.some((s) => f.startsWith(s)); }
 
-// Aday gecerli bir motor no mu?
+// ── Aday dogrulama ──────────────────────────────────────────────────────
 function _motorGecerliMi(t, sasi) {
   if (!t) return false;
-  if (t.length === 17) return false;              // 17 hane = SASI numarasi
+  if (_durKelimeMi(_normBulanik(t))) return false;    // alan basligiyla baslayan sey deger olamaz
+  if (t.length === 17) return false;                 // 17 hane = SASI numarasi
   if (t.length < 5 || t.length > 16) return false;
-  if ((t.match(/[0-9]/g) || []).length < 2) return false;
+  const rakam = (t.match(/[0-9]/g) || []).length;
+  if (rakam < 4) return false;                       // en az 4 rakam
+  if (rakam / t.length < 0.45) return false;         // agirlikli rakam olmali
   if (sasi && t === sasi) return false;
   return true;
 }
+function _sasiGecerliMi(t) {
+  if (!t) return false;
+  if (t.length < 15 || t.length > 18) return false;  // standart 17; OCR 1-2 hane kacirabilir
+  const rakam = (t.match(/[0-9]/g) || []).length;
+  return rakam >= 4 && rakam < t.length;             // hem harf hem rakam icerir
+}
 
-// Bir metin parcasindan ilk gecerli adayi cikar.
-// Tek kelimeyi de, ardisik iki kelimenin birlesimini de dener
-// (OCR "AA04087" -> "AA 04087" diye bolebiliyor).
+// ── Metin parcasindan aday cikar ────────────────────────────────────────
 function _motorAdayAyikla(parca, sasi) {
   const kelime = String(parca || '').match(/[A-Z0-9]+/g) || [];
   for (let k = 0; k < kelime.length; k++) {
-    const f1 = _normBulanik(kelime[k]);
-    if (_durKelimeMi(f1)) break;                       // baska alan basligi -> DUR
+    if (_durKelimeMi(_normBulanik(kelime[k]))) break;
     if (_motorGecerliMi(kelime[k], sasi)) return kelime[k];
-    // OCR degeri ikiye bolmus olabilir ("AA04087" -> "AA 04087")
-    if (kelime[k + 1] && !_durKelimeMi(_normBulanik(kelime[k + 1]))
-        && _motorGecerliMi(kelime[k] + kelime[k + 1], sasi)) return kelime[k] + kelime[k + 1];
+    // OCR degeri ikiye bolmus olabilir ("AA04087" -> "AA 04087").
+    // SADECE ilk parca KISA ve ikinci parca RAKAMLA basliyorsa birlestir;
+    // yoksa "UZERI"+"482" gibi kelime+sayi birlesmeleri sizardi.
+    const s2 = kelime[k + 1];
+    if (s2 && kelime[k].length <= 4 && /^[0-9]/.test(s2)
+        && !_durKelimeMi(_normBulanik(s2))
+        && _motorGecerliMi(kelime[k] + s2, sasi)) return kelime[k] + s2;
   }
   return '';
 }
+function _sasiAdayAyikla(parca) {
+  const kelime = String(parca || '').match(/[A-Z0-9]+/g) || [];
+  let enIyi = '';
+  for (const t of kelime) {
+    if (_durKelimeMi(_normBulanik(t))) break;
+    if (!_sasiGecerliMi(t)) continue;
+    if (t.length === 17) return t;                   // tam 17 -> kesin dogru
+    if (t.length > enIyi.length) enIyi = t;
+  }
+  return enIyi;
+}
 
-// Satirin ilk kelimesi baska bir alan basligi mi? (alt satira bakmadan once)
-function _baskaAlanMi(satir) {
-  const kelime = String(satir || '').trim().split(/\s+/).filter(Boolean);
-  // ilk iki kelimeye bak: ": BELGESI" gibi basi isaretli satirlar da yakalansin
-  for (let k = 0; k < Math.min(2, kelime.length); k++) {
+// ── Etiketin satirdaki konumu (iki kelimelik etiketler dahil) ───────────
+function _etiketKonumu(kelime, anahtar) {
+  for (let k = 0; k < kelime.length; k++) {
     const f = _normBulanik(kelime[k]);
-    if (_durKelimeMi(f)) return true;
+    if (f.includes(_MOTORLU_F)) continue;            // "Motorlu Arac Tescil Belgesi"
+    const ikili = (k > 0 ? _normBulanik(kelime[k - 1]) : '') + f;
+    if (f.includes(anahtar) || ikili.includes(anahtar)) return k;
+  }
+  return -1;
+}
+function _satirKelimeleri(satir) {
+  return String(satir || '').replace(/:/g, ' : ').split(/\s+/).filter(Boolean);
+}
+// Satirin ilk kelimeleri baska bir alan basligi mi?
+function _baskaAlanMi(satir) {
+  const kelime = _satirKelimeleri(satir);
+  for (let k = 0; k < Math.min(2, kelime.length); k++) {
+    if (_durKelimeMi(_normBulanik(kelime[k]))) return true;
   }
   return false;
 }
 
-// Etiketten sonraki degeri al; baska bir alan basligi gorulunce KES.
-function _etiketSonrasi(satir, anahtar) {
-  const kelime = satir.replace(/:/g, ' : ').split(/\s+/).filter(Boolean);
-  let bas = -1;
-  for (let k = 0; k < kelime.length; k++) {
-    const f = _normBulanik(kelime[k]);
-    if (f.includes('MOTORLU')) continue;
-    // Etiket IKI KELIME olabilir ("MOTOR"+"NO", "SASI"+"NO") -> onceki kelimeyle
-    // birlestirip de bakiyoruz. Tek kelimeye bakmak SASI NO'yu kaciriyordu.
-    const ikili = (k > 0 ? _normBulanik(kelime[k - 1]) : '') + f;
-    if (f.includes(anahtar) || ikili.includes(anahtar)) { bas = k; break; }
-  }
-  if (bas < 0) return '';
-  const parca = [];
-  for (let k = bas + 1; k < kelime.length; k++) {
-    const f = _normBulanik(kelime[k]);
-    if (f === 'NO' || f === 'N' || f === 'O') continue;      // etiketin devami
-    if (!f && !/[0-9]/.test(kelime[k])) continue;            // ":" gibi isaretler
-    if (_durKelimeMi(f)) break;                              // baska alan -> DUR
-    parca.push(kelime[k]);
-  }
-  return parca.join(' ');
-}
-
-// Genel arayici: verilen etikete gore deger bulur.
-function _alanDegeriBul(satirlar, anahtar, dogrula) {
+// ── Genel alan okuyucu ──────────────────────────────────────────────────
+// ETIKET SATIR BASINDA (ilk 3 kelime icinde) olmali; cumle icindeki
+// gecislere tutunmaz. Degeri de baska bir alan basligi gorulunce keser.
+function _alanDegeriBul(satirlar, anahtar, ayikla) {
   for (let i = 0; i < satirlar.length; i++) {
     const satir = _norm(satirlar[i]);
-    const bulanik = _normBulanik(satir);
-    if (!bulanik.includes(anahtar)) continue;
-    if (anahtar === 'MOTOR' && bulanik.includes('MOTORLU')) continue;
-    let d = dogrula(_etiketSonrasi(satir, anahtar));
+    if (!_normBulanik(satir).includes(anahtar)) continue;
+    const kelime = _satirKelimeleri(satir);
+    const konum = _etiketKonumu(kelime, anahtar);
+    if (konum < 0 || konum > 2) continue;            // etiket satir basinda degil -> atla
+
+    const parca = [];
+    for (let k = konum + 1; k < kelime.length && parca.length < 6; k++) {
+      const f = _normBulanik(kelime[k]);
+      if (f === 'NO' || f === 'N' || f === 'O') continue;
+      if (!f && !/[0-9]/.test(kelime[k])) continue;  // ":" gibi isaretler
+      if (_durKelimeMi(f)) break;                    // baska alan basladi
+      parca.push(kelime[k]);
+    }
+    let d = ayikla(parca.join(' '));
     if (d) return d;
-    // ayni satirda yok: ALT satira bak — ama alt satir baska bir alan degilse
+
+    // Deger alt satira dusmus olabilir — ama alt satir baska bir alansa BAKMA
     const alt = satirlar[i + 1];
-    if (alt && !_baskaAlanMi(alt)) { d = dogrula(_norm(alt)); if (d) return d; }
+    if (alt && !_baskaAlanMi(alt)) { d = ayikla(_norm(alt)); if (d) return d; }
   }
   return '';
 }
 
-// Sasi numarasi (motor no ile karistirilmasin diye ayrica bulunur)
 function _sasiNoBul(satirlar) {
-  return _alanDegeriBul(satirlar, 'SASINO', (p) => {
-    const k = String(p || '').match(/[A-Z0-9]{17}/);
-    return k ? k[0] : '';
-  });
+  return _alanDegeriBul(satirlar, 'SASINO', _sasiAdayAyikla);
 }
 
-function _motorNoBul(metin) {
+function _motorNoBul(metin, sasiHazir) {
   const satirlar = String(metin || '').split(/[\r\n]+/);
-  const sasi = _sasiNoBul(satirlar);
+  const sasi = (sasiHazir !== undefined) ? sasiHazir : _sasiNoBul(satirlar);
   const ayikla = (p) => _motorAdayAyikla(p, sasi);
-  // 1. tur: tam etiket ("MOTOR NO")
+
+  // 1) Tam etiket: "MOTOR NO"
   let d = _alanDegeriBul(satirlar, 'MOTORNO', ayikla);
   if (d) return d;
-  // 2. tur: OCR "NO" kismini yutmus olabilir -> sadece "MOTOR"
-  //         ("Motorlu Arac Tescil Belgesi" cumlesi haric tutuluyor)
-  return _alanDegeriBul(satirlar, 'MOTOR', ayikla);
+
+  // 2) OCR "NO" kismini yutmus olabilir -> sadece "MOTOR"
+  //    (satir basinda olma sarti ve MOTORLU elemesi burada da gecerli)
+  d = _alanDegeriBul(satirlar, 'MOTOR', ayikla);
+  if (d) return d;
+
+  // 3) YEDEK YOL: belgede MOTOR NO satiri HER ZAMAN SASI NO satirinin
+  //    hemen ustundedir. Sasi satirini bulup bir ust satira bakiyoruz.
+  for (let i = 1; i < satirlar.length; i++) {
+    const satir = _norm(satirlar[i]);
+    if (!_normBulanik(satir).includes('SASINO')) continue;
+    const ust = _norm(satirlar[i - 1]);
+    if (_baskaAlanMi(ust) && !_normBulanik(ust).includes('MOTOR')) continue;
+    const kelime = _satirKelimeleri(ust);
+    const bas = _etiketKonumu(kelime, 'MOTOR');
+    const parca = [];
+    for (let k = (bas >= 0 ? bas + 1 : 0); k < kelime.length && parca.length < 6; k++) {
+      const f = _normBulanik(kelime[k]);
+      if (f === 'NO' || f === 'N' || f === 'O') continue;
+      if (!f && !/[0-9]/.test(kelime[k])) continue;
+      if (_durKelimeMi(f)) break;
+      parca.push(kelime[k]);
+    }
+    const c = ayikla(parca.join(' '));
+    if (c) return c;
+  }
+  return '';
 }
 
 function robotPuanla(metin) {
@@ -583,7 +625,7 @@ function robotPuanla(metin) {
   // metin zaten elde -> ek sure yok
   const satirlar = String(metin || '').split(/[\r\n]+/);
   const sasiNo = _sasiNoBul(satirlar);
-  const motorNo = _motorNoBul(metin);
+  const motorNo = _motorNoBul(metin, sasiNo);
   return { puan, bulunan, negatif, plaka, noter, motorNo, sasiNo, esik: ROBOT_ESIK };
 }
 
