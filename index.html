@@ -3177,7 +3177,6 @@
   .search-clear{background:transparent !important;border:none !important}
   .search-clear:hover{background:rgba(11,20,26,.08) !important}
   html[data-theme="dark"] .search-clear:hover{background:rgba(255,255,255,.08) !important}
-  #kasSatislar,#satisEkleBtn,#satisHizli,#satisModal,#satisBransSecim{display:none !important}
 </style>
 </head>
 <body>
@@ -5763,7 +5762,8 @@ function kontrolAltGec(sekme){
   const baslik=document.getElementById('kontrolBaslik');
   const altb=document.getElementById('kontrolAlt');
   if(baslik) baslik.textContent = perfGorunur?'Performans Raporu':(satisGorunur?'Performans Raporu':'Sonradan Ödemeler');
-  if(odemeGorunur && altb) altb.textContent='Muhasebe onayı bekleyen ödemeler';
+  if(odemeGorunur){ if(altb) altb.textContent='Muhasebe onayı bekleyen ödemeler'; }
+  else kontrolAltYaziGuncelle();   // Satışlar/Performans'a dönünce eski yazı kalmasın
   if(perfGorunur) performansYukle();
   else if(odemeGorunur) odemeListeYukle();
   else kontrolYukle();
@@ -6048,23 +6048,29 @@ async function polDuzeltOnayla(kisiIdx, grupIdx){
   }catch(e){ showToast('⚠️ Bağlantı hatası'); }
 }
 
+// Alt başlık yazısı (Bugün / Bu hafta / ... ). Hem kapsam değişince hem
+// alt sekme değişince çağrılır — yoksa Ödemeler'den Satışlar'a dönünce
+// "Muhasebe onayı bekleyen ödemeler" yazısı ekranda kalıyordu.
+function kontrolAltYaziGuncelle(){
+  const alt=document.getElementById('kontrolAlt');
+  if(!alt) return;
+  const k=_kontrolKapsam;
+  if(k==='bugun') alt.textContent='Bugünün poliçe performansı';
+  else if(k==='hafta') alt.textContent='Son 7 günün performansı';
+  else if(k==='ay') alt.textContent='Bu ayın performansı';
+  else if(k==='tum') alt.textContent='Tüm dönemlerin performansı';
+  else if(k==='ozel'){
+    const b=document.getElementById('tarihBas')?.value, s=document.getElementById('tarihBit')?.value;
+    alt.textContent=(b&&s)?(b+' → '+s):'Tarih aralığı seçin';
+  }
+}
 function kontrolKapsam(k){
   _kontrolKapsam=k;
   document.querySelectorAll('.kapsam-btn').forEach(b=>b.classList.toggle('active', b.dataset.kapsam===k));
   // özel tarih aralığı kutusunu göster/gizle
   const tarihKutu=document.getElementById('kfTarihAralik');
   if(tarihKutu) tarihKutu.style.display = (k==='ozel')?'flex':'none';
-  const alt=document.getElementById('kontrolAlt');
-  if(alt){
-    if(k==='bugun') alt.textContent='Bugünün poliçe performansı';
-    else if(k==='hafta') alt.textContent='Son 7 günün performansı';
-    else if(k==='ay') alt.textContent='Bu ayın performansı';
-    else if(k==='tum') alt.textContent='Tüm dönemlerin performansı';
-    else if(k==='ozel'){
-      const b=document.getElementById('tarihBas')?.value, s=document.getElementById('tarihBit')?.value;
-      alt.textContent=(b&&s)?(b+' → '+s):'Tarih aralığı seçin';
-    }
-  }
+  kontrolAltYaziGuncelle();
   // özel modda ama tarih seçilmemişse yükleme yapma (kullanıcı iki tarihi de seçsin)
   if(k==='ozel'){
     const b=document.getElementById('tarihBas')?.value, s=document.getElementById('tarihBit')?.value;
@@ -13220,46 +13226,6 @@ function handleNewChatResult(d){
   ['railKapaBtn','railAcHandle','railEtiketAcKapa','sidebarEtiketBar'].forEach(function(id){
     var el=document.getElementById(id); if(el && el.parentNode) el.parentNode.removeChild(el);
   });
-})();
-</script>
-<script>
-/* Satış bölümü kaldırıldı: Kontrol her zaman Performans'ta açılsın */
-(function(){
-  function yamala(){
-    if(typeof window.kontrolAltGec!=='function'||window.kontrolAltGec.__yamali)return false;
-    var asil=window.kontrolAltGec;
-    window.kontrolAltGec=function(hangi){
-      if(hangi==='satislar') hangi='performans';
-      return asil.apply(this,[hangi].concat([].slice.call(arguments,1)));
-    };
-    window.kontrolAltGec.__yamali=true;
-    return true;
-  }
-  var bek=setInterval(function(){ if(yamala()) clearInterval(bek); },150);
-  setTimeout(function(){ clearInterval(bek); },10000);
-
-  function sarmala(){
-    if(typeof window.switchMainTab!=='function'||window.switchMainTab.__yamali)return false;
-    var eski=window.switchMainTab;
-    window.switchMainTab=function(t){
-      var r=eski.apply(this,arguments);
-      if(t==='kontrol'){
-        var kez=0, tik=setInterval(function(){
-          kez++;
-          var a=document.querySelector('#kontrolContent .kas-btn.active');
-          if(a&&a.id==='kasSatislar'&&typeof window.kontrolAltGec==='function'){
-            try{ window.kontrolAltGec('performans'); }catch(e){}
-          }
-          if(kez>14) clearInterval(tik);
-        },120);
-      }
-      return r;
-    };
-    window.switchMainTab.__yamali=true;
-    return true;
-  }
-  var bek2=setInterval(function(){ if(sarmala()) clearInterval(bek2); },150);
-  setTimeout(function(){ clearInterval(bek2); },10000);
 })();
 </script>
 <script>
