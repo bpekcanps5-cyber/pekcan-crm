@@ -325,6 +325,7 @@ const _robotKuyruk = [];
 let _robotMesgul = false;
 const _robotSonUyari = new Map();   // jid -> ts (ayni sohbette tekrar uyariyi engelle)
 const _robotGunluk = [];            // son olaylar (panelden gorulebilsin)
+const _robotIslenen = new Set();    // ayni medyayi iki kez isleme
 function _rlog(msg) {
   const satir = new Date().toLocaleTimeString('tr-TR') + '  ' + msg;
   _robotGunluk.push(satir);
@@ -451,7 +452,7 @@ function _resimOlcu(buf) {
 
 async function _fotodanMetin(buf, tamOku = false) {
   const w = await _ocrHazirla();
-  if (!w) return '';
+  if (!w) { _rlog('OCR motoru yok -> foto okunamadi'); return ''; }
   const t0 = Date.now();
   try {
     // HIZ: anahtar ifadelerin TAMAMI belgenin ust yarisinda (baslik, plaka, motor,
@@ -487,12 +488,18 @@ function robotMedyaGeldi({ m, kind, url, jid, lineId }) {
   try {
     if (!robotAktif) { _rlog('KAPALI oldugu icin belge atlandi'); return; }
     if (!url) return;
+    if (_robotIslenen.has(url)) return;              // zaten islendi
+    _robotIslenen.add(url);
+    if (_robotIslenen.size > 400) { const ilk = _robotIslenen.values().next().value; _robotIslenen.delete(ilk); }
+    jid = jid || m?.key?.remoteJid || '';
+    lineId = lineId || 'ofis';
+    if (!jid) { _rlog('HATA: sohbet bilinmiyor, belge atlandi'); return; }
     const dosyaAd = String(url).split('/').pop() || '';
     const mime = (m?.message?.documentMessage?.mimetype
               || m?.message?.documentWithCaptionMessage?.message?.documentMessage?.mimetype || '');
     const pdfMu = /\.pdf$/i.test(dosyaAd) || /pdf/i.test(mime);
     const fotoMu = kind === 'image' || /\.(jpe?g|png)$/i.test(dosyaAd);
-    if (!pdfMu && !fotoMu) return;
+    if (!pdfMu && !fotoMu) { _rlog(`atlandi (foto/PDF degil): ${kind} ${dosyaAd}`); return; }
     const tamYol = path.join(__dirname, 'public', String(url).replace(/^\//, ''));
     const ch = (hatChats(lineId) || new Map()).get(jid);
     _rlog(`belge alindi: ${pdfMu ? 'PDF' : 'FOTO'} — ${(ch && (ch.customName || ch.name)) || jid}`);
@@ -509,7 +516,7 @@ function robotMedyaGeldi({ m, kind, url, jid, lineId }) {
 // Kuyruk: ayni anda tek belge islenir (sunucuyu yormasin)
 function robotKuyrugaEkle(is) {
   if (!robotAktif) return;
-  if (_robotKuyruk.length > 25) return;      // asiri birikmeyi engelle
+  if (_robotKuyruk.length > 25) { _rlog('kuyruk dolu, belge atlandi'); return; }
   is._t = Date.now();
   _robotKuyruk.push(is);
   setImmediate(_robotKuyrukIsle);            // beklemeden basla
@@ -5944,6 +5951,16 @@ async function saveMedia(m, kind, sock = waSock) {
     if (kind === 'video' && FFMPEG_VAR) {
       videoSesliCevir(path.join(MEDIA_DIR, fileName), fileName, m);
     }
+    // ── ROBOT: EN DIP KANCA. Medya hangi yoldan inerse insin buraya ugrar,
+    //    boylece hicbir belge kacmaz (ust seviyedeki kancalar yedek kalir).
+    try {
+      if (robotAktif && (kind === 'image' || kind === 'document')) {
+        const _jid = m?.key?.remoteJid || '';
+        let _lid = 'ofis';
+        try { for (const [, l] of lines) { const id = l.id || 'ofis'; const cc = hatChats(id); if (cc && cc.has(_jid)) { _lid = id; break; } } } catch (e) {}
+        setImmediate(() => robotMedyaGeldi({ m, kind, url: webYol, jid: _jid, lineId: _lid }));
+      }
+    } catch (e) {}
     return webYol;
   } catch (e) {
     console.error('Medya indirilemedi:', e.message);
