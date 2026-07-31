@@ -327,7 +327,6 @@ let _ocrWorker = null;
 let _ocrDurum = 'baslamadi';   // baslamadi | hazir | yok
 const _robotKuyruk = [];
 let _robotMesgul = false;
-const _robotSonUyari = new Map();   // jid -> ts (ayni sohbette tekrar uyariyi engelle)
 const _robotGunluk = [];            // son olaylar (panelden gorulebilsin)
 const _robotIslenen = new Set();    // ayni medyayi iki kez isleme
 function _rlog(msg) {
@@ -620,10 +619,11 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
     return;
   }
 
-  // ayni sohbette 10 dk icinde tekrar uyarma
-  const son = _robotSonUyari.get(jid) || 0;
-  if (Date.now() - son < 10 * 60 * 1000) { console.log('   (ayni sohbet, tekrar uyari atlandi)'); return; }
-  _robotSonUyari.set(jid, Date.now());
+  // ── SUSTURMA YOK ──
+  // Her sozlesme belgesi icin bildirim gonderilir. Ayni plaka tekrar gelse bile
+  // yeniden uyarilir (operator "bu geldi mi?" diye supheye dusmesin).
+  // Not: AYNI dosyanin iki kez islenmesi zaten _robotIslenen ile engelleniyor,
+  // yani tek bir gonderim tek bildirim uretir.
 
   // ── SADECE PANELE BILDIRIM. MUSTERIYE HICBIR SEY GONDERILMEZ. ──
   const _uyariPaket = {
