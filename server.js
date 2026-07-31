@@ -311,6 +311,167 @@ const sessions = new Map(); // token -> { username, displayName, role, ts }
 // BAĞIMSIZ OKUMA yan-rolü olan kullanıcı adları (bellek-içi; açılışta DB'den dolar, restart'a dayanıklı).
 let bagimsizOkumaKullanicilar = new Set();
 const profilFotolar = {}; // username -> data-url (panel profil fotograflari)
+
+// ══════════════════════════════════════════════════════════════════
+//  ROBOT — ARAÇ SATIŞ SÖZLEŞMESİ (İPTAL BELGESİ) ALGILAMA
+//  Amac: gruba noterden arac satis sozlesmesi (foto veya PDF) dusunce
+//  YONETICIYE haber ver. MUSTERIYE HICBIR SEY YAZMAZ. Sadece bildirim.
+//  Ayarlardan acilip kapatilir (settings -> robot_iptal).
+// ══════════════════════════════════════════════════════════════════
+let robotAktif = false;
+let _ocrWorker = null;
+let _ocrDurum = 'baslamadi';   // baslamadi | hazir | yok
+const _robotKuyruk = [];
+let _robotMesgul = false;
+const _robotSonUyari = new Map();   // jid -> ts (ayni sohbette tekrar uyariyi engelle)
+
+async function robotAyarYukle() {
+  try { const v = await db.getSetting('robot_iptal', null); robotAktif = !!(v && v.aktif); }
+  catch (e) { robotAktif = false; }
+  console.log(`🤖 Robot (iptal belgesi algilama): ${robotAktif ? 'ACIK' : 'KAPALI'}`);
+}
+
+// Turkce harfleri sadelestir + buyut (OCR harfleri karistirir, bu yuzden normalize sart)
+function _norm(t) {
+  return String(t || '')
+    .replace(/İ/g, 'I').replace(/ı/g, 'i').replace(/Ş/g, 'S').replace(/ş/g, 's')
+    .replace(/Ğ/g, 'G').replace(/ğ/g, 'g').replace(/Ç/g, 'C').replace(/ç/g, 'c')
+    .replace(/Ö/g, 'O').replace(/ö/g, 'o').replace(/Ü/g, 'U').replace(/ü/g, 'u')
+    .toUpperCase()
+    .replace(/[^A-Z0-9ĞÜŞÖÇİ\s.:\/-]/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+// Anahtar kelimeler ve puanlari (10 ornek belgenin TAMAMINDA bulunanlar)
+const _ROBOT_ANAHTAR = [
+  // ── cok guclu: bu belge turune ozel ──
+  { k: 'ARAC SATIS SOZLESMESI', p: 6 },
+  { k: 'ARACSATISSOZLESMESI',   p: 6 },   // bosluksuz surum (OCR bosluk yiyebiliyor)
+  { k: 'DUZENLEME SEKLINDE',    p: 3 },
+  // ── guclu: arac belgesi alanlari ──
+  { k: 'PLAKA NO',      p: 2 },
+  { k: 'SASI NO',       p: 2 },
+  { k: 'MOTOR NO',      p: 2 },
+  { k: 'SATIS BEDELI',  p: 2 },
+  { k: 'NOTERLIGI',     p: 2 },
+  { k: 'NOTERI',        p: 1 },
+  { k: 'MOTORLU ARAC TESCIL BELGESI', p: 2 },
+  // ── destekleyici ──
+  { k: 'TURKIYE CUMHURIYETI', p: 1 },
+  { k: 'KASKO DEGERI',  p: 1 },
+  { k: 'KASKO KODU',    p: 1 },
+  { k: 'ODEME SEKLI',   p: 1 },
+  { k: 'SATICI',        p: 1 },
+  { k: 'ALICI',         p: 1 },
+  { k: 'YEV.NO',        p: 1 },
+  { k: 'YEVMIYE',       p: 1 },
+];
+const ROBOT_ESIK = 8;   // bu puanin ustu -> "iptal belgesi" say
+
+function robotPuanla(metin) {
+  const n = _norm(metin);
+  const nb = n.replace(/\s/g, '');   // bosluksuz surum
+  let puan = 0; const bulunan = [];
+  for (const a of _ROBOT_ANAHTAR) {
+    const hedef = a.k.includes(' ') ? n : nb;
+    if (hedef.includes(a.k)) { puan += a.p; bulunan.push(a.k); }
+  }
+  // plaka yakala (bildirimde gostermek icin)
+  let plaka = '';
+  const pm = n.match(/PLAKA NO\s*:?\s*([0-9]{2}\s?[A-Z]{1,3}\s?[0-9]{2,4})/);
+  if (pm) plaka = pm[1].replace(/\s/g, '');
+  // noter adi
+  let noter = '';
+  const nm = n.match(/([A-ZĞÜŞÖÇİ]+\s?[0-9]+\.?\s?NOTER)/);
+  if (nm) noter = nm[1];
+  return { puan, bulunan, plaka, noter, esik: ROBOT_ESIK };
+}
+
+// OCR motorunu HAZIRLA (yoksa robot sessizce devre disi kalir, sunucu etkilenmez)
+async function _ocrHazirla() {
+  if (_ocrWorker || _ocrDurum === 'yok') return _ocrWorker;
+  try {
+    const T = require('tesseract.js');
+    _ocrWorker = await T.createWorker('tur');
+    _ocrDurum = 'hazir';
+    console.log('🤖 OCR motoru hazir (Turkce)');
+  } catch (e) {
+    _ocrDurum = 'yok';
+    console.log('🤖 OCR kurulu degil -> robot foto okuyamaz. Kurmak icin: npm install tesseract.js');
+  }
+  return _ocrWorker;
+}
+
+async function _fotodanMetin(buf) {
+  const w = await _ocrHazirla();
+  if (!w) return '';
+  try {
+    const r = await Promise.race([
+      w.recognize(buf),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('OCR zaman asimi')), 60000)),
+    ]);
+    return (r && r.data && r.data.text) || '';
+  } catch (e) { console.log('   ⚠️ OCR: ' + e.message); return ''; }
+}
+
+async function _pdfdenMetin(buf) {
+  try {
+    const pdf = require('pdf-parse');
+    const r = await pdf(buf);
+    return (r && r.text) || '';
+  } catch (e) { console.log('   ⚠️ PDF okunamadi: ' + e.message); return ''; }
+}
+
+// Kuyruk: ayni anda tek belge islenir (sunucuyu yormasin)
+function robotKuyrugaEkle(is) {
+  if (!robotAktif) return;
+  if (_robotKuyruk.length > 25) return;      // asiri birikmeyi engelle
+  _robotKuyruk.push(is);
+  _robotKuyrukIsle();
+}
+async function _robotKuyrukIsle() {
+  if (_robotMesgul) return;
+  _robotMesgul = true;
+  while (_robotKuyruk.length) {
+    const is = _robotKuyruk.shift();
+    try { await _robotBelgeIncele(is); } catch (e) { console.log('   ⚠️ robot: ' + e.message); }
+  }
+  _robotMesgul = false;
+}
+
+async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, chatAd }) {
+  if (!robotAktif) return;
+  const buf = await indir();
+  if (!buf || !buf.length) return;
+
+  const metin = (tur === 'pdf') ? await _pdfdenMetin(buf) : await _fotodanMetin(buf);
+  if (!metin) return;
+
+  const sonuc = robotPuanla(metin);
+  const gecti = sonuc.puan >= ROBOT_ESIK;
+  console.log(`🤖 ROBOT [${chatAd || jid}] ${tur} -> puan ${sonuc.puan}/${ROBOT_ESIK} ${gecti ? '✅ IPTAL BELGESI' : '— degil'}` +
+              (sonuc.plaka ? ` plaka:${sonuc.plaka}` : ''));
+  if (!gecti) return;
+
+  // ayni sohbette 10 dk icinde tekrar uyarma
+  const son = _robotSonUyari.get(jid) || 0;
+  if (Date.now() - son < 10 * 60 * 1000) { console.log('   (ayni sohbet, tekrar uyari atlandi)'); return; }
+  _robotSonUyari.set(jid, Date.now());
+
+  // ── SADECE PANELE BILDIRIM. MUSTERIYE HICBIR SEY GONDERILMEZ. ──
+  broadcastHat(lineId, {
+    type: 'robotIptalUyari',
+    jid, mesajId,
+    chatAd: chatAd || '',
+    plaka: sonuc.plaka || '',
+    noter: sonuc.noter || '',
+    puan: sonuc.puan,
+    tur,
+    dosyaAdi: dosyaAdi || '',
+    ts: Date.now(),
+  });
+}
+
 const kullaniciGorevleri = {}; // username/displayName -> '2aylik'|'kalici'|'iptal'
 async function gorevleriYukle() {
   try {
@@ -1417,6 +1578,24 @@ app.post('/api/users/gorev', express.json(), async (req, res) => {
     console.log(`   🏷️  GOREV: ${u.username} -> ${r.gorev || '(yok)'}`);
     res.json({ ok: true, gorev: r.gorev });
   } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+// ═══ ROBOT AC/KAPA (yonetici) ═══
+app.post('/api/robot/durum', express.json(), async (req, res) => {
+  const s = sessions.get(req.body?.token);
+  if (!s) return res.json({ ok: false, error: 'Yetki yok' });
+  if (req.body?.aktif === undefined) {
+    return res.json({ ok: true, aktif: robotAktif, ocr: _ocrDurum, esik: ROBOT_ESIK });
+  }
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Bu ayarı sadece yönetici değiştirebilir' });
+  robotAktif = !!req.body.aktif;
+  try { await db.saveSetting('robot_iptal', { aktif: robotAktif }); } catch (e) {}
+  if (robotAktif) _ocrHazirla();
+  console.log(`🤖 Robot ${robotAktif ? 'ACILDI' : 'KAPATILDI'} (${s.username})`);
+  for (const [, l] of lines) {
+    try { broadcastHat(l.id || 'ofis', { type: 'robotDurum', aktif: robotAktif }); } catch (e) {}
+  }
+  res.json({ ok: true, aktif: robotAktif, ocr: _ocrDurum });
 });
 
 // ═══ PANEL PROFIL FOTOGRAFI ═══
@@ -6766,6 +6945,26 @@ async function startWA(lineId = 'ofis') {
             const url = await saveMedia(m, info.kind, sock);
             if (url) {
               addMessage(jid, { id: m.key.id, mediaUrl: url, fromMe }, {}, lineId);
+              // ── ROBOT: gelen foto/PDF arac satis sozlesmesi mi? (sadece bildirim) ──
+              try {
+                if (robotAktif && !fromMe) {
+                  const dosyaAd = String(url).split('/').pop() || '';
+                  const pdfMu = /\.pdf$/i.test(dosyaAd) ||
+                                /pdf/i.test(m.message?.documentMessage?.mimetype || m.message?.documentWithCaptionMessage?.message?.documentMessage?.mimetype || '');
+                  const fotoMu = info.kind === 'image';
+                  if (pdfMu || fotoMu) {
+                    const tamYol = path.join(__dirname, 'public', String(url).replace(/^\//, ''));
+                    const ch = (hatChats(lineId) || new Map()).get(jid);
+                    robotKuyrugaEkle({
+                      lineId, jid, mesajId: m.key.id,
+                      tur: pdfMu ? 'pdf' : 'foto',
+                      dosyaAdi: dosyaAd,
+                      chatAd: (ch && (ch.customName || ch.name)) || '',
+                      indir: async () => { try { return fs.readFileSync(tamYol); } catch (e) { return null; } },
+                    });
+                  }
+                }
+              } catch (e) { /* robot asla ana akisi bozmaz */ }
               return; // basarili
             }
           } catch (e) { /* asagida tekrar denenecek */ }
@@ -6807,6 +7006,7 @@ server.listen(PORT, async () => {
   db.init();
   const dbOk = await db.test();
   await bagimsizOkumaYukle(); // bağımsız okuma yan-rolü listesini belleğe al
+  await robotAyarYukle();     // robot (iptal belgesi algilama) acik mi?
   await gorevleriYukle();     // görev etiketlerini (2aylik/kalici/iptal) belleğe al
   db.startKeepAlive(15);
   db.startCleanup();

@@ -2076,6 +2076,35 @@
   }
   /* Ic mesajda bir tik kucuk */
   .im-sender .gorev-hap{font-size:8px;padding:2px 7px 2.5px;margin-left:6px}
+
+  /* ═══ ROBOT ═══ */
+  .robot-rozet{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;
+    background:var(--panel-2);color:var(--faint);letter-spacing:.03em}
+  .robot-rozet.acik{background:rgba(0,168,132,.18);color:#3ddba4}
+  .robot-satir{display:flex;align-items:center;gap:14px;padding:14px;border-radius:11px;
+    background:var(--panel-2);border:1px solid var(--border)}
+  .robot-switch{width:48px;height:27px;border-radius:20px;background:var(--border);
+    position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+  .robot-switch span{position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;
+    background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+  .robot-switch.acik{background:var(--brand)}
+  .robot-switch.acik span{transform:translateX(21px)}
+  #robotUyariKap{position:fixed;right:18px;bottom:18px;z-index:9000;display:flex;
+    flex-direction:column;gap:10px;max-width:340px}
+  .robot-uyari{background:var(--panel);border:1px solid rgba(227,91,91,.45);border-radius:13px;
+    padding:14px;box-shadow:0 12px 34px rgba(0,0,0,.5);animation:ruIn .3s cubic-bezier(.2,.8,.2,1)}
+  @keyframes ruIn{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
+  .ru-bas{font-size:13px;color:#e35b5b;letter-spacing:.03em;margin-bottom:7px}
+  .ru-grup{font-size:14.5px;font-weight:700;color:var(--text);margin-bottom:9px;line-height:1.35}
+  .ru-detay{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .ru-etiket{font-size:11px;font-weight:600;padding:3px 9px;border-radius:7px;
+    background:var(--panel-2);color:var(--muted)}
+  .ru-tuslar{display:flex;gap:8px}
+  .ru-btn{flex:1;padding:9px;border-radius:8px;border:none;cursor:pointer;font-size:12.5px;
+    font-weight:600;background:var(--panel-2);color:var(--text);transition:all .13s}
+  .ru-btn:hover{background:var(--border)}
+  .ru-btn.ana{background:var(--brand);color:#fff}
+  .ru-btn.ana:hover{filter:brightness(1.1)}
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -4154,6 +4183,38 @@
 </div>
 
 
+<div class="modal-bg" id="robotModal">
+  <div class="modal" style="width:440px">
+    <h3 style="display:flex;align-items:center;gap:9px;margin-bottom:4px">🤖 Robot</h3>
+    <p style="color:var(--muted);font-size:12.5px;margin-bottom:16px;line-height:1.6">
+      Gruplara <b>araç satış sözleşmesi</b> (noter belgesi) düşünce seni uyarır.<br>
+      <b style="color:#e35b5b">Müşteriye hiçbir şey yazmaz</b> — sadece sana bildirim gelir.
+    </p>
+
+    <div class="robot-satir">
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:650">İptal belgesi algılama</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:2px">Fotoğraf ve PDF'leri okur</div>
+      </div>
+      <div class="robot-switch" id="robotSwitch"><span></span></div>
+    </div>
+
+    <div id="robotOcrUyari" style="display:none;margin-top:12px;padding:11px 13px;border-radius:9px;
+      background:rgba(227,91,91,.12);border:1px solid rgba(227,91,91,.3);font-size:12px;color:#e89a9a;line-height:1.55"></div>
+
+    <div style="margin-top:16px;padding:12px 13px;border-radius:9px;background:var(--panel-2);font-size:12px;color:var(--muted);line-height:1.6">
+      <b style="color:var(--text)">Nasıl çalışıyor:</b> Belgedeki
+      <i>ARAÇ SATIŞ SÖZLEŞMESİ, PLAKA NO, ŞASİ NO, MOTOR NO, SATIŞ BEDELİ, NOTERLİĞİ</i>
+      gibi sabit ifadeleri arar. Yeterince eşleşme bulursa bildirim gönderir.
+      Aynı sohbette 10 dakika içinde tekrar uyarmaz.
+    </div>
+
+    <div class="modal-btns" style="margin-top:16px">
+      <button class="btn ghost" id="robotKapat" style="width:100%">Kapat</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="profilModal">
   <div class="modal" style="width:400px">
     <h3 style="display:flex;align-items:center;gap:9px;margin-bottom:4px">👤 Profil</h3>
@@ -4927,6 +4988,10 @@ function connect(){
       });
       profilFotoTazele();
     }
+    else if(d.type==='robotIptalUyari'){
+      if(currentUser && (currentUser.role==='admin'||currentUser.role==='pzr_yonetici')) robotUyariGoster(d);
+    }
+    else if(d.type==='robotDurum'){ window._robotAktif=!!d.aktif; try{ robotGoruntuTazele(); }catch(e){} }
     else if(d.type==='kisiAdiSonuc'){
       const b=document.getElementById('senderAdYenile');
       if(b){ b.disabled=false; b.innerHTML='🔄 İsmi Yenile <span style="opacity:.6;font-weight:500;font-size:11.5px">(telefondan çek)</span>'; }
@@ -12982,6 +13047,16 @@ window.icMesajKisiBilgi=function(kullanici){
     var m=document.getElementById('settingsMenu');
     if(!m || m.__profilEkli) return;
     m.__profilEkli = true;
+    // ROBOT tusu (sadece yonetici)
+    if(currentUser && currentUser.role==='admin' && !document.getElementById('smRobot')){
+      var rb=document.createElement('div');
+      rb.className='set-item'; rb.id='smRobot';
+      rb.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.72V7h4a3 3 0 0 1 3 3v1h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-1H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1v-1a3 3 0 0 1 3-3h4V5.72c-.6-.34-1-.98-1-1.72a2 2 0 0 1 2-2zM8.5 12a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm7 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>'
+        +'<span style="flex:1">Robot</span><span id="robotDurumRozet" class="robot-rozet">…</span>';
+      rb.onclick=function(e){ e.stopPropagation(); var m2=document.getElementById('settingsMenu'); if(m2) m2.classList.remove('show'); robotAyarAc(); };
+      var bas2=m.querySelector('.settings-head');
+      if(bas2 && bas2.nextSibling) m.insertBefore(rb, bas2.nextSibling); else m.insertBefore(rb, m.firstChild);
+    }
     var it=document.createElement('div');
     it.className='set-item'; it.id='smProfil';
     it.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>Profil';
@@ -13171,6 +13246,84 @@ window.profilTeshis = function(){
   console.log('%c─── BITTI ───','font-weight:bold');
   return 'Yukaridaki bilgileri kopyalayip gonder.';
 };
+</script>
+
+<script>
+/* ═══════════ ROBOT: ayar penceresi + yonetici bildirimi ═══════════ */
+window._robotAktif = false;
+
+async function robotDurumOku(){
+  try{
+    const r=await fetch('/api/robot/durum',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
+    const d=await r.json();
+    if(d.ok){ window._robotAktif=!!d.aktif; window._robotOcr=d.ocr||''; robotGoruntuTazele(); }
+  }catch(e){}
+}
+function robotGoruntuTazele(){
+  const sw=document.getElementById('robotSwitch');
+  if(sw) sw.classList.toggle('acik', !!window._robotAktif);
+  const rz=document.getElementById('robotDurumRozet');
+  if(rz){ rz.textContent = window._robotAktif ? 'Açık' : 'Kapalı'; rz.classList.toggle('acik', !!window._robotAktif); }
+  const uy=document.getElementById('robotOcrUyari');
+  if(uy){
+    if(window._robotAktif && window._robotOcr==='yok'){
+      uy.style.display='block';
+      uy.innerHTML='⚠️ <b>Fotoğraf okuma motoru kurulu değil.</b> Robot şu an sadece PDF okuyabilir. '
+        +'Fotoğrafları da okuması için sunucuda bir kez şunu çalıştır:<br>'
+        +'<code style="display:block;margin-top:7px;padding:7px 9px;background:rgba(0,0,0,.35);border-radius:6px;color:#ddd;font-size:11.5px">cd /root/pekcan-crm && npm install tesseract.js pdf-parse && pm2 restart pekcan</code>';
+    } else uy.style.display='none';
+  }
+}
+function robotAyarAc(){
+  const m=document.getElementById('robotModal'); if(m) m.classList.add('show');
+  robotDurumOku();
+}
+async function robotDegistir(){
+  const yeni=!window._robotAktif;
+  try{
+    const r=await fetch('/api/robot/durum',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,aktif:yeni})});
+    const d=await r.json();
+    if(d.ok){ window._robotAktif=!!d.aktif; window._robotOcr=d.ocr||window._robotOcr; robotGoruntuTazele();
+      showToast(d.aktif?'🤖 Robot açıldı — belge gelince haber verecek':'Robot kapatıldı'); }
+    else showToast(d.error||'Değiştirilemedi');
+  }catch(e){ showToast('Sunucu hatası'); }
+}
+/* ── YONETICI BILDIRIMI ── */
+function robotUyariGoster(d){
+  const kutu=document.createElement('div');
+  kutu.className='robot-uyari';
+  kutu.innerHTML=
+    '<div class="ru-bas">🤖 <b>İPTAL BELGESİ GELDİ</b></div>'
+    +'<div class="ru-grup">'+esc(d.chatAd||'Bilinmeyen sohbet')+'</div>'
+    +'<div class="ru-detay">'
+      +(d.plaka?'<span class="ru-etiket">🚗 '+esc(d.plaka)+'</span>':'')
+      +(d.noter?'<span class="ru-etiket">🏛️ '+esc(d.noter)+'</span>':'')
+      +'<span class="ru-etiket">'+(d.tur==='pdf'?'📄 PDF':'🖼️ Fotoğraf')+'</span>'
+    +'</div>'
+    +'<div class="ru-tuslar">'
+      +'<button class="ru-btn ana">Sohbete Git</button>'
+      +'<button class="ru-btn">Kapat</button>'
+    +'</div>';
+  const t=kutu.querySelectorAll('.ru-btn');
+  t[0].onclick=()=>{ try{ openChat(d.jid); }catch(e){} kutu.remove(); };
+  t[1].onclick=()=>kutu.remove();
+  let kap=document.getElementById('robotUyariKap');
+  if(!kap){ kap=document.createElement('div'); kap.id='robotUyariKap'; document.body.appendChild(kap); }
+  kap.appendChild(kutu);
+  try{ if(typeof playSound==='function') playSound(); }catch(e){}
+  setTimeout(()=>{ if(kutu.parentNode) kutu.remove(); }, 90000);
+}
+(function(){
+  function bagla(){
+    const sw=document.getElementById('robotSwitch');
+    if(sw && !sw.__b){ sw.__b=1; sw.onclick=robotDegistir; }
+    const k=document.getElementById('robotKapat'), m=document.getElementById('robotModal');
+    if(k && !k.__b){ k.__b=1; k.onclick=()=>m&&m.classList.remove('show'); }
+    if(m && !m.__b){ m.__b=1; m.onclick=(e)=>{ if(e.target===m) m.classList.remove('show'); }; }
+  }
+  bagla(); setTimeout(bagla,700); setTimeout(bagla,2400);
+  setTimeout(()=>{ if(window.authToken) robotDurumOku(); }, 3000);
+})();
 </script>
 </body>
 </html>
