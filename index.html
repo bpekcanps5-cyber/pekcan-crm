@@ -9161,7 +9161,7 @@ function openChat(jid){
   }
   // sohbet degisince acik satis panelini kapat
   const sh=document.getElementById('satisHizli'); if(sh) sh.classList.remove('acik');
-  document.getElementById('labelBtn').style.display = c.isGroup ? 'grid' : 'none';
+  document.getElementById('labelBtn').style.display = 'grid';   // gruplarda VE kisilerde etiket kullanilabilir
   if(c.isGroup && !_team.length && connected) ws.send(JSON.stringify({type:'getTeam'})); // ekip adlarini hazirla
   guncelleAtamaBilgisi();
   // ONCE mesajlari iste (EN kritik — sohbet acilir acilmaz mesaj gelsin).
@@ -9358,7 +9358,7 @@ function kopyalaFallback(metin){
 }
 // atama butonuna basinca modal ac
 function grupAtamaAc(){
-  if(!activeJid || !chats[activeJid] || !chats[activeJid].isGroup){ showToast('Önce bir grup aç.'); return; }
+  if(!activeJid || !chats[activeJid]){ showToast('Önce bir sohbet aç.'); return; }
   const as=document.getElementById('assignSearch'); if(as) as.value=''; // arama sıfırla
   document.getElementById('assignModal').classList.add('show');
   renderAssignList();
@@ -9462,6 +9462,14 @@ function grupEtiketAc(e){
   document.getElementById('newLabelName').value='';
   renderLabelModal();
   renderRenkSecimi();
+  // baslik: grup mu kisi mi
+  try{
+    const c=chats[activeJid];
+    const alt=document.querySelector('#labelModal .modal p, #labelModal .lbl-alt');
+    if(alt) alt.textContent = c && c.isGroup
+      ? 'Bu grubu etiketlere ekle. Yeni etiket de oluşturabilirsin.'
+      : 'Bu kişiyi etiketlere ekle. Yeni etiket de oluşturabilirsin.';
+  }catch(e){}
   document.getElementById('labelModal').classList.add('show');
 }
 function renderLabelModal(){
