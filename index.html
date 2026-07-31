@@ -2105,6 +2105,32 @@
   .ru-btn:hover{background:var(--border)}
   .ru-btn.ana{background:var(--brand);color:#fff}
   .ru-btn.ana:hover{filter:brightness(1.1)}
+
+  /* ═══ UZUN GONDEREN ADI: tek satira sigsin, tiklanabilir kalsin ═══
+     Sorun: "KAYRAM AUTO OTOPORT HAYALINIZDEKI ARAC SADECE BIR ADIM UZAKTA" gibi
+     uzun isimler 3 satira yayilip mesaji bastiriyor ve tiklamak zorlasiyordu. */
+  .msg .sender-name.clickable{
+    max-width:280px;
+    white-space:nowrap !important;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    display:inline-flex !important;
+    align-items:center;
+    gap:4px;
+    cursor:pointer;
+    position:relative;
+    padding:2px 2px 2px 0;      /* tiklama alani biraz genis */
+    border-radius:5px;
+  }
+  .msg .sender-name.clickable:hover{
+    text-decoration:underline;
+    background:rgba(255,255,255,.06);
+  }
+  .msg .sender-name.clickable::after{     /* gorunmeyen tiklama payi */
+    content:'';position:absolute;inset:-4px -6px;
+  }
+  .msg .sender-name.clickable > *{pointer-events:none}   /* rozet tiklamayi yutmasin */
+  @media(max-width:900px){ .msg .sender-name.clickable{max-width:190px} }
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -13403,6 +13429,29 @@ async function robotKendiniTestEt(){
   document.addEventListener('click', function(e){
     if(e.target.closest && e.target.closest('#settingsAvatar')) setTimeout(ekle, 60);
   }, true);
+})();
+</script>
+
+<script>
+/* Gonderen adina tiklama guvencesi: uzun/ozel karakterli isimlerde satir ici
+   onclick bozulabiliyor. Delegasyonla her durumda calisir. */
+(function(){
+  document.addEventListener('click', function(e){
+    var el = e.target.closest && e.target.closest('.msg .sender-name.clickable');
+    if(!el) return;
+    // satir ici onclick zaten varsa ona dokunma
+    if(el.getAttribute('onclick')) return;
+    var jid = el.dataset && el.dataset.jid;
+    var ad  = (el.textContent||'').trim();
+    if(jid && typeof showSenderInfo==='function'){ e.preventDefault(); showSenderInfo(jid, ad); }
+  }, true);
+  // Tam adi ipucu olarak goster (kisaltilan isimler icin)
+  function baslikVer(){
+    document.querySelectorAll('.msg .sender-name.clickable').forEach(function(x){
+      if(!x.title) x.title = (x.textContent||'').trim() + ' — kişi bilgisi';
+    });
+  }
+  setInterval(baslikVer, 2000);
 })();
 </script>
 </body>
