@@ -339,6 +339,23 @@ async function robotAyarYukle() {
   console.log(`🤖 Robot (iptal belgesi algilama): ${robotAktif ? 'ACIK' : 'KAPALI'}`);
 }
 
+// OCR'in KARISTIRDIGI harfleri tek bicime indir. Turkce belgelerde OCR:
+//   İ / I  -> l (kucuk L) veya 1 veya |      O -> 0      S -> 5      B -> 8
+// Bu yuzden "SATIŞ BEDELİ" -> "SATlS BEDELl" olup hicbir kelime tutmuyordu.
+// Anahtar kelime aramasi SADECE bu bicim uzerinde yapilir.
+function _normBulanik(t) {
+  return String(t || '')
+    .replace(/İ/g, 'I').replace(/ı/g, 'I').replace(/Ş/g, 'S').replace(/ş/g, 'S')
+    .replace(/Ğ/g, 'G').replace(/ğ/g, 'G').replace(/Ç/g, 'C').replace(/ç/g, 'C')
+    .replace(/Ö/g, 'O').replace(/ö/g, 'O').replace(/Ü/g, 'U').replace(/ü/g, 'U')
+    .toUpperCase()
+    .replace(/[L1|!\]\[]/g, 'I')      // l, 1, |, !, ], [  -> I
+    .replace(/0/g, 'O')                // sifir -> O
+    .replace(/5/g, 'S')                // 5 -> S
+    .replace(/8/g, 'B')                // 8 -> B
+    .replace(/[^A-Z]/g, '');           // sadece harfler kalsin
+}
+
 // Turkce harfleri sadelestir + buyut (OCR harfleri karistirir, bu yuzden normalize sart)
 function _norm(t) {
   return String(t || '')
@@ -351,38 +368,53 @@ function _norm(t) {
 }
 
 // Anahtar kelimeler ve puanlari (10 ornek belgenin TAMAMINDA bulunanlar)
+// OCR harfleri karistirir; bu yuzden UZUN cumleler yerine KISA, saglam parcalar
+// aranir. Hepsi bosluksuz metinde de denenir (OCR bosluklari yiyebiliyor).
 const _ROBOT_ANAHTAR = [
-  // ── cok guclu: bu belge turune ozel ──
-  { k: 'ARAC SATIS SOZLESMESI', p: 6 },
-  { k: 'ARACSATISSOZLESMESI',   p: 6 },   // bosluksuz surum (OCR bosluk yiyebiliyor)
-  { k: 'DUZENLEME SEKLINDE',    p: 3 },
-  // ── guclu: arac belgesi alanlari ──
-  { k: 'PLAKA NO',      p: 2 },
-  { k: 'SASI NO',       p: 2 },
-  { k: 'MOTOR NO',      p: 2 },
-  { k: 'SATIS BEDELI',  p: 2 },
-  { k: 'NOTERLIGI',     p: 2 },
-  { k: 'NOTERI',        p: 1 },
-  { k: 'MOTORLU ARAC TESCIL BELGESI', p: 2 },
-  // ── destekleyici ──
-  { k: 'TURKIYE CUMHURIYETI', p: 1 },
-  { k: 'KASKO DEGERI',  p: 1 },
-  { k: 'KASKO KODU',    p: 1 },
-  { k: 'ODEME SEKLI',   p: 1 },
-  { k: 'SATICI',        p: 1 },
-  { k: 'ALICI',         p: 1 },
-  { k: 'YEV.NO',        p: 1 },
-  { k: 'YEVMIYE',       p: 1 },
+  // ── belge turu ──
+  { k: 'SATISSOZLESMESI', p: 6 },
+  { k: 'SOZLESMESI',      p: 3 },
+  { k: 'ARACSATIS',       p: 4 },
+  { k: 'DUZENLEMESEKLINDE', p: 3 },
+  // ── arac alanlari (bunlar iri basili, OCR rahat okur) ──
+  { k: 'PLAKANO',    p: 3 },
+  { k: 'PLAKA',      p: 1 },
+  { k: 'SASINO',     p: 3 },
+  { k: 'MOTORNO',    p: 3 },
+  { k: 'SATISBEDELI', p: 3 },
+  { k: 'KASKODEGERI', p: 2 },
+  { k: 'KASKOKODU',   p: 2 },
+  { k: 'MARKASI',     p: 1 },
+  { k: 'MODELI',      p: 1 },
+  { k: 'YAKITCINSI',  p: 2 },
+  { k: 'TESCILBELGESI', p: 2 },
+  // ── noter ──
+  { k: 'NOTERLIGI', p: 3 },
+  { k: 'NOTERI',    p: 2 },
+  { k: 'NOTER',     p: 1 },
+  { k: 'YEVMIYE',   p: 1 },
+  { k: 'YEVNO',     p: 1 },
+  // ── taraflar / genel ──
+  { k: 'TURKIYECUMHURIYETI', p: 2 },
+  { k: 'CUMHURIYETI', p: 1 },
+  { k: 'ODEMESEKLI',  p: 2 },
+  { k: 'SATICI',      p: 2 },
+  { k: 'ALICI',       p: 2 },
+  { k: 'TICARETBAKANLIGINDAN', p: 2 },
+  { k: 'OKURYAZAR',   p: 1 },
+  { k: 'HUSUSI',      p: 1 },
+  { k: 'YOLCUNAKLI',  p: 2 },
 ];
 const ROBOT_ESIK = 8;   // bu puanin ustu -> "iptal belgesi" say
 
 function robotPuanla(metin) {
   const n = _norm(metin);
-  const nb = n.replace(/\s/g, '');   // bosluksuz surum
+  const nb = _normBulanik(metin);   // OCR karisikliklarina dayanikli bicim
   let puan = 0; const bulunan = [];
   for (const a of _ROBOT_ANAHTAR) {
-    const hedef = a.k.includes(' ') ? n : nb;
-    if (hedef.includes(a.k)) { puan += a.p; bulunan.push(a.k); }
+    // anahtar kelimeler de ayni bicime cevrilerek aranir
+    const ak = _normBulanik(a.k);
+    if (nb.includes(ak)) { puan += a.p; bulunan.push(a.k); }
   }
   // plaka yakala (bildirimde gostermek icin)
   let plaka = '';
@@ -407,12 +439,11 @@ async function _ocrHazirla() {
       _ocrWorker = await T.createWorker('tur');
       // HIZ AYARLARI: belge tek blok, sozluk/kelime tahmini kapali -> cok daha hizli
       try {
+        // PSM 3 = otomatik sayfa bolutleme. Fotograf egik/arka planli oldugu icin
+        // "tek blok" (6) yanlisti -> hicbir sey okuyamiyordu. Sozlukler ACIK (isabet).
         await _ocrWorker.setParameters({
-          tessedit_pageseg_mode: '6',        // tek tip metin blogu
+          tessedit_pageseg_mode: '3',
           preserve_interword_spaces: '1',
-          tessedit_do_invert: '0',
-          load_system_dawg: '0',             // sozluk yukleme (hiz)
-          load_freq_dawg: '0',
         });
       } catch (e) {}
       _ocrDurum = 'hazir';
@@ -457,19 +488,17 @@ async function _fotodanMetin(buf, tamOku = false) {
   try {
     // HIZ: anahtar ifadelerin TAMAMI belgenin ust yarisinda (baslik, plaka, motor,
     // sasi, satis bedeli, noter). Once sadece ust %55'i okunur -> 2-4 kat hizli.
-    let sec = {};
-    if (!tamOku) {
-      const o = _resimOlcu(buf);
-      if (o && o.w > 600 && o.h > 600) {
-        sec = { rectangle: { left: 0, top: 0, width: o.w, height: Math.round(o.h * 0.55) } };
-      }
-    }
+    // Kirpma YOK: belge cercevenin ortasinda/egik olabiliyor, ust kismi kirpinca
+    // sadece arka plan okunuyordu. Tum kareyi okuyoruz (2-5sn, kabul edilebilir).
+    const sec = {};
     const r = await Promise.race([
       w.recognize(buf, sec),
       new Promise((_, rej) => setTimeout(() => rej(new Error('OCR zaman asimi')), 45000)),
     ]);
     const metin = (r && r.data && r.data.text) || '';
-    console.log(`   ⏱️  OCR ${tamOku ? '(tam)' : '(ust)'} ${((Date.now() - t0) / 1000).toFixed(1)}sn`);
+    const ornek = _norm(metin).slice(0, 220);
+    console.log(`   ⏱️  OCR ${((Date.now() - t0) / 1000).toFixed(1)}sn — okunan: "${ornek}"`);
+    _rlog(`OCR okudu (${metin.length} karakter): ${ornek.slice(0, 130)}`);
     return metin;
   } catch (e) { console.log('   ⚠️ OCR: ' + e.message); return ''; }
 }
