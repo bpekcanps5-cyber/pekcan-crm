@@ -541,20 +541,37 @@ async function _pdfdenMetin(buf) {
 const ROBOT_ADI = 'İPTAL ROBOTU';
 const ROBOT_MESAJ = '⏳ İptal işleminiz alınmıştır, yapılıp bilgi verilecektir.\nPekcan Sigorta | Daima Yanınızda';
 
-// "İPTAL" etiketini bul (isimde iptal gecen ilk etiket)
+// "İPTAL" etiketini bul — TURKCE DUYARLI.
+// Dikkat: JS'te /iptal/i kalibi "İPTAL" ile ESLESMEZ (noktali İ, i'ye donmez).
+// Bu yuzden etiket adlari Turkce harfler sadelestirilerek karsilastirilir.
+function _etiketAdNorm(x) {
+  return String(x || '')
+    .replace(/İ/g, 'I').replace(/ı/g, 'I').replace(/i/g, 'I')
+    .replace(/Ş/g, 'S').replace(/ş/g, 'S')
+    .replace(/Ğ/g, 'G').replace(/ğ/g, 'G')
+    .replace(/Ç/g, 'C').replace(/ç/g, 'C')
+    .replace(/Ö/g, 'O').replace(/ö/g, 'O')
+    .replace(/Ü/g, 'U').replace(/ü/g, 'U')
+    .toUpperCase().replace(/[^A-Z]/g, '');
+}
 function _iptalEtiketiBul() {
   try {
-    const t = labels.find((l) => /iptal/i.test(String(l.name || '')));
-    return t ? t.id : null;
-  } catch (e) { return null; }
+    if (!Array.isArray(labels) || !labels.length) { _rlog('UYARI: etiket listesi bos'); return null; }
+    const t = labels.find((l) => _etiketAdNorm(l.name).includes('IPTAL'));
+    if (!t) {
+      _rlog('UYARI: "İPTAL" etiketi yok. Mevcut: ' + labels.map((l) => l.name).join(', '));
+      return null;
+    }
+    return t.id;
+  } catch (e) { _rlog('etiket arama hatasi: ' + e.message); return null; }
 }
 
 // Sohbete IPTAL etiketini ekle (zaten varsa dokunma)
 function _robotEtiketle(jid) {
   const id = _iptalEtiketiBul();
-  if (!id) { _rlog('UYARI: "İptal" adinda etiket bulunamadi -> etiketlenemedi'); return false; }
+  if (!id) return false;
   const mevcut = chatLabels.get(jid) || [];
-  if (mevcut.includes(id)) return true;           // zaten etiketli
+  if (mevcut.includes(id)) { _rlog('zaten İPTAL etiketli — dokunulmadi'); return true; }
   const yeni = [...mevcut, id];
   chatLabels.set(jid, yeni);
   db.addChatLabel(jid, id).catch(() => {});
