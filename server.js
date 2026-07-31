@@ -539,11 +539,27 @@ async function _pdfdenMetin(buf) {
 
 // ═══ ROBOTUN GONDERECEGI MESAJ ve KIMLIGI ═══
 const ROBOT_ADI = 'İPTAL ROBOTU';
-// Toplu gelen belgelere TEK mesaj: bir sohbete mesaj atildiktan sonra bu sure
-// boyunca yeni belge gelse de TEKRAR mesaj atilmaz (etiket yine uygulanir).
-// Sure gectikten sonra gelen belge = yeni is -> mesaj tekrar gonderilir.
-const ROBOT_MESAJ_ARALIK = 3 * 60 * 1000;   // 3 dakika
-const _robotMesajSon = new Map();           // jid -> son mesaj zamani
+// ═══ KILIT MANTIGI (grubun kendi is akisina gore) ═══
+// Robot mesaji atinca o sohbet KILITLENIR: yeni belge gelse de tekrar mesaj atmaz
+// (etiket yine uygulanir). Kilit, grupta AYIRAC mesaji (-----, =====) gorununce
+// ACILIR — cunku ayirac "islem bitti, grup temizlendi" demek. Ayiractan SONRA
+// gelen belge yeni bir is sayilir ve mesaj tekrar gonderilir.
+const _robotKilit = new Map();                 // jid -> kilitlenme zamani
+const ROBOT_KILIT_EMNIYET = 12 * 60 * 60 * 1000;  // ayirac hic gelmezse 12 saatte kendi acilir
+
+// Mesaj sadece ---- / ==== / ____ gibi ayirac mi?
+function _robotAyiracMi(metin) {
+  const t = String(metin || '').replace(/\s/g, '');
+  if (t.length < 4) return false;
+  return /^[-=_–—.*~+]{4,}$/.test(t);
+}
+// Ayirac gorulunce kilidi ac
+function robotKilidiAc(jid, metin) {
+  if (!jid || !_robotKilit.has(jid)) return;
+  if (!_robotAyiracMi(metin)) return;
+  _robotKilit.delete(jid);
+  _rlog(`kilit ACILDI (ayirac geldi) -> ${jid.split('@')[0]} — sonraki belge yeniden islenecek`);
+}
 const ROBOT_MESAJ = '⏳ İptal işleminiz alınmıştır, yapılıp bilgi verilecektir.\nPekcan Sigorta | Daima Yanınızda';
 
 // "İPTAL" etiketini bul — TURKCE DUYARLI.
@@ -703,22 +719,24 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
   // ETIKET her belgede uygulanir (zaten varsa dokunmaz).
   const etiketOk = _robotEtiketle(jid);
 
-  // MESAJ: ayni sohbete kisa sure icinde tekrar atilmaz (2-3 belge birlikte
-  // gelince musteri ayni mesaji ust uste almasin).
-  const sonMesaj = _robotMesajSon.get(jid) || 0;
-  const gecenSn = Math.round((Date.now() - sonMesaj) / 1000);
+  // MESAJ: sohbet KILITLI mi? (mesaj atilmis ve heniz ayirac gelmemis)
+  const kilitTs = _robotKilit.get(jid) || 0;
+  const kilitli = kilitTs && (Date.now() - kilitTs < ROBOT_KILIT_EMNIYET);
+  if (kilitTs && !kilitli) _robotKilit.delete(jid);   // emniyet suresi doldu -> ac
+
   let mesajDurum;
-  if (Date.now() - sonMesaj < ROBOT_MESAJ_ARALIK) {
-    mesajDurum = `ATLANDI (${gecenSn}sn once gonderilmis)`;
+  if (kilitli) {
+    const dk = Math.round((Date.now() - kilitTs) / 60000);
+    mesajDurum = `ATLANDI (kilitli — ${dk}dk once mesaj atildi, ayirac bekleniyor)`;
   } else {
     const ok = await _robotMesajGonder(jid, lineId);
-    if (ok) _robotMesajSon.set(jid, Date.now());
+    if (ok) _robotKilit.set(jid, Date.now());
     mesajDurum = ok ? 'GONDERILDI' : 'HATA';
   }
   // hafiza temizligi
-  if (_robotMesajSon.size > 300) {
+  if (_robotKilit.size > 400) {
     const simdi = Date.now();
-    for (const [k, t] of _robotMesajSon) { if (simdi - t > ROBOT_MESAJ_ARALIK * 4) _robotMesajSon.delete(k); }
+    for (const [k, t] of _robotKilit) { if (simdi - t > ROBOT_KILIT_EMNIYET) _robotKilit.delete(k); }
   }
 
   _rlog(`✅ ${chatAd || jid} — plaka:${sonuc.plaka || '?'} puan:${sonuc.puan} | ` +
@@ -5411,6 +5429,11 @@ function hatChats(lineId) {
 }
 
 function addMessage(jid, message, meta = {}, lineId = 'ofis') {
+  // ROBOT KILIDI: grupta ayirac (-----, =====) gorunduyse "islem bitti" demektir,
+  // kilidi ac ki sonraki sozlesme yeniden islensin. (Robotun kendi mesaji haric.)
+  try {
+    if (message && !message.robot && message.text) robotKilidiAc(jid, message.text);
+  } catch (e) {}
   const now = Date.now();
   message.ts = now; // gercek zaman damgasi (siralama icin)
   const C = hatChats(lineId); // bu hattin sohbetleri (ofis ise global chats)
