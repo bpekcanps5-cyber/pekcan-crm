@@ -324,6 +324,13 @@ let _ocrDurum = 'baslamadi';   // baslamadi | hazir | yok
 const _robotKuyruk = [];
 let _robotMesgul = false;
 const _robotSonUyari = new Map();   // jid -> ts (ayni sohbette tekrar uyariyi engelle)
+const _robotGunluk = [];            // son olaylar (panelden gorulebilsin)
+function _rlog(msg) {
+  const satir = new Date().toLocaleTimeString('tr-TR') + '  ' + msg;
+  _robotGunluk.push(satir);
+  if (_robotGunluk.length > 30) _robotGunluk.shift();
+  console.log('🤖 ' + msg);
+}
 
 async function robotAyarYukle() {
   try { const v = await db.getSetting('robot_iptal', null); robotAktif = !!(v && v.aktif); }
@@ -474,6 +481,31 @@ async function _pdfdenMetin(buf) {
   } catch (e) { console.log('   ⚠️ PDF okunamadi: ' + e.message); return ''; }
 }
 
+// Medya kaydedildikten sonra her yoldan buraya ugranir (tek merkez).
+// fromMe OLSA BILE inceler — bildirimden ibaret, zarari yok; test de mumkun olur.
+function robotMedyaGeldi({ m, kind, url, jid, lineId }) {
+  try {
+    if (!robotAktif) { _rlog('KAPALI oldugu icin belge atlandi'); return; }
+    if (!url) return;
+    const dosyaAd = String(url).split('/').pop() || '';
+    const mime = (m?.message?.documentMessage?.mimetype
+              || m?.message?.documentWithCaptionMessage?.message?.documentMessage?.mimetype || '');
+    const pdfMu = /\.pdf$/i.test(dosyaAd) || /pdf/i.test(mime);
+    const fotoMu = kind === 'image' || /\.(jpe?g|png)$/i.test(dosyaAd);
+    if (!pdfMu && !fotoMu) return;
+    const tamYol = path.join(__dirname, 'public', String(url).replace(/^\//, ''));
+    const ch = (hatChats(lineId) || new Map()).get(jid);
+    _rlog(`belge alindi: ${pdfMu ? 'PDF' : 'FOTO'} — ${(ch && (ch.customName || ch.name)) || jid}`);
+    robotKuyrugaEkle({
+      lineId, jid, mesajId: m?.key?.id,
+      tur: pdfMu ? 'pdf' : 'foto',
+      dosyaAdi: dosyaAd,
+      chatAd: (ch && (ch.customName || ch.name)) || '',
+      indir: async () => { try { return fs.readFileSync(tamYol); } catch (e) { console.log('   ⚠️ dosya okunamadi: ' + tamYol); return null; } },
+    });
+  } catch (e) { console.log('   ⚠️ robot kanca: ' + e.message); }
+}
+
 // Kuyruk: ayni anda tek belge islenir (sunucuyu yormasin)
 function robotKuyrugaEkle(is) {
   if (!robotAktif) return;
@@ -499,10 +531,14 @@ async function _robotKuyrukIsle() {
 async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, chatAd }) {
   if (!robotAktif) return;
   const buf = await indir();
-  if (!buf || !buf.length) return;
+  if (!buf || !buf.length) { _rlog('HATA: dosya bos/okunamadi'); return; }
 
   let metin = (tur === 'pdf') ? await _pdfdenMetin(buf) : await _fotodanMetin(buf);
-  if (!metin) return;
+  if (!metin) {
+    _rlog(`HATA: ${tur} okunamadi — ` +
+      (tur === 'foto' && _ocrDurum !== 'hazir' ? 'OCR KURULU DEGIL (npm install tesseract.js)' : 'goruntu kalitesi dusuk'));
+    return;
+  }
 
   let sonuc = robotPuanla(metin);
   // Ust kisim yetmediyse ama IZ varsa (>=3 puan) tam sayfayi da oku -> kacirma
@@ -514,7 +550,10 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
   console.log(`🤖 ROBOT [${chatAd || jid}] ${tur} -> puan ${sonuc.puan}/${ROBOT_ESIK} ${gecti ? '✅ IPTAL BELGESI' : '— degil'}` +
               (sonuc.plaka ? ` plaka:${sonuc.plaka}` : '') +
               (arguments[0] && arguments[0]._t ? ` (${((Date.now() - arguments[0]._t) / 1000).toFixed(1)}sn)` : ''));
-  if (!gecti) return;
+  if (!gecti) {
+    _rlog(`puan ${sonuc.puan}/${ROBOT_ESIK} YETERSIZ — bulunan: ${sonuc.bulunan.join(', ') || '(hicbiri)'}`);
+    return;
+  }
 
   // ayni sohbette 10 dk icinde tekrar uyarma
   const son = _robotSonUyari.get(jid) || 0;
@@ -522,7 +561,7 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
   _robotSonUyari.set(jid, Date.now());
 
   // ── SADECE PANELE BILDIRIM. MUSTERIYE HICBIR SEY GONDERILMEZ. ──
-  broadcastHat(lineId, {
+  const _uyariPaket = {
     type: 'robotIptalUyari',
     jid, mesajId,
     chatAd: chatAd || '',
@@ -532,7 +571,11 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
     tur,
     dosyaAdi: dosyaAdi || '',
     ts: Date.now(),
-  });
+  };
+  broadcastHat(lineId, _uyariPaket);
+  // guvence: diger hatlardaki yoneticiler de gorsun
+  try { for (const [, l] of lines) { const lid = l.id || 'ofis'; if (lid !== lineId) broadcastHat(lid, _uyariPaket); } } catch (e) {}
+  _rlog(`✅ BILDIRIM GONDERILDI -> ${chatAd || jid} (puan ${sonuc.puan})`);
 }
 
 const kullaniciGorevleri = {}; // username/displayName -> '2aylik'|'kalici'|'iptal'
@@ -1641,6 +1684,25 @@ app.post('/api/users/gorev', express.json(), async (req, res) => {
     console.log(`   🏷️  GOREV: ${u.username} -> ${r.gorev || '(yok)'}`);
     res.json({ ok: true, gorev: r.gorev });
   } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+// ═══ ROBOT KENDINI TEST ET ═══
+app.post('/api/robot/test', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  const rapor = { robotAktif, ocrDurum: _ocrDurum, paketler: {}, gunluk: _robotGunluk.slice(-20) };
+  for (const pk of ['tesseract.js', 'pdf-parse']) {
+    try { require.resolve(pk); rapor.paketler[pk] = true; } catch (e) { rapor.paketler[pk] = false; }
+  }
+  // OCR motorunu simdi hazirlamayi dene
+  if (rapor.paketler['tesseract.js'] && _ocrDurum !== 'hazir') {
+    try { await Promise.race([_ocrHazirla(), new Promise((r) => setTimeout(r, 25000))]); } catch (e) {}
+    rapor.ocrDurum = _ocrDurum;
+  }
+  // ornek metin uzerinde puanlama motorunu dene
+  const ornek = 'Turkiye Cumhuriyeti ARAC SATIS SOZLESMESI PLAKA NO 34DRJ024 MOTOR NO 123 SASI NO 456 SATIS BEDELI 400.000 NOTERLIGI SATICI ALICI';
+  const t = robotPuanla(ornek);
+  rapor.motorTest = { puan: t.puan, esik: ROBOT_ESIK, gecti: t.puan >= ROBOT_ESIK, plaka: t.plaka };
+  res.json({ ok: true, rapor });
 });
 
 // ═══ ROBOT AC/KAPA (yonetici) ═══
@@ -5830,6 +5892,7 @@ async function medyaKuyrukIsle() {
     is.deneme++;
     try {
       const url = await saveMedia(is.m, is.kind, line.sock || is.sock);
+      if (url) { try { robotMedyaGeldi({ m: is.m, kind: is.kind, url, jid: is.jid, lineId: is.lineId }); } catch (e) {} }
       if (url) {
         addMessage(is.jid, { id, mediaUrl: url, fromMe: !!is.m.key.fromMe }, {}, is.lineId);
         _medyaKuyruk.delete(id);
@@ -7008,26 +7071,7 @@ async function startWA(lineId = 'ofis') {
             const url = await saveMedia(m, info.kind, sock);
             if (url) {
               addMessage(jid, { id: m.key.id, mediaUrl: url, fromMe }, {}, lineId);
-              // ── ROBOT: gelen foto/PDF arac satis sozlesmesi mi? (sadece bildirim) ──
-              try {
-                if (robotAktif && !fromMe) {
-                  const dosyaAd = String(url).split('/').pop() || '';
-                  const pdfMu = /\.pdf$/i.test(dosyaAd) ||
-                                /pdf/i.test(m.message?.documentMessage?.mimetype || m.message?.documentWithCaptionMessage?.message?.documentMessage?.mimetype || '');
-                  const fotoMu = info.kind === 'image';
-                  if (pdfMu || fotoMu) {
-                    const tamYol = path.join(__dirname, 'public', String(url).replace(/^\//, ''));
-                    const ch = (hatChats(lineId) || new Map()).get(jid);
-                    robotKuyrugaEkle({
-                      lineId, jid, mesajId: m.key.id,
-                      tur: pdfMu ? 'pdf' : 'foto',
-                      dosyaAdi: dosyaAd,
-                      chatAd: (ch && (ch.customName || ch.name)) || '',
-                      indir: async () => { try { return fs.readFileSync(tamYol); } catch (e) { return null; } },
-                    });
-                  }
-                }
-              } catch (e) { /* robot asla ana akisi bozmaz */ }
+              robotMedyaGeldi({ m, kind: info.kind, url, jid, lineId });
               return; // basarili
             }
           } catch (e) { /* asagida tekrar denenecek */ }
