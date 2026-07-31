@@ -4188,7 +4188,8 @@
     <h3 style="display:flex;align-items:center;gap:9px;margin-bottom:4px">🤖 Robot</h3>
     <p style="color:var(--muted);font-size:12.5px;margin-bottom:16px;line-height:1.6">
       Gruplara <b>araç satış sözleşmesi</b> (noter belgesi) düşünce seni uyarır.<br>
-      <b style="color:#e35b5b">Müşteriye hiçbir şey yazmaz</b> — sadece sana bildirim gelir.
+      <b style="color:#e35b5b">Müşteriye hiçbir şey yazmaz</b> — sadece sana bildirim gelir.<br>
+      <span style="color:var(--faint)">Bu ayar <b>sana özeldir</b>; diğer yöneticileri etkilemez.</span>
     </p>
 
     <div class="robot-satir">
@@ -4993,9 +4994,12 @@ function connect(){
       profilFotoTazele();
     }
     else if(d.type==='robotIptalUyari'){
-      if(currentUser && (currentUser.role==='admin'||currentUser.role==='pzr_yonetici')) robotUyariGoster(d);
+      // KISIYE OZEL: sadece robotu KENDISI acmis olanlar bildirim gorur
+      const _b=(window._ben&&window._ben())||currentUser||{};
+      const _hedef = Array.isArray(d.hedefler) ? d.hedefler : null;
+      const _bana = _hedef ? _hedef.includes(_b.username) : !!window._robotAktif;
+      if(_bana) robotUyariGoster(d);
     }
-    else if(d.type==='robotDurum'){ window._robotAktif=!!d.aktif; try{ robotGoruntuTazele(); }catch(e){} }
     else if(d.type==='kisiAdiSonuc'){
       const b=document.getElementById('senderAdYenile');
       if(b){ b.disabled=false; b.innerHTML='🔄 İsmi Yenile <span style="opacity:.6;font-weight:500;font-size:11.5px">(telefondan çek)</span>'; }
@@ -13250,7 +13254,7 @@ async function robotDurumOku(){
   try{
     const r=await fetch('/api/robot/durum',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})});
     const d=await r.json();
-    if(d.ok){ window._robotAktif=!!d.aktif; window._robotOcr=d.ocr||''; robotGoruntuTazele(); }
+    if(d.ok){ window._robotAktif=!!d.aktif; window._robotOcr=d.ocr||''; window._robotAcikKisi=d.acikKisi||0; robotGoruntuTazele(); }
   }catch(e){}
 }
 function robotGoruntuTazele(){
@@ -13277,8 +13281,8 @@ async function robotDegistir(){
   try{
     const r=await fetch('/api/robot/durum',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,aktif:yeni})});
     const d=await r.json();
-    if(d.ok){ window._robotAktif=!!d.aktif; window._robotOcr=d.ocr||window._robotOcr; robotGoruntuTazele();
-      showToast(d.aktif?'🤖 Robot açıldı — belge gelince haber verecek':'Robot kapatıldı'); }
+    if(d.ok){ window._robotAktif=!!d.aktif; window._robotOcr=d.ocr||window._robotOcr; window._robotAcikKisi=d.acikKisi||0; robotGoruntuTazele();
+      showToast(d.aktif?'🤖 Robot senin için açıldı':'Robot senin için kapatıldı'); }
     else showToast(d.error||'Değiştirilemedi');
   }catch(e){ showToast('Sunucu hatası'); }
 }

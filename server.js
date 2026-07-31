@@ -318,7 +318,11 @@ const profilFotolar = {}; // username -> data-url (panel profil fotograflari)
 //  YONETICIYE haber ver. MUSTERIYE HICBIR SEY YAZMAZ. Sadece bildirim.
 //  Ayarlardan acilip kapatilir (settings -> robot_iptal).
 // ══════════════════════════════════════════════════════════════════
+// Robot artik KISIYE OZEL: her yonetici kendi acar/kapatir.
+// robotAktif = "en az bir kisi acmis mi?" (belge inceleme o zaman calisir)
+const robotKullanicilar = new Set();   // robotu ACIK olan kullanici adlari
 let robotAktif = false;
+function _robotAktifTazele() { robotAktif = robotKullanicilar.size > 0; }
 let _ocrWorker = null;
 let _ocrDurum = 'baslamadi';   // baslamadi | hazir | yok
 const _robotKuyruk = [];
@@ -334,9 +338,30 @@ function _rlog(msg) {
 }
 
 async function robotAyarYukle() {
-  try { const v = await db.getSetting('robot_iptal', null); robotAktif = !!(v && v.aktif); }
-  catch (e) { robotAktif = false; }
-  console.log(`🤖 Robot (iptal belgesi algilama): ${robotAktif ? 'ACIK' : 'KAPALI'}`);
+  robotKullanicilar.clear();
+  try {
+    const us = await db.listUsers();
+    for (const u of us) {
+      if (!u.username) continue;
+      try {
+        const v = await db.getSetting('robot_iptal_' + u.username, null);
+        if (v && v.aktif) robotKullanicilar.add(u.username);
+      } catch (e) {}
+    }
+    // eski TEK ayar varsa (surum yukseltme): yoneticilere devret
+    const eski = await db.getSetting('robot_iptal', null);
+    if (eski && eski.aktif && robotKullanicilar.size === 0) {
+      for (const u of us) {
+        if (u.role === 'admin' && u.username) {
+          robotKullanicilar.add(u.username);
+          await db.saveSetting('robot_iptal_' + u.username, { aktif: true });
+        }
+      }
+      await db.saveSetting('robot_iptal', { aktif: false });
+    }
+  } catch (e) {}
+  _robotAktifTazele();
+  console.log(`🤖 Robot: ${robotKullanicilar.size} kisi acik ${robotKullanicilar.size ? '(' + [...robotKullanicilar].join(', ') + ')' : ''}`);
 }
 
 // OCR'in KARISTIRDIGI harfleri tek bicime indir. Turkce belgelerde OCR:
@@ -603,6 +628,7 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
   // ── SADECE PANELE BILDIRIM. MUSTERIYE HICBIR SEY GONDERILMEZ. ──
   const _uyariPaket = {
     type: 'robotIptalUyari',
+    hedefler: [...robotKullanicilar],   // sadece robotu ACIK olanlar gorsun
     jid, mesajId,
     chatAd: chatAd || '',
     plaka: sonuc.plaka || '',
@@ -1729,7 +1755,12 @@ app.post('/api/users/gorev', express.json(), async (req, res) => {
 // ═══ ROBOT KENDINI TEST ET ═══
 app.post('/api/robot/test', express.json(), async (req, res) => {
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
-  const rapor = { robotAktif, ocrDurum: _ocrDurum, paketler: {}, gunluk: _robotGunluk.slice(-20) };
+  const _s = sessions.get(req.body?.token) || {};
+  const rapor = {
+    robotAktif: robotKullanicilar.has(_s.username),   // KENDI durumu
+    acikKisi: robotKullanicilar.size,
+    ocrDurum: _ocrDurum, paketler: {}, gunluk: _robotGunluk.slice(-20),
+  };
   for (const pk of ['tesseract.js', 'pdf-parse']) {
     try { require.resolve(pk); rapor.paketler[pk] = true; } catch (e) { rapor.paketler[pk] = false; }
   }
@@ -1749,18 +1780,20 @@ app.post('/api/robot/test', express.json(), async (req, res) => {
 app.post('/api/robot/durum', express.json(), async (req, res) => {
   const s = sessions.get(req.body?.token);
   if (!s) return res.json({ ok: false, error: 'Yetki yok' });
+  const benimDurum = robotKullanicilar.has(s.username);
+  // sadece OKUMA: KENDI durumunu dondur
   if (req.body?.aktif === undefined) {
-    return res.json({ ok: true, aktif: robotAktif, ocr: _ocrDurum, esik: ROBOT_ESIK });
+    return res.json({ ok: true, aktif: benimDurum, ocr: _ocrDurum, esik: ROBOT_ESIK, acikKisi: robotKullanicilar.size });
   }
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Bu ayarı sadece yönetici değiştirebilir' });
-  robotAktif = !!req.body.aktif;
-  try { await db.saveSetting('robot_iptal', { aktif: robotAktif }); } catch (e) {}
-  if (robotAktif) _ocrHazirla().catch(() => {});   // motoru hemen isit
-  console.log(`🤖 Robot ${robotAktif ? 'ACILDI' : 'KAPATILDI'} (${s.username})`);
-  for (const [, l] of lines) {
-    try { broadcastHat(l.id || 'ofis', { type: 'robotDurum', aktif: robotAktif }); } catch (e) {}
-  }
-  res.json({ ok: true, aktif: robotAktif, ocr: _ocrDurum });
+  // ── KISIYE OZEL: sadece bu kullanicinin tercihi degisir, digerleri etkilenmez ──
+  const yeni = !!req.body.aktif;
+  if (yeni) robotKullanicilar.add(s.username); else robotKullanicilar.delete(s.username);
+  _robotAktifTazele();
+  try { await db.saveSetting('robot_iptal_' + s.username, { aktif: yeni }); } catch (e) {}
+  if (yeni) _ocrHazirla().catch(() => {});
+  console.log(`🤖 Robot ${yeni ? 'ACILDI' : 'KAPATILDI'} — ${s.username} (toplam acik: ${robotKullanicilar.size})`);
+  res.json({ ok: true, aktif: yeni, ocr: _ocrDurum, acikKisi: robotKullanicilar.size });
 });
 
 // ═══ PANEL PROFIL FOTOGRAFI ═══
