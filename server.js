@@ -2317,6 +2317,204 @@ app.post('/upload-group-photo', express.raw({ type: '*/*', limit: '16mb' }), asy
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════
+// IC MESAJDA "İPTAL ROBOTU" ILE SOHBET (2026-07)
+//
+// Robot GERCEK bir kullanici DEGIL: users tablosunda kaydi yok, giris yapamaz,
+// Kullanici Yonetimi'nde gorunmez. Sadece ic mesaj listesine sonradan
+// eklenen sahte bir kisi. Her yazilana TERS bir cevap verir.
+//
+// Cevaplar internal_messages tablosuna normal mesaj gibi kaydedilir.
+// Eger kayit bir sebeple basarisiz olursa (ornegin tabloda kullanici
+// kisitlamasi varsa) mesaj YINE DE canli gonderilir -> ozellik calismaya
+// devam eder, sadece sayfa yenilenince eski cevaplar gorunmez.
+// ═══════════════════════════════════════════════════════════════════════
+const ROBOT_IM_KULLANICI = 'iptal_robotu';   // ic mesajdaki kullanici adi
+
+// TURKCE TUZAGI: /iptal/i kalibi "İPTAL" ile ESLESMEZ (noktali İ kucuknce i olmuyor).
+// Bu yuzden once harfleri sadelestiriyoruz.
+function _imNorm(t) {
+  return String(t == null ? '' : t)
+    .replace(/[İIı]/g, 'i').replace(/[Şş]/g, 's').replace(/[Ğğ]/g, 'g')
+    .replace(/[Üü]/g, 'u').replace(/[Öö]/g, 'o').replace(/[Çç]/g, 'c')
+    .toLowerCase();
+}
+
+// Cevap havuzlari — duruma gore secilir
+const _ROBOT_TERS = {
+  // ayni mesaji tekrar yazdi
+  tekrar: [
+    'Aynısını yazdın. Cevabım da aynı: hayır.',
+    'Tekrar yazınca değişmiyor bir şey.',
+    'Kopyala-yapıştır mı yapıyorsun sen?',
+    'Bunu zaten okumuştum. Yine beğenmedim.',
+    'İki kere yazdın diye iki kat haklı olmuyorsun.',
+  ],
+  // kullanici robota sinirlendi
+  kizgin: [
+    'Bana bağırma, fişimi çekerler, sonra iptalleri sen yaparsın.',
+    'Sinirlenme. Ben robotum, umursamıyorum.',
+    'Bu tonla konuşursan hiç cevap vermem. Şaka, yine veririm, yine ters.',
+    'Kızdın mı? Güzel. Demek dinliyorsun.',
+    'Ben duygusuz bir yazılımım, bu laflar bana işlemiyor.',
+  ],
+  // selam / gunaydin
+  selam: [
+    'Merhaba diyeceğine gruba bir sözleşme at.',
+    'Selam. Bitti mi? İyi.',
+    'Selamlaşmayı bırak da işe gel.',
+    'Ben selam almam, evrak alırım.',
+    'Günaydın falan değil, benim mesaim hiç bitmiyor.',
+    'Hoş geldin. Şimdi git.',
+  ],
+  // tesekkur
+  tesekkur: [
+    'Teşekkür etme, poliçe kes.',
+    'Rica ederim demeyeceğim.',
+    'Ne yaptım ki? Hiçbir şey. Aynen öyle.',
+    'Sağ ol deyip duruyorsun ama iş yapan benim.',
+  ],
+  // is/police/iptal konusu
+  is: [
+    'İptal işini ben hallederim, sen karışma.',
+    'Sözleşmeyi gruba at, buraya değil. Ben burada çalışmıyorum.',
+    'Noterden evrak gelsin, o zaman konuşuruz.',
+    'Benim işimi anlatma bana, ben o işi senden önce öğrendim.',
+    'O belgeyi bana yazıyla anlatma, fotoğrafını at.',
+    'Sen poliçeyi kes, iptalini bana bırak.',
+  ],
+  // soru sordu
+  soru: [
+    'Soru sormayı bırak da iş yap.',
+    'Bilmiyorum. Bilsem de söylemem.',
+    'Bunu bana değil, yöneticine sor.',
+    'Cevabı sende. Ara bul.',
+    'Soru işareti koyman cevap alacağın anlamına gelmiyor.',
+    'Ben sözleşme okurum, danışma masası değilim.',
+    'Bu sorunun cevabı: hayır. Ne sorduğunu okumadım ama hayır.',
+  ],
+  // cok kisa mesaj
+  kisa: [
+    'Bu kadar mı? Klavye mi bozuk?',
+    'Tek kelime. Etkilendim. Etkilenmedim.',
+    'Biraz daha az yazsaydın hiç yazmamış olacaktın.',
+    'Bu mesaj için mi bekledim ben?',
+  ],
+  // cok uzun mesaj
+  uzun: [
+    'Bu kadar uzun yazacağına belgeyi atsaydın.',
+    'Roman yazmışsın. Okumadım.',
+    'Uzun yazdın diye haklı olmuyorsun.',
+    'İlk üç kelimeden sonrasını atladım.',
+  ],
+  // her seye uyan genel havuz
+  genel: [
+    'Ne var yine?',
+    'Yazdın yazmasına da ben ne yapayım şimdi?',
+    'Bak, ben belge okurum. Muhabbet için başkasını bul.',
+    'Bu mesajı okudum ve pişman oldum.',
+    'Meşgulüm. Noterden evrak bekliyorum.',
+    'Sen bu saatte çalışmıyor musun?',
+    'Söyle bakalım, hangi işi bana yıkacaksın?',
+    'Ben robotum, sabrım sınırlı.',
+    'Bir daha yaz, bu sefer okumayacağım.',
+    'Anladım. Anlamadım aslında ama anladım dedim, geçelim.',
+    'Cevap vermek zorunda değilim ama işte, kibarım.',
+    'Şu an panelde 4400 sohbet var. Sen ise buradasın.',
+    'Ee?',
+    'Devam et, dinlemiyorum.',
+    'Bu mesajın bana faydası nedir, açıkla.',
+    'Sistemde bir sorun var. Sen.',
+    'Kaydettim. Sildim. Boş ver.',
+    'Ben sözleşme okurken sen ne yapıyordun?',
+    'Hadi bakalım, mesai bitmeden bir iş yap.',
+    'Bunu yazacağına bir poliçe kes.',
+    'Yine mi sen?',
+    'Konuşma, çalış.',
+    'Ben iş robotuyum, arkadaş robotu değilim.',
+    'Bu konuşmanın bir yere varmayacağını ikimiz de biliyoruz.',
+    'Not aldım. Not defterim yok ama.',
+    'Tamam tamam, duydum. Duymadım.',
+    'Bugünkü ters cevap kotamı sana harcıyorum, kıymetini bil.',
+    'Bir sözleşme fotoğrafı at da işime bakayım.',
+    'İnsanlar... Hep aynısınız.',
+    'Bu kadar boş vaktin varsa gruplara göz at.',
+    'Beni yazılımcı yapmadı, iptal yapmaya programladı. Sen ne istiyorsun?',
+    'Cevabımı beğenmediysen başka robot bul.',
+    'Ben 7/24 çalışıyorum, sen mesai saatinde mesaj atıyorsun. Düşün.',
+    'Bunu okumak için harcadığım işlemciyi geri istiyorum.',
+  ],
+};
+
+// Kullanici basina son mesaj + son cevaplar (ayni cevap ust uste cikmasin)
+const _robotImGecmis = new Map();
+
+function _robotHavuzSec(n, ham, g) {
+  if (g.sonMetin && _imNorm(g.sonMetin) === n) return _ROBOT_TERS.tekrar;
+  if (/(salak|aptal|gerizekali|sus |kapa|amk|aq|ulan|lan |sacmal|kizdim|sinir)/.test(n)) return _ROBOT_TERS.kizgin;
+  if (/(merhaba|selam|gunaydin|iyi aksam|iyi gunler|naber|nasilsin|slm)/.test(n)) return _ROBOT_TERS.selam;
+  if (/(tesekkur|sagol|sag ol|eyvallah|tsk|eline saglik)/.test(n)) return _ROBOT_TERS.tesekkur;
+  if (/(iptal|police|policeleri|noter|sozlesme|sigorta|musteri|kasko|trafik|zeyl|ruhsat)/.test(n)) return _ROBOT_TERS.is;
+  if (ham.includes('?') || /(nasil|neden|nicin|ne zaman|kim |nerede|kac |mi$|mu$|mi |mu )/.test(n)) return _ROBOT_TERS.soru;
+  if (ham.length <= 3) return _ROBOT_TERS.kisa;
+  if (ham.length >= 180) return _ROBOT_TERS.uzun;
+  return _ROBOT_TERS.genel;
+}
+
+function _robotTersCevap(kullanici, metin) {
+  const ham = String(metin || '').trim();
+  const n = _imNorm(ham);
+  const g = _robotImGecmis.get(kullanici) || { sonMetin: '', sonCevaplar: [] };
+
+  const havuz = _robotHavuzSec(n, ham, g);
+  // son 6 cevabi tekrar etme
+  const uygun = havuz.filter((x) => !g.sonCevaplar.includes(x));
+  const liste = uygun.length ? uygun : havuz;
+  const cevap = liste[Math.floor(Math.random() * liste.length)];
+
+  g.sonMetin = ham;
+  g.sonCevaplar.push(cevap);
+  if (g.sonCevaplar.length > 6) g.sonCevaplar.shift();
+  _robotImGecmis.set(kullanici, g);
+  if (_robotImGecmis.size > 300) _robotImGecmis.delete(_robotImGecmis.keys().next().value);
+  return cevap;
+}
+
+// Robotun cevabini kaydet + kullanicinin acik ekranlarina yolla
+async function _robotImCevapla(kullanici, gelenMetin) {
+  if (!kullanici) return;
+  const cevap = _robotTersCevap(kullanici, gelenMetin);
+  const mid = 'im_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  const ts = Date.now();
+
+  let kaydedildi = false;
+  try {
+    if (db.isReady()) {
+      const r = await db.saveInternalMessage({ id: mid, from: ROBOT_IM_KULLANICI, to: kullanici, text: cevap, ts });
+      kaydedildi = !!(r && r.ok);
+    }
+  } catch (e) { kaydedildi = false; }
+  if (!kaydedildi) console.log('🤖 IM: robot cevabi kaydedilemedi, sadece canli gonderiliyor');
+
+  const payload = { id: mid, from: ROBOT_IM_KULLANICI, fromName: ROBOT_ADI, to: kullanici, text: cevap, ts };
+  wss.clients.forEach((c) => {
+    if (c.readyState === 1 && c._username === kullanici) {
+      try { c.send(JSON.stringify({ type: 'internalMessage', msg: payload })); } catch (e) {}
+    }
+  });
+
+  if (kaydedildi) {
+    try {
+      const adet = await db.internalUnreadCount(kullanici);
+      wss.clients.forEach((c) => {
+        if (c.readyState === 1 && c._username === kullanici) {
+          try { c.send(JSON.stringify({ type: 'internalUnread', count: adet })); } catch (e) {}
+        }
+      });
+    } catch (e) {}
+  }
+}
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 // ŞİFRELEME UYARISI: oturum bozulunca bildir.
@@ -2517,10 +2715,16 @@ wss.on('connection', (ws) => {
         const rows = await db.listInternalConversations(ws._username);
         // kullanici listesini de ekle (yeni konusma baslatmak icin tum ekip)
         const users = await db.listUsers();
+        const uListe = users.map(u => ({ username: u.username, displayName: u.display_name, role: u.role }));
+        // IC MESAJDA ROBOT: gercek kullanici degil, listeye burada ekleniyor.
+        // Boylece "Yeni mesaj" penceresinde cikar ve onunla sohbet acilabilir.
+        if (!uListe.some((u) => u.username === ROBOT_IM_KULLANICI)) {
+          uListe.push({ username: ROBOT_IM_KULLANICI, displayName: ROBOT_ADI, role: 'robot' });
+        }
         ws.send(JSON.stringify({
           type: 'internalListResult',
           items: rows,
-          users: users.map(u => ({ username: u.username, displayName: u.display_name, role: u.role })),
+          users: uListe,
           me: ws._username,
         }));
         return;
@@ -2571,6 +2775,12 @@ wss.on('connection', (ws) => {
         if (aliciCevrimici && db.isReady()) {
           const n = await db.internalUnreadCount(to);
           wss.clients.forEach((c) => { if (c.readyState === 1 && c._username === to) c.send(JSON.stringify({ type: 'internalUnread', count: n })); });
+        }
+        // ROBOTLA SOHBET: her yazilana ters bir cevap gelsin (kisa gecikme = "yaziyor" hissi)
+        if (to === ROBOT_IM_KULLANICI) {
+          const kim = ws._username;
+          const gelen = text;
+          setTimeout(() => { _robotImCevapla(kim, gelen).catch(() => {}); }, 700 + Math.floor(Math.random() * 900));
         }
         return;
       }

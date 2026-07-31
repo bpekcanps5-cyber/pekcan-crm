@@ -7418,12 +7418,17 @@ let _internalPickerListe=[];
 function cizInternalPicker(liste){
   const sec=document.getElementById('internalUserPicker');
   if(!liste.length){ sec.innerHTML='<div style="color:var(--faint);font-size:13px;padding:14px;text-align:center">Eşleşen kullanıcı yok</div>'; return; }
-  sec.innerHTML=liste.map(u=>(
-    '<div class="iup-item" onclick="pickInternalUser(\''+esc(u.username)+'\')">'
-    + '<div class="avatar" style="background:'+gradientFor(u.displayName||u.username)+';width:38px;height:38px">'+esc(initials(u.displayName||u.username))+'</div>'
-    + '<div><div style="font-weight:600;font-size:14px">'+esc(u.displayName||u.username)+'</div><div style="font-size:12px;color:var(--muted)">@'+esc(u.username)+'</div></div>'
-    + '</div>'
-  )).join('');
+  sec.innerHTML=liste.map(u=>{
+    const _ad=u.displayName||u.username;
+    const _f=(window.panelProfilFoto&&(window.panelProfilFoto(u.username)||window.panelProfilFoto(_ad)))||'';
+    const _av=_f
+      ? '<div class="avatar" style="width:38px;height:38px;background-image:url(\''+_f+'\');background-size:cover;background-position:center"></div>'
+      : '<div class="avatar" style="background:'+gradientFor(_ad)+';width:38px;height:38px">'+esc(initials(_ad))+'</div>';
+    return '<div class="iup-item" onclick="pickInternalUser(\''+esc(u.username)+'\')">'
+    + _av
+    + '<div><div style="font-weight:600;font-size:14px">'+esc(_ad)+'</div><div style="font-size:12px;color:var(--muted)">@'+esc(u.username)+'</div></div>'
+    + '</div>';
+  }).join('');
 }
 function filterInternalPicker(){
   const q=(document.getElementById('internalUserSearch')?.value||'').toLocaleLowerCase('tr').trim();
@@ -13109,9 +13114,13 @@ window.ROBOT_FOTO='data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAQDAw
 // Bu yuzden fotografi panelin icine gomulu duruyor (window.ROBOT_FOTO).
 // Boylece mesajda, isim kartinda, buyutmede otomatik olarak cikiyor.
 window.ROBOT_ADI='İPTAL ROBOTU';
+window.ROBOT_IM_KULLANICI='iptal_robotu';   // ic mesajdaki kullanici adi (sunucudakiyle ayni olmali)
 window.panelProfilFoto=function(kullanici){
   if(!kullanici) return null;
-  if(window.ROBOT_FOTO && _panelNorm(kullanici)===_panelNorm(window.ROBOT_ADI)) return window.ROBOT_FOTO;
+  if(window.ROBOT_FOTO){
+    const _n=_panelNorm(kullanici);
+    if(_n===_panelNorm(window.ROBOT_ADI) || _n===_panelNorm(window.ROBOT_IM_KULLANICI)) return window.ROBOT_FOTO;
+  }
   return _panelAra(window._panelFotolar, kullanici);
 };
 // Ortak, dayanikli arama: tam eslesme -> normalize eslesme -> ilk kelime eslesmesi
