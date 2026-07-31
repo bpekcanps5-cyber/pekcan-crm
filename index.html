@@ -2110,27 +2110,25 @@
      Sorun: "KAYRAM AUTO OTOPORT HAYALINIZDEKI ARAC SADECE BIR ADIM UZAKTA" gibi
      uzun isimler 3 satira yayilip mesaji bastiriyor ve tiklamak zorlasiyordu. */
   .msg .sender-name.clickable{
-    max-width:280px;
+    display:block !important;          /* KENDI SATIRINDA (mesaj yanina yapismasin) */
+    max-width:100%;
     white-space:nowrap !important;
     overflow:hidden;
     text-overflow:ellipsis;
-    display:inline-flex !important;
-    align-items:center;
-    gap:4px;
     cursor:pointer;
     position:relative;
-    padding:2px 2px 2px 0;      /* tiklama alani biraz genis */
+    padding:1px 4px 2px 0;
     border-radius:5px;
+    line-height:1.4;
   }
   .msg .sender-name.clickable:hover{
     text-decoration:underline;
-    background:rgba(255,255,255,.06);
+    background:rgba(255,255,255,.07);
   }
-  .msg .sender-name.clickable::after{     /* gorunmeyen tiklama payi */
-    content:'';position:absolute;inset:-4px -6px;
+  .msg .sender-name.clickable .panel-rozet,
+  .msg .sender-name.clickable .ofis-rozet{
+    display:inline-grid !important;vertical-align:-3px;margin-right:3px;pointer-events:none;
   }
-  .msg .sender-name.clickable > *{pointer-events:none}   /* rozet tiklamayi yutmasin */
-  @media(max-width:900px){ .msg .sender-name.clickable{max-width:190px} }
 </style>
 <style id="mobil-yardimci"></style>
 <!-- ═══════════════════════════════════════════════════════════════
@@ -9896,7 +9894,9 @@ function renderMessages(c, searchQ){
         const ofisMu = m.senderOfis || ofisIsmiMi(m.sender);
         const ofisRozet = ofisMu ? '<span class="ofis-rozet" title="Ofis ekibi (gruptan)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"/></svg></span>' : '';
         const sj=esc(m.senderJid||'');
-        name='<div class="sender-name clickable'+(ofisMu?' ofis-uye':'')+'" style="color:'+colorFor(m.sender)+'" onclick="showSenderInfo(\''+sj+'\',\''+sn.replace(/'/g,"\\'")+'\')">'+ofisRozet+sn+'</div>';
+        name='<div class="sender-name clickable'+(ofisMu?' ofis-uye':'')+'" style="color:'+colorFor(m.sender)+'"'
+             +' data-jid="'+sj+'" data-ad="'+sn+'" title="'+sn+' — kişi bilgisi"'
+             +' onclick="gonderenAc(this)">'+ofisRozet+sn+'</div>';
       }
     }
     let fwd='';
@@ -11759,6 +11759,35 @@ async function profilFotoKaydet(veri){
   }
 }
 
+// Gonderen adina tiklaninca: numara bilinmiyorsa uye listesinden bulmayi dene
+function gonderenAc(el){
+  if(!el) return;
+  let jid=(el.dataset&&el.dataset.jid)||'';
+  const ad=(el.dataset&&el.dataset.ad)||(el.textContent||'').trim();
+  if(!jid){
+    // 1) acik sohbetin uye listesinde ismi ara
+    try{
+      const c=chats[activeJid];
+      if(c&&Array.isArray(c.members)){
+        const t=String(ad).toLocaleLowerCase('tr').trim();
+        const bul=c.members.find(x=>String(x.name||x.ad||'').toLocaleLowerCase('tr').trim()===t);
+        if(bul&&bul.jid) jid=bul.jid;
+      }
+    }catch(e){}
+  }
+  if(!jid){
+    // 2) ayni sohbetteki mesajlarda bu isme ait numara var mi
+    try{
+      const c=chats[activeJid];
+      if(c&&Array.isArray(c.messages)){
+        const m2=c.messages.slice(-400).find(x=>x.sender===ad&&x.senderJid);
+        if(m2) jid=m2.senderJid;
+      }
+    }catch(e){}
+  }
+  if(!jid){ showToast('Bu kişinin numarası bilinmiyor (gizli olabilir)'); return; }
+  showSenderInfo(jid, ad);
+}
 function showSenderInfo(jid, name){
   // panel-kisi karti stillerini SIFIRLA (ayni modal ikisi icin de kullaniliyor)
   const _av=document.getElementById('senderAv');
