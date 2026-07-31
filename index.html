@@ -2130,8 +2130,26 @@
     display:inline-grid !important;vertical-align:-3px;margin-right:3px;pointer-events:none;
   }
 
-  /* İPTAL ROBOTU rozeti: kalkan yerine robot, hafif farkli ton */
-  .panel-rozet.robot-rz{background:#e0a458 !important}
+  /* ═══ İPTAL ROBOTU: kendine ozel etiket (diger kullanicilardan ayri) ═══ */
+  .msg .sender-name.team-name.robot-pill{
+    background:linear-gradient(135deg,rgba(224,164,88,.30),rgba(224,164,88,.14)) !important;
+    border:1px solid rgba(224,164,88,.55) !important;
+    color:#ffd9a8 !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.16), 0 1px 3px rgba(0,0,0,.22);
+    letter-spacing:.03em;
+    font-weight:700;
+    padding-right:10px !important;
+  }
+  .msg .sender-name.team-name.robot-pill:hover{
+    background:linear-gradient(135deg,rgba(224,164,88,.40),rgba(224,164,88,.20)) !important;
+    border-color:rgba(224,164,88,.75) !important;
+  }
+  /* rozet: robot ikonu, koyu zemin uzerinde altin */
+  .panel-rozet.robot-rz{
+    background:linear-gradient(150deg,#f0b968,#d18f3c) !important;
+    color:#2a1a05 !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.45);
+  }
   .panel-rozet.robot-rz svg{width:11px;height:11px}
 </style>
 <style id="mobil-yardimci"></style>
@@ -9903,10 +9921,10 @@ function renderMessages(c, searchQ){
         const panelRozet = _robotMu
           ? '<span class="panel-rozet robot-rz" title="Otomatik gönderildi"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a1.4 1.4 0 0 1 1.4 1.4c0 .55-.32 1.03-.79 1.26V6H17a3 3 0 0 1 3 3v.6h.4a1 1 0 0 1 1 1v2.8a1 1 0 0 1-1 1H20V15a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-.6h-.4a1 1 0 0 1-1-1v-2.8a1 1 0 0 1 1-1H4V9a3 3 0 0 1 3-3h4.39V4.66A1.4 1.4 0 0 1 12 2zM9 10.6a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6zm6 0a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6z"/></svg></span>'
           : '<span class="panel-rozet" title="Panel kullanıcısı"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></span>';
-        const _gr=gorevRengi(sn);
+        const _gr = _robotMu ? null : gorevRengi(sn);   // robot kendi rengini kullanir
         const _pf=(typeof panelProfilFoto==='function'?panelProfilFoto(sn):null)||'';
         const _pfAv=_pf?'<span class="tn-foto" style="background-image:url(\''+_pf+'\')"></span>':'';
-        name='<div class="sender-name team-name clickable'+(_gr?' gorevli':'')+'"'+(_gr?' style="color:'+_gr+' !important;border-color:'+_gr+'4d;background:'+_gr+'1a"':'')+' onclick="panelKisiGoster(\''+sn.replace(/'/g,"\\'")+'\')" title="Kişi bilgisi">'+_pfAv+panelRozet+sn+gorevEtiketi(sn)+'</div>';
+        name='<div class="sender-name team-name clickable'+(_gr?' gorevli':'')+(_robotMu?' robot-pill':'')+'"'+(_gr?' style="color:'+_gr+' !important;border-color:'+_gr+'4d;background:'+_gr+'1a"':'')+' onclick="panelKisiGoster(\''+sn.replace(/'/g,"\\'")+'\')" title="Kişi bilgisi">'+_pfAv+panelRozet+sn+gorevEtiketi(sn)+'</div>';
       } else {
         // GELEN grup mesajı: ofis ekibinden mi? (adı Pekcan vb. VEYA sunucu işaretledi)
         const ofisMu = m.senderOfis || ofisIsmiMi(m.sender);
