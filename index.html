@@ -3330,6 +3330,27 @@
   }
   html .msg .sender-name.team-name.robot-pill .panel-rozet.robot-rz svg,
   html[data-skin] .msg .sender-name.team-name.robot-pill .panel-rozet.robot-rz svg,
+  /* ── PANELE OZEL NOT: robotun okudugu MOTOR NO ──
+     Kesik cizgili cerceve = "bu bir mesaj degil, panel notu". Musteriye gitmedi. */
+  .panel-not{
+    align-self:center; display:inline-flex; align-items:center; gap:9px;
+    margin:5px 0; padding:6px 14px; border-radius:16px; max-width:88%;
+    background:linear-gradient(135deg,rgba(240,185,104,.17),rgba(196,136,56,.10));
+    border:1px dashed rgba(240,185,104,.6);
+    color:var(--text); font-size:12.5px; font-weight:600;
+    box-shadow:0 1px 5px rgba(0,0,0,.15); cursor:pointer;
+    transition:filter .14s ease, transform .1s ease;
+  }
+  .panel-not:hover{ filter:brightness(1.08); }
+  .panel-not:active{ transform:scale(.98); }
+  .panel-not svg{ width:13px; height:13px; color:#e0a94a; flex-shrink:0; }
+  .panel-not .pn-metin{ font-weight:800; letter-spacing:.045em; font-variant-numeric:tabular-nums; }
+  .panel-not .pn-etiket{
+    font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em;
+    color:var(--muted); opacity:.85; padding-left:9px;
+    border-left:1px solid var(--border); white-space:nowrap;
+  }
+
   html[data-theme] .msg .sender-name.team-name.robot-pill .panel-rozet.robot-rz svg{
     width:10px !important;height:10px !important;display:block;
   }
@@ -6518,6 +6539,12 @@ function emojiTemizle(metin){
   }
   // arta kalan cift bosluklari/bas-son bosluklari toparla
   return s.replace(/\s+/g,' ').trim();
+}
+function panelNotKopyala(deger){
+  if(!deger) return;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(deger).then(()=>showToast('📋 '+deger+' kopyalandı'),()=>fallbackKopya(deger));
+  } else fallbackKopya(deger);
 }
 function fallbackKopya(metin){
   const ta=document.createElement('textarea'); ta.value=metin; ta.style.position='fixed'; ta.style.opacity='0';
@@ -10080,6 +10107,18 @@ function renderMessages(c, searchQ){
     // SISTEM mesajlari (grup adi/aciklamasi degisti) ARTIK GOSTERILMIYOR (kullanici istemedi).
     // DB'de eski sistem mesajlari kalmis olsa bile ekranda gizlenir.
     if(m.kind==='system'){ return ''; }
+    // PANELE OZEL NOT (robotun belgeden okudugu MOTOR NO).
+    // Bu satir WhatsApp'a GONDERILMEDI — sadece bu panelde gorunur.
+    // Tiklayinca numara panoya kopyalanir.
+    if(m.kind==='panelnot'){
+      const _pnHam=String(m.text||'');
+      const _pnDeger=(_pnHam.split(':')[1]||'').trim();
+      return sep+'<div class="panel-not"'+(_pnDeger?' onclick="panelNotKopyala(\''+esc(_pnDeger)+'\')" title="Kopyalamak icin tikla — bu satir WhatsApp\'a gitmedi"':' title="Bu satir WhatsApp\'a gitmedi"')+'>'
+        +'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6z"/></svg>'
+        +'<span class="pn-metin">'+esc(_pnHam)+'</span>'
+        +'<span class="pn-etiket">sadece panelde</span>'
+        +'</div>';
+    }
     // --- SAG/SOL AYRIMI (tek hat, coklu kullanici) ---
     // Tek WhatsApp hatti ama 35 kisi kullaniyor. Her kullanici KENDI ekraninda:
     //  - Kendi yazdigi mesaj -> SAGDA (out, yesil)

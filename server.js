@@ -427,6 +427,43 @@ const _ROBOT_EKSI = [
 ];
 const ROBOT_ESIK = 12;
 
+// ═══ MOTOR NO CIKARMA (2026-07) ═══════════════════════════════════════
+// Belge ZATEN okundugu icin bu islem EK SURE ALMAZ — metin elimizde,
+// sadece uzerinde arama yapiliyor (milisaniyenin altinda).
+//
+// TUZAK: OCR harf/rakam karistiriyor (O<->0, S<->5, B<->8, I<->1).
+// Bu yuzden ETIKETI ("MOTOR NO") bulanik bicimde ariyoruz ama DEGERI
+// bozulmamis metinden aliyoruz — yoksa CKU076652 -> CKUO766S2 olurdu.
+function _motorAdayAyikla(parca) {
+  const adaylar = String(parca || '').match(/[A-Z0-9]{4,20}/g) || [];
+  for (const t of adaylar) {
+    const rakam = (t.match(/[0-9]/g) || []).length;
+    if (t.length >= 5 && t.length <= 20 && rakam >= 3) return t;
+  }
+  return '';
+}
+function _motorNoBul(metin) {
+  const satirlar = String(metin || '').split(/[\r\n]+/);
+  const hedef = _normBulanik('MOTORNO');
+  for (let i = 0; i < satirlar.length; i++) {
+    const satir = _norm(satirlar[i]);
+    if (!_normBulanik(satir).includes(hedef)) continue;
+    // ":" varsa sonrasi, yoksa "MOTOR NO" ifadesinden sonrasi
+    let kalan;
+    const ik = satir.indexOf(':');
+    if (ik >= 0) kalan = satir.slice(ik + 1);
+    else {
+      const mm = satir.match(/M\s*[O0]\s*T\s*[O0]\s*R\s*N\s*[O0]/);
+      kalan = mm ? satir.slice(mm.index + mm[0].length) : '';
+    }
+    let d = _motorAdayAyikla(kalan);
+    if (d) return d;
+    // OCR degeri ALT SATIRA bolmus olabilir
+    if (satirlar[i + 1]) { d = _motorAdayAyikla(_norm(satirlar[i + 1])); if (d) return d; }
+  }
+  return '';
+}
+
 function robotPuanla(metin) {
   const n = _norm(metin);
   const nb = _normBulanik(metin);   // OCR karisikliklarina dayanikli bicim
@@ -435,7 +472,7 @@ function robotPuanla(metin) {
   // ── ZORUNLU SART: sozlesmeye ozel bir ifade yoksa ASLA algilanmaz (ruhsat korumasi)
   const zorunluVar = _ROBOT_ZORUNLU.some((z) => nb.includes(_normBulanik(z)));
   if (!zorunluVar) {
-    return { puan: 0, bulunan: [], negatif: ['ZORUNLU_ISARET_YOK'], plaka: '', noter: '', esik: ROBOT_ESIK };
+    return { puan: 0, bulunan: [], negatif: ['ZORUNLU_ISARET_YOK'], plaka: '', noter: '', motorNo: '', esik: ROBOT_ESIK };
   }
 
   let puan = 0;
@@ -450,7 +487,8 @@ function robotPuanla(metin) {
   let noter = '';
   const nm = n.match(/([A-ZĞÜŞÖÇİ]+\s?[0-9]+\.?\s?NOTER)/);
   if (nm) noter = nm[1];
-  return { puan, bulunan, negatif, plaka, noter, esik: ROBOT_ESIK };
+  const motorNo = _motorNoBul(metin);   // metin zaten elde -> ek sure yok
+  return { puan, bulunan, negatif, plaka, noter, motorNo, esik: ROBOT_ESIK };
 }
 
 // OCR motorunu HAZIRLA (yoksa robot sessizce devre disi kalir, sunucu etkilenmez)
@@ -600,6 +638,31 @@ function _robotEtiketle(jid) {
   return true;
 }
 
+// ═══ PANELE OZEL NOT — MUSTERIYE ASLA GITMEZ ══════════════════════════
+// Burada sock.sendMessage YOK. Sadece panelin kendi mesaj listesine bir
+// satir eklenir ve aninda tum ekranlara yayinlanir (addMessage kendi
+// icinde broadcast ediyor). WhatsApp bu satirdan haberdar bile olmaz.
+//
+// HIZ: robotun WhatsApp mesajini BEKLEMEZ. Belge okunur okunmaz ekrana
+// duser. Sohbet kilitliyken (robot susuyorken) bile calisir.
+function _robotPanelNotu(jid, lineId, motorNo) {
+  try {
+    const metin = motorNo ? ('MOTOR NO: ' + motorNo) : 'MOTOR NO okunamadi';
+    addMessage(jid, {
+      id: 'pnot_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      text: metin,
+      kind: 'panelnot',        // panele ozel tur -> WhatsApp'a gonderilmez
+      fromMe: true,
+      sender: ROBOT_ADI,
+      robot: true,
+      panelOnly: true,
+      time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+      durum: 1,
+    }, {}, lineId);
+    return metin;
+  } catch (e) { _rlog('panel notu yazilamadi: ' + e.message); return ''; }
+}
+
 // Robot adina mesaj gonder (WhatsApp'a gider + panelde ROBOT olarak gorunur)
 async function _robotMesajGonder(jid, lineId) {
   const line = lines.get(lineId) || lines.get('ofis');
@@ -717,6 +780,11 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
   // ── SADECE PANELE BILDIRIM. MUSTERIYE HICBIR SEY GONDERILMEZ. ──
   // ═══ OTOMATIK ISLEM: bildirim YOK. Etiketle + (gerekiyorsa) mesaj at. ═══
   // ETIKET her belgede uygulanir (zaten varsa dokunmaz).
+  // ── EN ONCE PANEL NOTU ──
+  // Bilerek en basta: etiketi ve WhatsApp mesajini BEKLEMEZ, boylece belge
+  // okunur okunmaz motor no ekranda olur. Musteriye hicbir sey gitmez.
+  const panelNot = _robotPanelNotu(jid, lineId, sonuc.motorNo);
+
   const etiketOk = _robotEtiketle(jid);
 
   // MESAJ: sohbet KILITLI mi? (mesaj atilmis ve heniz ayirac gelmemis)
@@ -739,7 +807,7 @@ async function _robotBelgeIncele({ lineId, jid, mesajId, tur, indir, dosyaAdi, c
     for (const [k, t] of _robotKilit) { if (simdi - t > ROBOT_KILIT_EMNIYET) _robotKilit.delete(k); }
   }
 
-  _rlog(`✅ ${chatAd || jid} — plaka:${sonuc.plaka || '?'} puan:${sonuc.puan} | ` +
+  _rlog(`✅ ${chatAd || jid} — plaka:${sonuc.plaka || '?'} ${panelNot} puan:${sonuc.puan} | ` +
         `etiket:${etiketOk ? 'OK' : 'HATA'} mesaj:${mesajDurum}`);
 }
 
