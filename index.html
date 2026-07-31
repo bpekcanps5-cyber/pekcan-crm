@@ -9358,7 +9358,7 @@ function kopyalaFallback(metin){
 }
 // atama butonuna basinca modal ac
 function grupAtamaAc(){
-  if(!activeJid || !chats[activeJid]){ showToast('Önce bir sohbet aç.'); return; }
+  if(!activeJid || !chats[activeJid] || !chats[activeJid].isGroup){ showToast('Önce bir grup aç.'); return; }
   const as=document.getElementById('assignSearch'); if(as) as.value=''; // arama sıfırla
   document.getElementById('assignModal').classList.add('show');
   renderAssignList();
@@ -9456,7 +9456,7 @@ function labelsGeldi(labels, chatLabels){
 // grup basligindaki etiket tusu -> modal ac
 function grupEtiketAc(e){
   if(e) e.stopPropagation();
-  if(!activeJid || !chats[activeJid] || !chats[activeJid].isGroup){ showToast('Önce bir grup aç.'); return; }
+  if(!activeJid || !chats[activeJid]){ showToast('Önce bir sohbet aç.'); return; }   // ETIKET: grup VE kisi
   if(!_labels.length) etiketleriIste();
   _seciliRenk=ETIKET_RENKLERI[0];
   document.getElementById('newLabelName').value='';
