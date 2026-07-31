@@ -3334,6 +3334,157 @@
     width:10px !important;height:10px !important;display:block;
   }
 </style>
+<style id="mobil-duzen">
+/* ═══════════════════════════════════════════════════════════════════════
+   TELEFON DUZENI (2026-07) — WhatsApp mobil gorunumu
+
+   ÖNEMLİ: bu blogun TAMAMI @media (max-width:768px) icinde.
+   Bilgisayarda (769px ve uzeri) TEK BIR KURAL BILE calismaz.
+
+   Ayrica DOM'a dokunulmadi: hicbir tus tasinmadi, silinmedi, yeniden
+   baglanmadi. Sadece CSS ile yeri degistirildi -> tiklama islevleri aynen
+   duruyor, "iki handler birbirini iptal etti" hatasi olusamaz.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px){
+
+  :root{ --mobil-bar: 62px; }        /* alt gezinme cubugunun yuksekligi */
+
+  /* ═══ 1. SOL DIKEY SERIT KALKTI ═══════════════════════════════════════
+     Seritteki 4 tus (Tumu / Okunmamis / Gruplar / Kisiler) ustteki filtre
+     haplarinin BIREBIR AYNISI (ikisi de ayni fonksiyonu cagiriyor).
+     Renkli etiketler de listedeki "🏷️ Etiketler" bolumunde zaten var.
+     O yuzden telefonda serit gizlenir, sadece AYARLAR avatari kalir ve
+     sag ust koseye gecer. HICBIR OZELLIK KAYBOLMAZ. */
+  .rail{
+    position:fixed !important; top:0 !important; right:0 !important; left:auto !important; bottom:auto !important;
+    width:auto !important; height:auto !important;
+    flex-direction:row !important; align-items:center !important;
+    background:transparent !important; box-shadow:none !important;
+    padding:calc(env(safe-area-inset-top) + 11px) 12px 0 0 !important;
+    gap:0 !important; z-index:170 !important; pointer-events:none !important;
+  }
+  .rail::after{ display:none !important; }
+  .rail .logo, .rail .rail-btn, .rail .rail-ayrac,
+  .rail .rail-etiketler, .rail .rail-spacer{ display:none !important; }
+  .rail #settingsAvatar{
+    pointer-events:auto !important;
+    width:38px !important; height:38px !important; font-size:13.5px !important;
+    border-radius:50% !important; flex-shrink:0 !important;
+    box-shadow:0 2px 10px rgba(0,0,0,.32) !important;
+  }
+
+  /* ═══ 2. ANA SEKMELER -> ALT GEZINME CUBUGU (WhatsApp gibi) ═══════════
+     Sohbetler / Ic Mesajlar / Kontrol artik ekranin ALTINDA, basparmak
+     mesafesinde. Ikon ustte, yazi altta. */
+  .main-tabs{
+    position:fixed !important; left:0 !important; right:0 !important; bottom:0 !important;
+    margin:0 !important; border-radius:0 !important; gap:0 !important;
+    padding:5px 4px calc(5px + env(safe-area-inset-bottom)) 4px !important;
+    background:var(--panel) !important;
+    border:none !important; border-top:1px solid var(--border) !important;
+    box-shadow:0 -3px 16px rgba(0,0,0,.16) !important;
+    z-index:210 !important;
+  }
+  .main-tab{
+    flex-direction:column !important; gap:3px !important;
+    padding:7px 2px 5px !important; border-radius:13px !important;
+    font-size:10.5px !important; font-weight:700 !important; letter-spacing:0 !important;
+    min-height:50px !important; justify-content:center !important;
+  }
+  .main-tab svg{ width:23px !important; height:23px !important; }
+  .main-tab span{ font-size:10.5px !important; line-height:1.1 !important; }
+  .main-tab .tab-badge{
+    position:absolute !important; top:2px !important; left:calc(50% + 4px) !important;
+    min-width:16px !important; height:16px !important; font-size:9.5px !important;
+  }
+  /* sohbet acikken alt cubuk gizlenir -> yazi alani tam ekran (WhatsApp gibi) */
+  body.sohbet-acik .main-tabs{ display:none !important; }
+
+  /* liste alt cubugun altina kacmasin */
+  .sidebar{ padding-bottom:calc(var(--mobil-bar) + env(safe-area-inset-bottom)) !important; }
+
+  /* ═══ 3. UST BASLIK: sikistir, avatara yer birak ═══════════════════════ */
+  .sb-header{ padding:calc(env(safe-area-inset-top) + 11px) 14px 11px !important; }
+  .sb-title{ margin-bottom:11px !important; padding-right:48px !important; }
+  .sb-title h1{ font-size:19.5px !important; }
+  .sb-right{ gap:5px !important; }
+  .icon-sm{ width:35px !important; height:35px !important; border-radius:11px !important; }
+  .icon-sm svg{ width:18px !important; height:18px !important; }
+  /* baglanti durumu: yazi yerine sadece renkli nokta (yer kaplamasin) */
+  .conn-pill{
+    width:13px !important; height:13px !important; min-width:13px !important;
+    padding:0 !important; gap:0 !important; border-radius:50% !important;
+    overflow:hidden !important; flex-shrink:0 !important; justify-content:center !important;
+  }
+  .conn-pill #connText{ display:none !important; }
+  .conn-pill .pdot{ width:9px !important; height:9px !important; }
+  /* arama kutusu: 16px -> iPhone'da otomatik yakinlastirmayi engeller */
+  #search{ font-size:16px !important; height:44px !important; }
+
+  /* ═══ 4. FILTRELER: alt alta sarmak yerine TEK SATIR yatay kaydirma ════
+     Onceden 10 hap alt alta sariyor, 3-4 satir yer kaplayip sohbet
+     listesini asagi itiyordu. Artik WhatsApp'taki gibi tek serit. */
+  .filters{
+    flex-wrap:nowrap !important; overflow-x:auto !important; overflow-y:hidden !important;
+    padding:9px 12px !important; gap:7px !important;
+    -webkit-overflow-scrolling:touch; scrollbar-width:none;
+  }
+  .filters::-webkit-scrollbar{ height:0 !important; }
+  .filter{
+    flex:0 0 auto !important; white-space:nowrap !important;
+    padding:8px 13px !important; font-size:13px !important;
+  }
+
+  /* ═══ 5. LISTE: dokunmatik icin rahat satirlar ════════════════════════ */
+  .chat{ padding:12px 12px !important; gap:12px !important; min-height:64px !important; }
+  .chat-list{ padding:6px 8px !important; }
+  .limit-row{ padding:6px 14px !important; }
+  .etiket-bolum{ padding:6px 12px 4px !important; }
+  .internal-newbtn-row{ padding:9px 12px 4px !important; }
+
+  /* ═══ 6. AYARLAR MENUSU ═══════════════════════════════════════════════
+     Menuyu acan kod, konumu satir ici stille yaziyor (avatarin SAGINA).
+     Avatar artik sag ust kosede oldugu icin menu ekran disina tasardi.
+     !important satir ici stili gectigi icin JS'e HIC dokunmadan duzeliyor:
+     menu artik avatarin altindan asagi acilan genis bir panel. */
+  .settings-menu.show{
+    left:10px !important; right:10px !important;
+    top:calc(env(safe-area-inset-top) + 56px) !important; bottom:auto !important;
+    min-width:0 !important; width:auto !important;
+    max-height:calc(100vh - env(safe-area-inset-top) - 78px) !important;
+    overflow-y:auto !important; -webkit-overflow-scrolling:touch;
+  }
+
+  /* ═══ 7. KONTROL SEKMESI — TELEFONDA GORUNMUYORDU (asil hata) ═════════
+     Kontrol paneli sag alanda (.conv) aciliyor. Telefonda sag alan
+     ekranin disinda park ediyor ve sadece bir sohbet acilinca iceri
+     kayiyordu. Kontrol'e basinca sohbet acilmadigi icin panel ekrana
+     hic gelmiyordu -> "telefonda Kontrol'u kullanamiyoruz" sorunu buydu.
+     Asagidaki sinif onu iceri getirir; alt gezinme cubugu ustte kalir ki
+     geri donebilesin. */
+  body.mobil-kontrol .conv{
+    transform:translateX(0) !important;
+    padding-bottom:calc(var(--mobil-bar) + env(safe-area-inset-bottom)) !important;
+  }
+  body.mobil-kontrol .rail{ visibility:hidden !important; }
+  #kontrolContent{ overflow-x:hidden !important; }
+  #kontrolContent table{ display:block !important; overflow-x:auto !important; -webkit-overflow-scrolling:touch; }
+  .kontrol-tabs, .alt-sekmeler, .ip-tabs, .kas-satir{
+    overflow-x:auto !important; flex-wrap:nowrap !important; scrollbar-width:none;
+  }
+
+  /* ═══ 8. SOHBET EKRANI: dokunmatik rotuslar ═══════════════════════════ */
+  .conv-header{ padding:9px 10px !important; gap:9px !important; }
+  .conv-avatar{ width:40px !important; height:40px !important; }
+  .composer{ padding:7px 7px calc(7px + env(safe-area-inset-bottom)) 7px !important; }
+  .msg-menu-btn{ opacity:.85 !important; }
+
+  /* ═══ 9. ACILIR PENCERELER telefonda tasmasin ═════════════════════════ */
+  .qr-panel, .im-stil-panel, .im-emoji-panel, .emoji-panel{
+    left:8px !important; right:8px !important; max-width:none !important;
+  }
+}
+</style>
 <script>
   (function(){
     var scr=document.getElementById('loginScreen'), card=document.getElementById('lgCard'), spot=document.getElementById('lgSpot');
@@ -13622,6 +13773,39 @@ async function robotKendiniTestEt(){
     });
   }
   setInterval(baslikVer, 2000);
+})();
+</script>
+<script>
+/* ═══ TELEFON: KONTROL SEKMESI EKRANA GELSIN ═══════════════════════════
+   Kontrol paneli sag alanda (.conv) aciliyor. Telefonda sag alan ekranin
+   disinda park ediyor ve sadece bir sohbet acilinca iceri kayiyor.
+   Kontrol'e basinca sohbet acilmadigi icin panel hic gorunmuyordu.
+
+   Cozum: switchMainTab'a YENI HANDLER BAGLAMIYORUZ (o zaman ikisi
+   birbirini iptal ederdi). Mevcut fonksiyonu SARMALIYORUZ ve govdeye
+   bir sinif ekliyoruz. Sinifin CSS karsiligi sadece telefon blogunda var,
+   bu yuzden bilgisayarda hicbir etkisi yok.
+   ═══════════════════════════════════════════════════════════════════════ */
+(function(){
+  function sarmala(){
+    if(typeof window.switchMainTab!=='function') return false;
+    if(window.switchMainTab.__mobilKontrol) return true;
+    var asil=window.switchMainTab;
+    var yeni=function(tab){
+      var r=asil.apply(this, arguments);
+      try{ document.body.classList.toggle('mobil-kontrol', tab==='kontrol'); }catch(e){}
+      return r;
+    };
+    // varsa eski isaretleri koru -> baska sarmalayicilar tekrar sarmalamasin
+    try{ for(var k in asil){ if(Object.prototype.hasOwnProperty.call(asil,k)) yeni[k]=asil[k]; } }catch(e){}
+    yeni.__mobilKontrol=true;
+    window.switchMainTab=yeni;
+    return true;
+  }
+  if(!sarmala()){
+    var bek=setInterval(function(){ if(sarmala()) clearInterval(bek); }, 150);
+    setTimeout(function(){ clearInterval(bek); }, 10000);
+  }
 })();
 </script>
 </body>
