@@ -180,7 +180,37 @@ function createLine(lineId, label, ownerUser) {
     sonAktivite: 0,        // HAT BAZLI: bu hattan en son ne zaman veri geldi (kalp atisi kontrolu)
     kalpTestCalisiyor: false, // ayni anda iki kalp testi calismasin
     kalpBasarisiz: 0,      // ust uste kac kalp atisi basarisiz (2 olursa yeniden baglan)
+    // ═══ KUSAK (nesil) SAYACI — 2026-08 ═══════════════════════════════
+    // Her yeni soket bir kusak numarasi alir. ESKI kusagin olaylari yok
+    // sayilir. Boylece kapanan eski soket, yeni ve saglikli baglantiyi
+    // "koptu" diye isaretleyemez (panelde sahte kopma uyarisinin sebebi buydu).
+    kusak: 0,
+    eskiSoketler: [],      // kapatilmayi bekleyen eski soketler
+    // ── HAT BAZLI yeniden baglanma sayaclari ──
+    // ESKIDEN bunlar GLOBAL'di: pazarlama hatti koptukca ofisin bekleme
+    // suresi de buyuyordu (birbirini zehirliyorlardi). Artik her hat kendi.
+    reBekleme: 1500,
+    reSayac: 0,
+    // ── SAGLIK BILGILERI (panel gostergesi + teshis icin) ──
+    saglik: {
+      sonAcilma: 0, sonKapanma: 0, sonOlay: 0,
+      sonGelen: 0, sonGiden: 0, sonBasariliGonderim: 0,
+      yenidenBaglanmaSayisi: 0, sonHata: '', sonKopmaSebebi: '',
+    },
   };
+}
+
+// ═══ ESKI SOKETI TEMIZ KAPAT ══════════════════════════════════════════
+// ESKIDEN: yeniden baglanirken eski soket HIC kapatilmiyordu. Her kopmada
+// 13 dinleyicili yeni bir soket aciliyor, eskisi de dinlemeye devam
+// ediyordu. Sonuc: ayni mesaj birden fazla islenmesi, bellek sismesi,
+// eski soketin "koptum" demesiyle sahte uyarilar ve ust uste yeniden
+// baglanma denemeleri (WhatsApp bunu cakisma sanip 440 veriyordu).
+function soketiKapat(sock, sebep) {
+  if (!sock) return;
+  try { sock.ev.removeAllListeners(); } catch (_) {}
+  try { sock.end(new Error(sebep || 'eski soket kapatildi')); } catch (_) {}
+  try { sock.ws?.close?.(); } catch (_) {}
 }
 
 // Bir hattin durumunu panele yayinla
@@ -5195,7 +5225,22 @@ function retryGroupName(jid) {
 const KALP_PERIYOT = 20 * 1000;   // her 20 saniyede tur (12->20: gereksiz yük azaldı)
 const KALP_SESSIZLIK = 60 * 1000; // 60sn hiç veri yoksa test et (20->60: Baileys keep-alive 25sn, 60sn sessizlik GERÇEKTEN anormal)
 const KALP_TIMEOUT = 15 * 1000;   // yanıt için 15sn bekle (8->15: yavaş ağa tolerans, yanlış "ölü" teşhisi yok)
-const KALP_MAX_BASARISIZ = 3;     // 3 kez üst üste başarısız -> gerçekten ölü (2->3: geçici sorunda kesme)
+const KALP_MAX_BASARISIZ = 3;     // WebSocket KAPALI iken: 3 basarisizlik -> olu
+const KALP_MAX_BASARISIZ_WS_ACIK = 6; // WebSocket ACIK iken: 6 basarisizlik (sahte olu teshisi olmasin)
+
+// WebSocket gercekten acik mi? Baileys surumune gore alan adi degisebiliyor,
+// bu yuzden bilinen tum bicimler denenir. Emin olamazsak ACIK kabul ederiz
+// (saglikli baglantiyi yanlislikla kesmektense bir tur daha beklemek yeglenir).
+function _wsAcikMi(sock) {
+  try {
+    const w = sock && sock.ws;
+    if (!w) return true;
+    if (typeof w.isOpen === 'boolean') return w.isOpen;
+    if (typeof w.readyState === 'number') return w.readyState === 1;      // 1 = OPEN
+    if (w.socket && typeof w.socket.readyState === 'number') return w.socket.readyState === 1;
+    return true;
+  } catch (_) { return true; }
+}
 
 async function kalpAtisiTuru() {
   for (const [lineId, line] of lines) {
@@ -5207,9 +5252,16 @@ async function kalpAtisiTuru() {
     line.kalpTestCalisiyor = true;
     (async () => {
       let canli = false;
+      let wsAcik = false;
       try {
         const sock = line.sock;
         const num = line.myNumber;
+        // ═══ ONCE BEDAVA KONTROL: WebSocket gercekten acik mi? ═══════════
+        // Baileys 25 saniyede bir kendi "hayatta miyim" sinyalini yolluyor.
+        // Alt baglanti olseydi WebSocket KAPANIRDI. Yani WS acik olmasi
+        // guclu bir saglik isaretidir ve HIC sorgu maliyeti yoktur.
+        wsAcik = _wsAcikMi(sock);
+
         // YANIT BEKLEYEN sorgu: onWhatsApp (kendi numaramizi sorar) sunucudan donus bekler.
         // sendPresenceUpdate yetmez (yanit beklemez, olu baglantida bile "gecer").
         const test = await Promise.race([
@@ -5225,16 +5277,28 @@ async function kalpAtisiTuru() {
         line.kalpBasarisiz = 0; // sağlıklı -> sayaç sıfır
       } else {
         line.kalpBasarisiz = (line.kalpBasarisiz || 0) + 1;
-        console.log(`💓 Kalp atışı başarısız [${lineId}] (${line.kalpBasarisiz}/${KALP_MAX_BASARISIZ}) — bağlantı yanıt vermiyor`);
-        if (line.kalpBasarisiz >= KALP_MAX_BASARISIZ) {
+        // ═══ SAHTE OLU TESHISI KORUMASI (2026-08) ═══════════════════════
+        // Sorgunun yanit vermemesi HER ZAMAN "baglanti oldu" demek degil.
+        // WhatsApp yogunlukta sorguyu gecikmeli yanitlayabiliyor. Boyle bir
+        // anda saglikli baglantiyi kesmek, kullaniciya bosu bosuna kesinti
+        // yasatiyordu. Ayirt edici olcu: WebSocket hala ACIK mi?
+        //   WS KAPALI  -> gercekten olu, hemen kes (2 basarisizlik yeter)
+        //   WS ACIK    -> muhtemelen sadece yavas/yogun, DAHA SABIRLI ol (6)
+        const esik = wsAcik ? KALP_MAX_BASARISIZ_WS_ACIK : KALP_MAX_BASARISIZ;
+        console.log(`💓 Kalp atışı başarısız [${lineId}] (${line.kalpBasarisiz}/${esik}) — ` +
+                    (wsAcik ? 'WebSocket AÇIK (muhtemelen yoğunluk, sabırlı olunuyor)' : 'WebSocket KAPALI (bağlantı gerçekten ölü)'));
+        if (line.kalpBasarisiz >= esik) {
           // ÖLÜ BAĞLANTI: kapat + yeniden bağlan (bu hatta)
           console.log(`⚠️  [${lineId}] bağlantı ÖLÜ (yarı-açık) -> kapatılıp yeniden bağlanıyor. Mesaj kaybı önleniyor.`);
           line.connected = false;
           line.kalpBasarisiz = 0;
           if (lineId === 'ofis') waConnected = false;
           broadcastHat(lineId, { type: 'status', connected: false, oluBaglanti: true });
-          try { line.sock.end(new Error('kalp atisi basarisiz')); } catch (_) {}
-          try { line.sock.ws?.close?.(); } catch (_) {}
+          // TEMIZ KAPAT: dinleyicileri de kaldir. Eskiden sadece end() cagriliyordu,
+          // dinleyiciler ayakta kaliyor ve olu soket olay uretmeye devam ediyordu.
+          soketiKapat(line.sock, 'kalp atisi basarisiz');
+          line.sock = null;
+          line.kusak = (line.kusak || 0) + 1;   // eski kusagin olaylarini gecersiz kil
           yenidenBaglanPlanla(lineId, 2500, line);
         }
       }
@@ -5580,6 +5644,13 @@ async function siraliKaydet(chatlar) {
 const _aciklamaImlec = new Map();  // lineId -> son işlenen grup index'i
 let _aciklamaMotorCalisiyor = false;
 
+// Aciklama taramasi ayarlari — WhatsApp'i yormayacak sekilde
+const ACIKLAMA_PARCA = 8;                       // her turda kac grup (15 -> 8)
+const ACIKLAMA_DINLENME = 45 * 60 * 1000;       // liste bitince 45 dk dinlen
+const ACIKLAMA_TAZELIK = 12 * 60 * 60 * 1000;   // aciklamasi dolu grubu 12 saatte bir kontrol et
+const _aciklamaDinlenme = new Map();            // lineId -> dinlenmenin bitecegi zaman
+const _aciklamaSonBakis = new Map();            // jid -> en son ne zaman soruldu
+
 async function aciklamaMotorTur() {
   if (_aciklamaMotorCalisiyor) return; // aynı anda iki tur çalışmasın (ama kilit takılmaz, her 20sn tetiklenir)
   // MESAJ ÖNCELİĞİ: şu an mesaj trafiği varsa bu turu ATLA. Açıklama çekimi soketi meşgul
@@ -5596,15 +5667,40 @@ async function aciklamaMotorTur() {
         .filter(c => c.isGroup)
         .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
       if (!gruplar.length) continue;
-      // imleçten devam et (kaldığı yerden) — her tur sadece bir PARÇA işle
+      // ═══ DINLENME ARASI (2026-08) ═══════════════════════════════════
+      // ESKIDEN: liste bitince ANINDA basa donuyordu. Sonuc: WhatsApp'a
+      // GUNDE ~65.000 grup sorgusu. WhatsApp bu kadar sorguyu asiri kullanim
+      // sayip yavaslatiyor/gecici engelliyor -> baglanti kopuyordu. Ustelik
+      // kopunca yeniden baglanip ayni taramayi bastan basliyordu (kisir dongu).
+      // ARTIK: tum liste bir kez tarandiktan sonra 45 dakika DINLENIR.
+      // Aciklama degisiklikleri zaten 'groups.update' olayiyla anlik geliyor;
+      // bu tarama sadece kacanlari toplayan yedek yol.
+      const simdiMs = Date.now();
+      const dinlenmeBitis = _aciklamaDinlenme.get(lineId) || 0;
+      if (simdiMs < dinlenmeBitis) continue;   // bu hat dinleniyor, sorgu atma
+
       let idx = _aciklamaImlec.get(lineId) || 0;
-      if (idx >= gruplar.length) idx = 0; // liste bitti -> başa dön (sonsuz döngü)
-      const PARCA = 15; // her turda 15 grup (20sn'de bir -> dakikada ~45 grup, ilk dolum hızlı)
+      if (idx >= gruplar.length) {
+        idx = 0;
+        _aciklamaDinlenme.set(lineId, simdiMs + ACIKLAMA_DINLENME);
+        _aciklamaImlec.set(lineId, 0);
+        console.log(`   💤 Aciklama taramasi tamamlandi [${lineId}] — ${Math.round(ACIKLAMA_DINLENME / 60000)} dk dinlenme (WhatsApp yorulmasin)`);
+        continue;
+      }
+      const PARCA = ACIKLAMA_PARCA;
       const degisenler = [];
       for (let k = 0; k < PARCA && idx < gruplar.length; k++, idx++) {
         const c = gruplar[idx];
         if (!line.connected) break;
         if (mesajTrafigiVar()) break; // mesaj geldi/gidiyor -> turu kes, mesaja öncelik ver
+        // ═══ GEREKSIZ SORGUYU ATLA ═══════════════════════════════════
+        // Aciklamasi ZATEN dolu olan ve yakinda kontrol edilmis gruplari
+        // tekrar sorma. Degisiklikler zaten 'groups.update' ile anlik
+        // geliyor; bu tarama sadece kacanlari toplar. Boylece ilk dolum
+        // hizli olur, sonrasinda sorgu yuku neredeyse sifira iner.
+        const sonBakis = _aciklamaSonBakis.get(c.jid) || 0;
+        const aciklamaVar = !!(c.description && c.description.trim());
+        if (aciklamaVar && (Date.now() - sonBakis) < ACIKLAMA_TAZELIK) { k--; continue; }
         let meta = null;
         try {
           // tek-grup sorgusu: desc GÜVENİLİR gelir. Kendi hattının soketiyle (ortak/ayrı gruplar).
@@ -5627,6 +5723,10 @@ async function aciklamaMotorTur() {
             if (db.isReady()) db.saveChat(c, lineId).catch(() => {});
           }
         }
+        _aciklamaSonBakis.set(c.jid, Date.now());   // bu grup kontrol edildi
+        if (_aciklamaSonBakis.size > 8000) {        // bellek sinirli kalsin
+          const ilk = _aciklamaSonBakis.keys().next().value; _aciklamaSonBakis.delete(ilk);
+        }
         await new Promise(r => setTimeout(r, 100)); // gruplar arası nazik bekleme (rate-limit'e saygı)
       }
       _aciklamaImlec.set(lineId, idx); // imleci kaydet (sonraki tur buradan devam)
@@ -5638,9 +5738,10 @@ async function aciklamaMotorTur() {
   } catch (e) { console.log('⚠️ Açıklama motoru hatası:', e.message); }
   finally { _aciklamaMotorCalisiyor = false; }
 }
-// HER 20 SANİYEDE bir tur -> imleç sürekli ilerler, tüm gruplar sırayla tazelenir, HİÇ DURMAZ.
-// (2000 grup varsa ~14 dakikada tüm liste bir kez taranır, sonra baştan; açıklama
-//  değişiklikleri en geç bir tur içinde yakalanır. Dolu açıklamalar da tazelenir.)
+// Her 20 saniyede bir tur. Tum liste bir kez tarandiktan sonra 45 dk DINLENIR.
+// Boylece WhatsApp'a giden sorgu gunde ~65.000'den ~4.000'e duser (%94 az).
+// Aciklama/ad degisiklikleri zaten 'groups.update' olayiyla ANLIK geliyor;
+// bu tarama sadece o olayin kacirdiklarini toplayan yedek yoldur.
 setInterval(() => { aciklamaMotorTur().catch(() => {}); }, 20 * 1000);
 
 // ── ESKİ toplu senkron: SADECE ad + üye sayısı için (hızlı, açıklama motoru ayrı hallediyor) ──
@@ -6619,6 +6720,19 @@ function videoSesliCevir(tamYol, fileName, m) {
   });
 }
 
+// Baileys'in "bu mesaji kac kez retry ettim" sayaci. Olmazsa ayni mesaj icin
+// sonsuz retry donebiliyor ve baglanti yoruluyor. Basit LRU: 1000 kayit tut.
+const _retrySayacDeposu = {
+  _m: new Map(),
+  get(k) { return this._m.get(k); },
+  set(k, v) {
+    this._m.set(k, v);
+    if (this._m.size > 1000) this._m.delete(this._m.keys().next().value);
+  },
+  del(k) { this._m.delete(k); },
+  flushAll() { this._m.clear(); },
+};
+
 // ---- WhatsApp baglantisi ----
 let _waStarting = false;
 let _reconnectGecikme = 1500; // ilk gecici kopmada hizli baglan (1.5sn); ust uste koparsa backoff ile artar
@@ -6646,6 +6760,20 @@ async function startWA(lineId = 'ofis') {
   if (!line) { line = createLine(lineId, lineId === 'ofis' ? 'Ofis Ana Hat' : lineId); lines.set(lineId, line); }
   if (line.starting) return; // bu hat zaten baglaniyor, cift baslatma
   line.starting = true;
+
+  // ═══ ESKI SOKETI KAPAT (yeni acmadan ONCE) ═══
+  // Bu satir olmadan eski soket dinlemeye devam ediyor ve yeni baglantiyla
+  // kavga ediyordu. Once temizle, sonra yenisini ac.
+  if (line.sock) {
+    soketiKapat(line.sock, 'yeni baglanti kuruluyor');
+    line.sock = null;
+  }
+  // Bu baglantinin kusak numarasi. Asagidaki tum olay dinleyicileri bu
+  // numarayi tasir; hat baska bir kusaga gectiyse olaylar YOK SAYILIR.
+  line.kusak = (line.kusak || 0) + 1;
+  const KUSAK = line.kusak;
+  // Bu kusak hala gecerli mi? (eski soketin olaylari buradan elenir)
+  const kusakGecerli = () => (lines.get(lineId) === line) && (line.kusak === KUSAK);
   activeLine = line; // su an islem yapilan hat (kopru icin)
   _waStarting = true; // (eski global bayrak — geriye uyumluluk)
 
@@ -6678,17 +6806,29 @@ async function startWA(lineId = 'ofis') {
     // Baileys o mesaji bizden ister. Bu fonksiyon yoksa retry basarisiz olup BAGLANTI DUSUYOR.
     // Bellekteki mesaj deposundan ilgili mesaji dondururuz -> retry basarili -> baglanti kopmaz.
     getMessage: async (key) => {
+      // ═══ DUZELTILDI (2026-08) ═══
+      // ESKIDEN: m._raw diye bir alana bakiyordu. Boyle bir alan HIC YAZILMIYOR
+      // (gercek ad: m.raw). Yani bu fonksiyon HER ZAMAN undefined donuyordu ->
+      // WhatsApp cozemedigi mesaj icin retry isteyince retry BOS gidiyor ->
+      // WhatsApp baglantiyi dusuruyordu. Sessiz kopmalarin ana sebeplerinden biri.
       try {
         const jid = key.remoteJid;
         const C = hatChats(lineId);
         const chat = C && C.get ? C.get(jid) : null;
         if (chat && chat.messages) {
           const m = chat.messages.find(x => x && x.id === key.id);
-          if (m && m._raw) return m._raw.message || undefined;
+          if (m && m.raw && m.raw.message) return m.raw.message;
+        }
+        // BELLEKTE YOKSA VERITABANINDAN: sunucu restart olduysa bellek bostur,
+        // ama mesaj DB'de durur. key_data ile birlikte ham icerigi geri kurariz.
+        if (db.isReady()) {
+          const ham = await db.getRawMessage(key.id, lineId).catch(() => null);
+          if (ham) return ham;
         }
       } catch (e) {}
       return undefined; // bulunamazsa undefined (Baileys bos mesajla devam eder, kopmaz)
     },
+    msgRetryCounterCache: _retrySayacDeposu,
     retryRequestDelayMs: 350,       // retry istekleri arasi bekleme (cok hizli retry WhatsApp'i kizdirir)
     maxMsgRetryCount: 5,            // bir mesaj icin en fazla 5 retry (3'ten artirildi — gecici ag sorunlarinda mesaj dusurmesin)
     connectTimeoutMs: 90000,        // baglanti kurma zaman asimi 90sn (yavas/dalgali agda erken pes etmesin)
@@ -6705,7 +6845,11 @@ async function startWA(lineId = 'ofis') {
   if (lineId === 'ofis') waSock = sock;
 
   sock.ev.on('connection.update', async (update) => {
+    // ESKI KUSAK ELEMESI: kapanan onceki soketin geç gelen olaylari, su anki
+    // saglikli baglantiyi bozmasin. ("Bagli oldugu halde koptu uyarisi" hatasi.)
+    if (!kusakGecerli()) return;
     const { connection, lastDisconnect, qr } = update;
+    line.saglik.sonOlay = Date.now();
     if (qr) {
       console.log('\n📱 QR kodu telefonundan okut (Ayarlar > Bagli cihazlar > Cihaz bagla):\n');
       qrcode.generate(qr, { small: true });
@@ -6745,6 +6889,8 @@ async function startWA(lineId = 'ofis') {
       }
       _reconnectGecikme = 1500;
       _reconnectSayac = 0;          // basarili baglandi -> sayac sifir (bir dahaki kopmada yine hizli dene)
+      line.reBekleme = 1500; line.reSayac = 0;   // HAT BAZLI sayaclar da sifirlansin
+      line.saglik.sonAcilma = Date.now();
       _yenidenBaglaniyor.delete(lineId); // varsa bekleyen plani temizle (artik bagliyiz)
       console.log(`\n✅ WhatsApp baglandi (hat: ${lineId})! Panel: http://localhost:${PORT}\n`);
       console.log(`   👤 numaram: ${buNumara}${buLID ? ' | LID: ' + buLID : ''}`);
@@ -6775,6 +6921,7 @@ async function startWA(lineId = 'ofis') {
         setTimeout(() => ofisAciklamaTaramasi(), 45000);
         // AÇIKLAMA MOTORU: bağlanınca imleci sıfırla + hemen başlat (ilk dolum hızlı başlasın)
         _aciklamaImlec.set('ofis', 0);
+        _aciklamaDinlenme.delete('ofis');   // yeni baglantida bir tur tam tara, sonra dinlen
         setTimeout(() => { aciklamaMotorTur().catch(() => {}); }, 8000);
         setTimeout(() => fetchAllGroups(), 75000);
       } else {
@@ -6830,6 +6977,12 @@ async function startWA(lineId = 'ofis') {
       if (lineId === 'ofis') waConnected = false;
       line.connected = false;
       line.starting = false;
+      line.saglik.sonKapanma = Date.now();
+      line.saglik.yenidenBaglanmaSayisi = (line.saglik.yenidenBaglanmaSayisi || 0) + 1;
+      line.saglik.sonKopmaSebebi = String(lastDisconnect?.error?.output?.statusCode || '?');
+      // Kapanan soketi TEMIZ birak (dinleyicileri kaldir) — yenisi acilmadan once.
+      soketiKapat(sock, 'baglanti kapandi');
+      if (line.sock === sock) line.sock = null;
       _waStarting = false; // koptu, yeniden baslatilabilir
       const code = lastDisconnect?.error?.output?.statusCode;
       // ═══ TEŞHİS: kopmanın GERÇEK sebebini yaz (tahmin değil, WhatsApp'ın verdiği kod) ═══
@@ -6900,16 +7053,18 @@ async function startWA(lineId = 'ofis') {
         //  - Bekleme tavani 60sn DEGIL 20sn (gece saatlerce "olu" beklemede kalmasin).
         //  - Her 5 basarisiz denemede bir bekleme SIFIRLANIR -> tekrar hizli/agresif dener.
         //    Boylece internet gece duzelince sistem 20sn beklemeden, hemen yakalar.
-        _reconnectSayac++;
-        let bekle = _reconnectGecikme;
-        _reconnectGecikme = Math.min(_reconnectGecikme * 2, 20000); // tavan 20sn
-        if (_reconnectSayac % 5 === 0) {
-          // 5 denemede bir: agresif moda don (gece takilip kalmayi kirar)
-          _reconnectGecikme = 1500;
-          bekle = 1500;
+        // HAT BAZLI backoff: 1.5 -> 3 -> 6 -> 12 -> 20sn (tavan). Her 5 denemede
+        // bir sifirlanir ki ag duzelince hemen yakalasin.
+        // ESKIDEN bu sayaclar GLOBAL'di -> bir hattin kopmasi digerinin beklemesini
+        // de buyutuyordu (pazarlama koptukca ofis gec baglaniyordu).
+        line.reSayac = (line.reSayac || 0) + 1;
+        let bekle = line.reBekleme || 1500;
+        line.reBekleme = Math.min(bekle * 2, 20000); // tavan 20sn
+        if (line.reSayac % 5 === 0) {
+          line.reBekleme = 1500; bekle = 1500;
           console.log('   🔄 Ust uste kopma — agresif yeniden baglanmaya donuluyor (sayac sifirlandi).');
         }
-        console.log(`Baglanti koptu (deneme ${_reconnectSayac}), ${Math.round(bekle / 1000)} sn sonra yeniden baglaniyorum...`);
+        console.log(`Baglanti koptu [${lineId}] (deneme ${line.reSayac}), ${Math.round(bekle / 1000)} sn sonra yeniden baglaniyorum...`);
         yenidenBaglanPlanla(lineId, bekle, line); // CAKISMA KILITLI: ayni anda 2 plan olmaz
       }
     }
@@ -7849,7 +8004,36 @@ async function loadFromDB() {
 // hatayi loglar ve calismaya devam eder.
 process.on('uncaughtException', (err) => {
   console.error('⚠️  Yakalanmayan hata (sunucu calismaya devam ediyor):', err.message);
+  console.error(err.stack || '(yigin yok)');   // TESHIS: sadece mesaj degil, nerede oldugu da yazilsin
 });
 process.on('unhandledRejection', (reason) => {
   console.error('⚠️  Islenmeyen reddetme (sunucu calismaya devam ediyor):', reason?.message || reason);
+  if (reason && reason.stack) console.error(reason.stack);
 });
+
+// ═══ DUZGUN KAPANIS (graceful shutdown) — 2026-08 ══════════════════════
+// pm2 restart / pm2 stop sirasinda surec ANINDA olduruluyordu. Yarim kalan
+// veritabani yazmalari kayboluyor, WhatsApp soketi yarim kapaniyordu (bu da
+// bir sonraki acilista "baska yerde acik" cakismasina yol acabiliyor).
+// Artik: once soketleri temiz kapat, yazmalarin bitmesini bekle, sonra cik.
+let _kapaniyor = false;
+async function duzgunKapan(sinyal) {
+  if (_kapaniyor) return;
+  _kapaniyor = true;
+  console.log(`\n🛑 ${sinyal} alindi — duzgun kapaniyor (oturum SILINMIYOR)...`);
+  // 1) Yeni is kabul etmeyi birak
+  try { for (const [, l] of lines) { l.manualLogout = false; l.starting = true; } } catch (_) {}
+  // 2) WhatsApp soketlerini TEMIZ kapat (oturum dosyalarina DOKUNMA)
+  try {
+    for (const [id, l] of lines) {
+      if (l.sock) { soketiKapat(l.sock, 'sunucu kapaniyor'); l.sock = null; console.log(`   ✓ ${id} soketi kapatildi`); }
+    }
+  } catch (e) { console.error('   soket kapatma hatasi:', e.message); }
+  // 3) Bekleyen veritabani yazmalarina zaman tani (en fazla 4sn)
+  await new Promise((r) => setTimeout(r, 1500));
+  try { if (db.kapat) await Promise.race([db.kapat(), new Promise((r) => setTimeout(r, 2500))]); } catch (_) {}
+  console.log('   ✓ Kapanis tamam. Oturum korundu, tekrar acilista QR GEREKMEZ.\n');
+  process.exit(0);
+}
+process.on('SIGTERM', () => duzgunKapan('SIGTERM'));
+process.on('SIGINT', () => duzgunKapan('SIGINT'));
