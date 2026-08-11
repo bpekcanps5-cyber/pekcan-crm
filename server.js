@@ -251,13 +251,53 @@ let _sonWaAktivite = 0;    // WhatsApp'tan en son ne zaman veri/olay geldi (canl
 //   sorun geçince otomatik normale döner. Yani hem hızlı hem güvenli.
 // ═══════════════════════════════════════════════════════════════════════════
 const ESZAMANLI_KANAL = 6;        // aynı anda en fazla bu kadar gönderim (bekleme YOK)
-const ESZAMANLI_KISITLI = 2;      // WhatsApp şikayet ederse geçici olarak bu kadar
-const _gonderimDurum = new Map(); // lineId -> { aktif:0, bekleyen:[], kisitliBitis:0 }
+const ESZAMANLI_KISITLI = 1;      // WhatsApp şikayet ederse TEK SIRA (2 bile fazlaydi)
+
+// ═══ HIZ SINIRI (rate-overlimit) YONETIMI — 2026-08 ACIL ════════════════
+// GERCEK OLAY: WhatsApp "rate-overlimit" deyip mesajlari REDDETTI ve sistem
+// hemen tekrar deneyerek durumu KOTULESTIRDI (0.8sn arayla 3 deneme).
+// Sonuc: kartopu gibi buyuyen bir tikanma, hicbir mesaj gitmedi.
+//
+// YENI DAVRANIS: WhatsApp "yavasla" dediginde GERCEKTEN yavasliyoruz.
+//  • Ust uste sinire takildikca soguma suresi KATLANIR: 30sn -> 2dk -> 5dk -> 15dk
+//  • Soguma sirasinda TEK SIRA gonderim (paralel yok)
+//  • Yeniden deneme araligi cok daha uzun: 5sn -> 15sn -> 45sn
+//  • Soguma sirasinda TUM arka plan islerinin (aciklama taramasi, grup
+//    bilgisi cekme, avatar taramasi) WhatsApp'a sorgu atmasi DURUR.
+const RATE_SOGUMA = [30 * 1000, 2 * 60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000];
+const _gonderimDurum = new Map(); // lineId -> { aktif, bekleyen, kisitliBitis, ustUste, sonRate }
 
 function _gd(lineId) {
   let d = _gonderimDurum.get(lineId);
-  if (!d) { d = { aktif: 0, bekleyen: [], kisitliBitis: 0 }; _gonderimDurum.set(lineId, d); }
+  if (!d) { d = { aktif: 0, bekleyen: [], kisitliBitis: 0, ustUste: 0, sonRate: 0 }; _gonderimDurum.set(lineId, d); }
   return d;
+}
+
+// Su an herhangi bir hat hiz sinirinda mi? (arka plan isleri bunu sorar)
+function hizSinirindaMi() {
+  const n = Date.now();
+  for (const [, d] of _gonderimDurum) if (n < d.kisitliBitis) return true;
+  return false;
+}
+
+// Hiz sinirine takildik -> sogumayi baslat/uzat
+function _rateSinirinaTakildi(lineId, d, ilkDenemeMi) {
+  const n = Date.now();
+  // son 5 dakika icinde tekrar takildiysa ceza artar; degilse sayac sifirlanir
+  if (n - d.sonRate > 5 * 60 * 1000) d.ustUste = 0;
+  d.sonRate = n;
+  // ONEMLI: cezayi SADECE yeni bir mesaj sinira takilinca artir.
+  // Ayni mesajin tekrar denemeleri cezayi buyutmemeli — yoksa TEK bir mesaj
+  // sistemi 30 saniyeden 15 dakikaya kilitleyebiliyor.
+  const kademe = Math.min(d.ustUste, RATE_SOGUMA.length - 1);
+  const sure = RATE_SOGUMA[kademe];
+  if (ilkDenemeMi) d.ustUste++;
+  d.kisitliBitis = Math.max(d.kisitliBitis, n + sure);
+  if (ilkDenemeMi) {
+    console.log(`🐢 HIZ SINIRI [${lineId}] — ${Math.round(sure / 1000)} saniye yavaslaniyor ` +
+                `(ust uste ${d.ustUste}. kez, tek sira gonderim, arka plan isleri durdu)`);
+  }
+  return sure;
 }
 async function kuyrukluGonder(lineId, gonderFn, medyaMi = false, _deneme = 0) {
   const d = _gd(lineId);
@@ -285,23 +325,99 @@ async function kuyrukluGonder(lineId, gonderFn, medyaMi = false, _deneme = 0) {
     const rateMi = /rate.?overlimit|429|too many|rate.?limit/i.test(m);
     kanalBirak(); // her durumda kanalı bırak
     if (rateMi) {
-      // WhatsApp "çok hızlısın" dedi -> kanal sayısını 20sn geçici düşür
-      d.kisitliBitis = Date.now() + 20000;
-      // ═══ OTOMATİK YENİDEN DENEME (KRİTİK) ═══
-      // Log kanıtladı: WhatsApp "rate-overlimit" deyip mesajı REDDEDİYOR.
-      // Eskiden mesaj burada KAYBOLUYORDU (kullanıcı "gitti sandım" diyordu).
-      // Artık kısa bekleyip TEKRAR deniyoruz -> mesaj gidene kadar peşini bırakmıyoruz.
-      if (_deneme < 3) {
-        const bekle = 800 * Math.pow(2, _deneme); // 0.8sn -> 1.6sn -> 3.2sn
-        console.log(`🔄 WhatsApp hız limiti -> ${bekle}ms sonra tekrar denenecek (deneme ${_deneme + 1}/3)`);
+      _rateSinirinaTakildi(lineId, d, _deneme === 0);
+      // ═══ YENIDEN DENEME — AMA SABIRLI ═══
+      // ESKIDEN: 0.8 / 1.6 / 3.2 saniye. Bu kadar hizli tekrar denemek
+      // WhatsApp'in gozunde durumu KOTULESTIRIYORDU (tikanma buyuyordu).
+      // ARTIK: 5 / 15 / 45 saniye. Mesaj yine kaybolmuyor, ama sisteme nefes
+      // aldiriyoruz. Bu sirada panel mesaji "gonderiliyor" olarak gosterir.
+      const BEKLEMELER = [5000, 15000, 45000];
+      if (_deneme < BEKLEMELER.length) {
+        const bekle = BEKLEMELER[_deneme];
+        console.log(`🔄 Hiz limiti -> ${Math.round(bekle / 1000)}sn sonra tekrar denenecek (deneme ${_deneme + 1}/${BEKLEMELER.length})`);
         await new Promise((r) => setTimeout(r, bekle));
         return kuyrukluGonder(lineId, gonderFn, medyaMi, _deneme + 1); // TEKRAR DENE
       }
-      console.log('❌ WhatsApp hız limiti: 3 denemede de gönderilemedi -> mesaj kırmızı işaretlenecek');
+      console.log('❌ Hiz limiti: 3 denemede de gonderilemedi -> mesaj kirmizi isaretlenecek');
     }
     throw e;
   }
 }
+// ═══════════════════════════════════════════════════════════════════════
+// MESAJ MUTLAK ONCELIK KAPISI — 2026-08
+//
+// KURAL: Gelen ve giden MESAJLAR her seyin onundedir. Grup bilgisi cekme,
+// aciklama taramasi, avatar indirme, medya yeniden indirme gibi isler
+// mesajlarla ASLA yarismaz — mesaj isi varken TAMAMEN beklerler.
+//
+// ONCEKI DURUM: mesajlar sirali kuyruktan gidiyordu ama arka plan sorgulari
+// DOGRUDAN sokete gidiyordu (kuyruga hic ugramadan). Yani mesaj beklerken
+// arka plan is sokete sorgu yagdirabiliyordu. WhatsApp'in "rate-overlimit"
+// demesinin ve mesajlarin reddedilmesinin baslica sebebi buydu.
+// ═══════════════════════════════════════════════════════════════════════
+const ARKA_ESZAMANLI = 1;          // arka plan: ayni anda EN FAZLA 1 sorgu
+const ARKA_ARALIK = 350;           // normal arka plan sorgulari arasi bekleme (ms)
+const ARKA_ARALIK_ONCELIKLI = 120; // ONCELIKLI (grup adi/aciklamasi) icin daha kisa
+const ARKA_MAX_BEKLEME = 25000;    // bu kadar bekledi de sira gelmediyse isi ATLA
+let _arkaAktif = 0;
+let _arkaSonSorgu = 0;
+let _arkaOncelikliBekleyen = 0;    // kac ONCELIKLI is sirada bekliyor
+
+// ═══ IKI SERITLI ARKA PLAN ═══════════════════════════════════════════
+// 1. serit (ONCELIKLI): grup ADI ve ACIKLAMASI — kullanici bunlari aninda
+//    gormek istiyor. Mesajlari yine bekler ama diger tum arka plan
+//    islerinin ONUNE gecer ve daha kisa araliklarla calisir.
+// 2. serit (NORMAL): avatar indirme, medya yeniden indirme, kalan taramalar.
+//    Onceliklilerin arkasinda bekler.
+//
+// SIRALAMA:  MESAJ  >  grup adi/aciklamasi  >  diger her sey
+
+// Su an gercek bir MESAJ isi var mi? (gonderiliyor / sirada / yeni geldi)
+function mesajIsiVarMi() {
+  for (const [, d] of _gonderimDurum) {
+    if (d.aktif > 0) return true;            // su an gonderim suruyor
+    if (d.bekleyen && d.bekleyen.length) return true; // sirada mesaj var
+  }
+  return mesajTrafigiVar();                  // son 10sn icinde mesaj gelip gitti
+}
+
+// ARKA PLAN SORGUSU ICIN IZIN AL.
+// true  -> sira sende, sorguyu yap (bittiginde arkaPlanBirak() cagir)
+// false -> vazgec, bu turu atla (mesaj trafigi yogun veya hiz siniri var)
+async function arkaPlanIzin(etiket, oncelikli = false) {
+  const basla = Date.now();
+  if (oncelikli) _arkaOncelikliBekleyen++;
+  try {
+    for (;;) {
+      const aralik = oncelikli ? ARKA_ARALIK_ONCELIKLI : ARKA_ARALIK;
+      const bekleSebep =
+        (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) ? 'hiz siniri'
+        : mesajIsiVarMi() ? 'mesaj trafigi'
+        // NORMAL isler, sirada ONCELIKLI is varken beklesin
+        : (!oncelikli && _arkaOncelikliBekleyen > 0) ? 'oncelikli is var'
+        : (_arkaAktif >= ARKA_ESZAMANLI) ? 'baska arka plan isi'
+        : (Date.now() - _arkaSonSorgu < aralik) ? 'aralik' : null;
+      if (!bekleSebep) break;
+      if (Date.now() - basla > ARKA_MAX_BEKLEME) return false; // cok bekledi -> atla
+      await new Promise((r) => setTimeout(r, bekleSebep === 'aralik' ? 60 : (oncelikli ? 250 : 700)));
+    }
+  } finally {
+    if (oncelikli) { _arkaOncelikliBekleyen--; if (_arkaOncelikliBekleyen < 0) _arkaOncelikliBekleyen = 0; }
+  }
+  _arkaAktif++;
+  _arkaSonSorgu = Date.now();
+  return true;
+}
+function arkaPlanBirak() { _arkaAktif--; if (_arkaAktif < 0) _arkaAktif = 0; _arkaSonSorgu = Date.now(); }
+
+// Kisayol: arka plan sorgusunu izinle sarmala. Izin cikmazsa varsayilani doner.
+// oncelikli=true -> grup adi/aciklamasi gibi kullanicinin ANINDA gormek istedigi isler.
+async function arkaPlanSorgu(etiket, fn, varsayilan = null, oncelikli = false) {
+  if (!(await arkaPlanIzin(etiket, oncelikli))) return varsayilan;
+  try { return await fn(); }
+  finally { arkaPlanBirak(); }
+}
+
 // MESAJ ÖNCELİĞİ: en son ne zaman mesaj gönderildi/alındı. Ağır arka plan işleri
 // (açıklama motoru, avatar taraması, grup senkronu) mesaj trafiği varken duraklar ki
 // soket tıkanmasın -> mesajlar gecikmesin/kaybolmasın (özellikle yoğun ofis hattında).
@@ -5080,12 +5196,19 @@ const _tumGruplarCache = new Map(); // sock -> { veri, ts }
 async function tumGruplarDetay(sock, zorla = false) {
   const onb = _tumGruplarCache.get(sock);
   if (!zorla && onb && (Date.now() - onb.ts) < 60 * 1000) return onb.veri;
-  const veri = await sock.groupFetchAllParticipating();
+  const veri = await arkaPlanSorgu('tum gruplar', () => sock.groupFetchAllParticipating(), null, true);
+  if (!veri) return;
   _tumGruplarCache.set(sock, { veri, ts: Date.now() });
   return veri;
 }
 
 async function metaQueueRun() {
+  // HIZ SINIRI: WhatsApp yavasla dediyse grup bilgisi cekmeyi tamamen beklet.
+  // Bu kuyruk sinir asildiginda tikanmayi buyuten baslica sebeplerden biriydi.
+  if (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) {
+    setTimeout(() => { try { metaQueueRun(); } catch (_) {} }, 15000);
+    return;
+  }
   if (metaBusy) return;
   metaBusy = true;
   while (metaQueue.length) {
@@ -5113,7 +5236,14 @@ async function metaQueueRun() {
         // sock verildiyse O HATTIN soketiyle sorgula (ortak gruplarda ikisi de calisir,
         // ayri gruplarda dogru hat calisir); verilmediyse ofis (waSock).
         const s = sock || waSock;
-        result = await s.groupMetadata(jid);
+        // MESAJ ONCELIGI: mesaj isi varsa burasi BEKLER, sorgu atmaz.
+        if (!(await arkaPlanIzin('grup bilgisi', true))) {
+          // Mesaj trafigi yogun -> bu grup sorgusunu ERTELE (kaybetme, kuyruga geri koy)
+          metaQueue.push({ jid, resolve, sock });
+          return;
+        }
+        try { result = await s.groupMetadata(jid); }
+        finally { arkaPlanBirak(); }
         // ÖNEMLİ: groupMetadata bazı gruplarda 'desc' (açıklama) alanını DÖNDÜRMEZ (undefined).
         // Bu durumda groupFetchAllParticipating'den o grubun açıklamasını TAMAMLA.
         // (Log'da "desc tipi=undefined" görülüyordu -> açıklama var ama bu çağrı vermiyordu.)
@@ -5647,7 +5777,10 @@ let _aciklamaMotorCalisiyor = false;
 
 // Aciklama taramasi ayarlari — WhatsApp'i yormayacak sekilde
 const ACIKLAMA_PARCA = 8;                       // her turda kac grup (15 -> 8)
-const ACIKLAMA_DINLENME = 45 * 60 * 1000;       // liste bitince 45 dk dinlen
+// Toplu cekim (2 dakikada bir, tek sorgu) aciklamalarin COGUNU zaten
+// dolduruyor. Bu tek-tek tarama sadece toplu cekimin veremedigi gruplar
+// icin gerekli -> dinlenme 45dk yerine 15dk yeterli.
+const ACIKLAMA_DINLENME = 15 * 60 * 1000;       // liste bitince 15 dk dinlen
 const ACIKLAMA_TAZELIK = 12 * 60 * 60 * 1000;   // aciklamasi dolu grubu 12 saatte bir kontrol et
 const _aciklamaDinlenme = new Map();            // lineId -> dinlenmenin bitecegi zaman
 const _aciklamaSonBakis = new Map();            // jid -> en son ne zaman soruldu
@@ -5657,6 +5790,9 @@ async function aciklamaMotorTur() {
   // MESAJ ÖNCELİĞİ: şu an mesaj trafiği varsa bu turu ATLA. Açıklama çekimi soketi meşgul
   // edip mesajları geciktirmesin. Trafik durunca (10sn) motor kaldığı yerden devam eder.
   if (mesajTrafigiVar()) return;
+  // HIZ SINIRI: WhatsApp yavasla dediyse arka plan taramasi HIC sorgu atmasin.
+  // Bu tarama tikanmanin buyumesindeki en buyuk paydi.
+  if (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) return;
   _aciklamaMotorCalisiyor = true;
   try {
     for (const [lineId, line] of lines) {
@@ -5752,7 +5888,8 @@ async function topluAciklamaSenkron(lineId) {
   const C = hatChats(lineId);
   if (!sock || !line || !line.connected || !C || !C.size) return;
   let groups;
-  try { groups = await sock.groupFetchAllParticipating(); } catch (e) { return; }
+  try { groups = await arkaPlanSorgu('toplu aciklama', () => sock.groupFetchAllParticipating(), null, true); } catch (e) { return; }
+  if (!groups) return;
   const girisler = Object.entries(groups || {});
   const degisenler = [];
   let i = 0;
@@ -5849,8 +5986,13 @@ async function fetchAllGroups() {
   const ofisLine = lines.get('ofis');
   const ofisSock = ofisLine ? ofisLine.sock : waSock;
   if (!ofisSock || !ofisLine || !ofisLine.connected) return;
+  if (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) {
+    console.log('   🐢 Hiz siniri — grup tazeleme atlandi');
+    return;
+  }
   try {
-    const groups = await ofisSock.groupFetchAllParticipating(); // { jid: metadata }
+    const groups = await arkaPlanSorgu('grup adlari', () => ofisSock.groupFetchAllParticipating(), null, true);
+    if (!groups) return; // mesaj trafigi yogun -> bu tur atlandi
     let guncellenen = 0;
     for (const [jid, meta] of Object.entries(groups || {})) {
       if (!jid.endsWith('@g.us')) continue;
@@ -6551,7 +6693,8 @@ async function getAvatar(jid, taze = false, sock = null) {
   let result = null;
   try {
     // 8 sn zaman asimi: bazi (LID) jid'lerde profilePictureUrl sonsuza kadar bekleyebilir
-    const urlPromise = (sock || waSock).profilePictureUrl(jid, 'image');
+    const _s = (sock || waSock);
+    const urlPromise = arkaPlanSorgu('avatar', () => _s.profilePictureUrl(jid, 'image'), null);
     const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('avatar zaman asimi')), 8000));
     const url = await Promise.race([urlPromise, timeout]);
     if (url) {
@@ -6629,7 +6772,7 @@ async function medyaKuyrukIsle() {
     return; // her turda TEK indirme denemesi (WhatsApp'ı yorma)
   }
 }
-setInterval(medyaKuyrukIsle, 30000); // her 30 saniyede bir dene (45->30: daha hızlı kurtarma)
+setInterval(() => { if (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) return; medyaKuyrukIsle(); }, 30000);
 
 // Medyayi indir, public/media'ya kaydet, web yolunu dondur.
 // 30 sn icinde inmezse veya hata olursa null doner — sunucu ASLA cokmemeli.
@@ -7013,10 +7156,15 @@ async function _startWAIc(lineId = 'ofis') {
       // Boylece sonradan ID'de kalan/yeni gruplarin adlari otomatik duzelir.
       // (fetchAllGroups zaten kendi icinde sadece ofis icin calisir.)
       if (lineId === 'ofis' && !global._grupTazelemeTimer) {
+        // ═══ TOPLU TAZELEME: 10 dk -> 2 dk ═══════════════════════════
+        // Bu cagri TEK SORGUDA butun gruplarin ADINI ve ACIKLAMASINI getirir
+        // (1500 grup icin 1500 degil, 1 sorgu). Yani sik calismasi ucuz.
+        // Grup adi/aciklamasi degisiklikleri artik en gec 2 dakikada panele
+        // duser; cogu zaman zaten 'groups.update' ile ANINDA duser.
         global._grupTazelemeTimer = setInterval(() => {
           const ol = lines.get('ofis');
           if (ol && ol.connected) fetchAllGroups();
-        }, 10 * 60 * 1000); // 10 dakika
+        }, 2 * 60 * 1000); // 2 dakika — TEK sorgu, ucuz
       }
       // CANLILIK: Artık merkezi "kalp atışı" sistemi TÜM hatları (ofis+pazarlama) denetliyor
       // (yukarıda tanımlı global._kalpAtisiTimer). Eski ofis-only kontrol kaldırıldı — çakışma olmasın.
