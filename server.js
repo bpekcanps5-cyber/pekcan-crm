@@ -177,6 +177,7 @@ function createLine(lineId, label, ownerUser) {
     chats: new Map(),      // bu hattin sohbetleri (jid -> chat)
     authDir: path.join(AUTH_BASE, lineId), // bu hattin oturum klasoru
     starting: false,       // baglanma islemi suruyor mu (cift baslatmayi onler)
+    startingTs: 0,         // baglanma ne zaman basladi (takili kalmayi kirmak icin)
     sonAktivite: 0,        // HAT BAZLI: bu hattan en son ne zaman veri geldi (kalp atisi kontrolu)
     kalpTestCalisiyor: false, // ayni anda iki kalp testi calismasin
     kalpBasarisiz: 0,      // ust uste kac kalp atisi basarisiz (2 olursa yeniden baglan)
@@ -6733,6 +6734,10 @@ const _retrySayacDeposu = {
   flushAll() { this._m.clear(); },
 };
 
+// Bir baglanma denemesi en fazla bu kadar surer. Asilirsa kilit acilir ve
+// yeniden denenir. (Baglanti kurma zaman asimi 90sn -> tavan 120sn.)
+const BASLATMA_TAVAN = 120 * 1000;
+
 // ---- WhatsApp baglantisi ----
 let _waStarting = false;
 let _reconnectGecikme = 1500; // ilk gecici kopmada hizli baglan (1.5sn); ust uste koparsa backoff ile artar
@@ -6755,19 +6760,50 @@ function yenidenBaglanPlanla(lineId, bekle, line) {
 // startWA(lineId): bir HATTI baslatir. Varsayilan 'ofis' (geriye uyumlu).
 // Her hat kendi auth klasorunu (auth/<lineId>) ve kendi line objesini kullanir.
 async function startWA(lineId = 'ofis') {
+  // DIS KABUK: icerideki HER hata yakalanir, kilit acilir, yeniden denenir.
+  // Boylece bir hata hatti kalici olarak sagir birakamaz.
+  try {
+    return await _startWAIc(lineId);
+  } catch (e) {
+    const l = lines.get(lineId);
+    console.error(`❌ [${lineId}] baglanma denemesi HATA verdi: ${e.message}`);
+    if (l) {
+      l.starting = false;            // KILIDI AC — yoksa hat bir daha baglanamaz
+      l.startingTs = 0;
+      if (l.saglik) l.saglik.sonHata = e.message;
+    }
+    // 5 saniye sonra tekrar dene (sonsuz hizli dongu olmasin)
+    if (!l || !l.manualLogout) yenidenBaglanPlanla(lineId, 5000, l);
+    return;
+  }
+}
+
+async function _startWAIc(lineId = 'ofis') {
   // bu hat icin line objesini al/olustur
   let line = lines.get(lineId);
   if (!line) { line = createLine(lineId, lineId === 'ofis' ? 'Ofis Ana Hat' : lineId); lines.set(lineId, line); }
-  if (line.starting) return; // bu hat zaten baglaniyor, cift baslatma
-  line.starting = true;
-
-  // ═══ ESKI SOKETI KAPAT (yeni acmadan ONCE) ═══
-  // Bu satir olmadan eski soket dinlemeye devam ediyor ve yeni baglantiyla
-  // kavga ediyordu. Once temizle, sonra yenisini ac.
-  if (line.sock) {
-    soketiKapat(line.sock, 'yeni baglanti kuruluyor');
-    line.sock = null;
+  // ═══ TAKILI KALMA KORUMASI (2026-08 ACIL) ═══════════════════════════
+  // 'starting' bayragi bir sebeple acik kalirsa hat BIR DAHA baglanamiyordu
+  // (her deneme burada geri donuyor) -> hic mesaj gidip gelmiyor.
+  // Artik bayrak en fazla BASLATMA_TAVAN kadar yasar, sonra zorla acilir.
+  if (line.starting) {
+    const gecen = Date.now() - (line.startingTs || 0);
+    if (gecen < BASLATMA_TAVAN) return;   // gercekten baglanma suruyor
+    console.log(`   ⚠️  [${lineId}] baglatma ${Math.round(gecen/1000)}sn'dir takili — kilit aciliyor, yeniden deneniyor`);
+    // takili kalan denemenin soketi varsa temizle
+    if (line.sock) { try { soketiKapat(line.sock, 'takili baslatma temizligi'); } catch (_) {} line.sock = null; }
   }
+  line.starting = true;
+  line.startingTs = Date.now();
+
+  // ═══ ESKI SOKETI BURADA KAPATMIYORUZ! ════════════════════════════════
+  // ONCEKI SURUMDEKI HATA: calisan soket, YENISI kurulmadan once
+  // kapatiliyordu. Yeni soket olusurken bir hata olursa (auth okuma,
+  // makeWASocket, ag) hat hem SAGIR kaliyor hem 'starting' takiliyordu ->
+  // "hic mesaj gitmiyor gelmiyor". Artik eski soket, YENISI BASARIYLA
+  // olusana kadar CALISMAYA DEVAM EDER; degisim asagida yapilir.
+  const eskiSoket = line.sock;
+
   // Bu baglantinin kusak numarasi. Asagidaki tum olay dinleyicileri bu
   // numarayi tasir; hat baska bir kusaga gectiyse olaylar YOK SAYILIR.
   line.kusak = (line.kusak || 0) + 1;
@@ -6837,6 +6873,27 @@ async function startWA(lineId = 'ofis') {
     emitOwnEvents: false,           // kendi gonderdigimiz mesajlari geri event olarak alma (gereksiz yuk)
     qrTimeout: 60000,               // QR gecerlilik suresi (cok kisa olunca surekli yeni QR uretip baglantiyi mesgul ediyordu)
   });
+  // ── ACILMA BEKCISI ──────────────────────────────────────────────────
+  // Soket olusturuldu ama WhatsApp hic 'open' de 'close' da demezse
+  // (sessiz takilma) hat sonsuza kadar beklerdi. Belli sure sonra bu
+  // denemeyi iptal edip yenisini baslatiyoruz.
+  setTimeout(() => {
+    try {
+      if (line.kusak !== KUSAK) return;      // zaten yeni bir deneme basladi
+      if (line.connected) return;            // baglandi, sorun yok
+      console.log(`   ⏱️  [${lineId}] soket ${Math.round(BASLATMA_TAVAN/1000)}sn'de acilmadi — deneme iptal, yeniden baglaniliyor`);
+      line.starting = false; line.startingTs = 0;
+      try { soketiKapat(sock, 'acilma zaman asimi'); } catch (_) {}
+      if (line.sock === sock) line.sock = null;
+      line.kusak = (line.kusak || 0) + 1;    // bu denemenin olaylarini gecersiz kil
+      if (!line.manualLogout) yenidenBaglanPlanla(lineId, 3000, line);
+    } catch (_) {}
+  }, BASLATMA_TAVAN);
+
+  // ── YENI SOKET HAZIR: ARTIK eskisini guvenle kapatabiliriz ──
+  if (eskiSoket && eskiSoket !== sock) {
+    try { soketiKapat(eskiSoket, 'yeni baglanti hazir'); } catch (_) {}
+  }
   line.sock = sock;   // hattin kendi soketi (HER hat icin dogru — bunu kullan)
   // KRITIK: global 'waSock' koprusu SADECE ofis hatti icin guncellensin.
   // Eskiden her hat (pazarlama dahil) burada waSock'u eziyordu -> ofis paneli mesaj
@@ -6869,6 +6926,7 @@ async function startWA(lineId = 'ofis') {
     if (connection === 'open') {
       line.connected = true;       // hattin kendi durumu
       line.starting = false;       // hat baglandi
+      line.startingTs = 0;
       line.lastQR = null;
       const myJid = sock.user?.id ? sock.user.id.split(':')[0].split('@')[0] + '@s.whatsapp.net' : null;
       const myName = sock.user?.name || sock.user?.verifiedName || 'Ben';
@@ -6977,6 +7035,7 @@ async function startWA(lineId = 'ofis') {
       if (lineId === 'ofis') waConnected = false;
       line.connected = false;
       line.starting = false;
+      line.startingTs = 0;
       line.saglik.sonKapanma = Date.now();
       line.saglik.yenidenBaglanmaSayisi = (line.saglik.yenidenBaglanmaSayisi || 0) + 1;
       line.saglik.sonKopmaSebebi = String(lastDisconnect?.error?.output?.statusCode || '?');
@@ -8022,16 +8081,20 @@ async function duzgunKapan(sinyal) {
   _kapaniyor = true;
   console.log(`\n🛑 ${sinyal} alindi — duzgun kapaniyor (oturum SILINMIYOR)...`);
   // 1) Yeni is kabul etmeyi birak
-  try { for (const [, l] of lines) { l.manualLogout = false; l.starting = true; } } catch (_) {}
+  // NOT: burada l.starting = true YAPMIYORUZ. Cikis bir sebeple gerceklesmezse
+  // (pm2 sureci oldurmezse) tum hatlar kalici kilitli kalirdi -> hic mesaj akmaz.
+  try { for (const [, l] of lines) { l.kapaniyor = true; } } catch (_) {}
   // 2) WhatsApp soketlerini TEMIZ kapat (oturum dosyalarina DOKUNMA)
   try {
     for (const [id, l] of lines) {
       if (l.sock) { soketiKapat(l.sock, 'sunucu kapaniyor'); l.sock = null; console.log(`   ✓ ${id} soketi kapatildi`); }
     }
   } catch (e) { console.error('   soket kapatma hatasi:', e.message); }
-  // 3) Bekleyen veritabani yazmalarina zaman tani (en fazla 4sn)
-  await new Promise((r) => setTimeout(r, 1500));
-  try { if (db.kapat) await Promise.race([db.kapat(), new Promise((r) => setTimeout(r, 2500))]); } catch (_) {}
+  // 3) Bekleyen veritabani yazmalarina KISA sure tani.
+  //    DIKKAT: pm2 varsayilan olarak 1600ms sonra sureci ZORLA oldurur.
+  //    Uzun beklersek kapanis zaten yarida kesilir; bu yuzden toplam ~1.2sn.
+  await new Promise((r) => setTimeout(r, 400));
+  try { if (db.kapat) await Promise.race([db.kapat(), new Promise((r) => setTimeout(r, 700))]); } catch (_) {}
   console.log('   ✓ Kapanis tamam. Oturum korundu, tekrar acilista QR GEREKMEZ.\n');
   process.exit(0);
 }
