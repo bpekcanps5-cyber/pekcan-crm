@@ -8398,6 +8398,9 @@ app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
   const test = !!(req.body && req.body.test);
   const robot = (req.body && req.body.robot) || POLICE_ROBOT_ADI;
   const kim = (req.body && req.body.kullanici) || '';
+  // "Yine de gonder" — kullanici mukerrer korumasini BILEREK atliyor.
+  // Panel hem 'zorla' hem 'force' gonderebiliyor; ikisini de kabul ediyoruz.
+  const zorla = !!(req.body && (req.body.zorla || req.body.force));
 
   if (!jid || !text) return res.status(400).json({ ok: false, error: 'jid ve text zorunlu' });
   if (!policeBagliMi()) return res.status(409).json({ ok: false, error: 'WhatsApp baglantisi kopuk' });
@@ -8421,9 +8424,16 @@ app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
     const oncekiZaman = _policeGonderilen.get(anahtar);
     if (oncekiZaman && (Date.now() - oncekiZaman) < POLICE_TEKRAR_SURESI) {
       const saat = Math.round((Date.now() - oncekiZaman) / 3600000);
-      console.log(`[POLICE] TEKRAR ENGELLENDI: ${ref} (${saat} saat once gonderilmis)`);
-      return res.status(409).json({ ok: false, tekrar: true,
-        error: `Bu poliçe için ${saat} saat önce zaten mesaj gönderilmiş` });
+      if (zorla) {
+        // Kullanici "Yine de gonder" dedi -> korumayi ATLA, ama kaydi
+        // yine de guncelle (asagida) ki bir SONRAKI normal gonderim
+        // tekrar korumaya taksin.
+        console.log(`[POLICE] ZORLA GONDERIM — mukerrer korumasi atlandi (${ref}, ${saat} saat once gonderilmisti)`);
+      } else {
+        console.log(`[POLICE] TEKRAR ENGELLENDI: ${ref} (${saat} saat once gonderilmis)`);
+        return res.status(409).json({ ok: false, tekrar: true,
+          error: `Bu poliçe için ${saat} saat önce zaten mesaj gönderilmiş` });
+      }
     }
   }
 
