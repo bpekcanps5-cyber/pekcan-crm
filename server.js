@@ -8184,7 +8184,19 @@ async function _startWAIc(lineId = 'ofis') {
 
 // --- 0) Ayarlar ---------------------------------------------------------
 const POLICE_API_KEY = process.env.POLICE_API_KEY || '';
-const POLICE_ROBOT_ADI = 'Yenileme Robotu';   // CRM'de gorunecek gonderen adi
+// CRM'de gorunecek gonderen adlari — gonderim TURUNE gore ayrilir.
+// Panel her istekte 'tur' yolluyor: yenileme / borc / cizgi
+const POLICE_ROBOT_ADI = 'Yenileme Robotu';   // varsayilan (tur bilinmezse)
+const POLICE_ROBOTLAR = {
+  yenileme: 'Yenileme Robotu',   // police yenileme teklifi
+  borc: 'Hesap Robotu',          // prim borcu + hesap ozeti PDF'i
+  cizgi: 'Hesap Robotu',         // grup temiz isareti (======) — hesap islemiyle birlikte gider
+};
+function policeRobotAdi(tur, gelenAd) {
+  // Panel acikca bir ad yolladiysa ona saygi duy; yoksa ture gore sec.
+  if (gelenAd && gelenAd !== POLICE_ROBOT_ADI) return gelenAd;
+  return POLICE_ROBOTLAR[String(tur || '').toLowerCase()] || POLICE_ROBOT_ADI;
+}
 const POLICE_HAT = 'ofis';                    // hangi hattan gonderilecek
 const POLICE_TEKRAR_SURESI = 24 * 60 * 60 * 1000;  // ayni gruba 24 saat icinde ikinci mesaj yok
 
@@ -8295,14 +8307,24 @@ app.post('/api/police/wa/gruplar', express.json(), async (req, res) => {
 // --- 6) CRM sohbet gecmisine yaz ("Yenileme Robotu" adiyla) -------------
 // Iptal Robotu ile AYNI mantik: addMessage hem bellege yazar hem tum
 // panellere anlik yayinlar hem veritabanina kaydeder.
-async function policeCrmKaydet({ jid, text, robot, msgId, test, ref, kim }) {
+async function policeCrmKaydet({ jid, text, robot, msgId, test, ref, kim, tur,
+                                 kind, fileName, mime, mediaUrl }) {
+  const belgeMi = kind === 'document' && fileName;
   addMessage(jid, {
     id: msgId,
-    text: text,
+    // Belge gonderiminde panelde DOSYA ADI baslik olur, mesaj metni ACIKLAMA
+    // olarak altinda gorunur (panelden yuklenen dosyalarla ayni duzen).
+    text: belgeMi ? fileName : text,
+    caption: belgeMi ? text : '',
+    kind: belgeMi ? 'document' : 'text',
+    fileName: belgeMi ? fileName : undefined,
+    mime: belgeMi ? (mime || 'application/pdf') : undefined,
+    mediaUrl: belgeMi ? (mediaUrl || '') : undefined,
     fromMe: true,
     sender: robot || POLICE_ROBOT_ADI,
     robot: true,                       // panelde robot rozetiyle gorunsun
     policeRef: ref || '',              // hangi police icin gonderildi
+    policeTur: tur || '',              // yenileme / borc / cizgi
     policeTest: !!test,
     policeKim: kim || '',
     time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
@@ -8388,7 +8410,8 @@ function policeKilidiAc() {
   if (policeMesgulSayaci) { clearTimeout(policeMesgulSayaci); policeMesgulSayaci = null; }
 }
 
-app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
+// NOT: base64 PDF gelebildigi icin govde siniri yukseltildi (8 MB dosya ~11 MB base64).
+app.post('/api/police/wa/gonder', express.json({ limit: '15mb' }), async (req, res) => {
   policeCors(res);
   if (!policeYetki(req, res)) return;
 
@@ -8396,8 +8419,10 @@ app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
   const text = req.body && req.body.text;
   const ref = (req.body && req.body.ref) || '';
   const test = !!(req.body && req.body.test);
-  const robot = (req.body && req.body.robot) || POLICE_ROBOT_ADI;
+  const tur = (req.body && req.body.tur) || '';          // yenileme / borc / cizgi
+  const robot = policeRobotAdi(tur, req.body && req.body.robot);
   const kim = (req.body && req.body.kullanici) || '';
+  const dosya = req.body && req.body.dosya;              // { ad, tur, boyut, veri(base64) }
   // "Yine de gonder" — kullanici mukerrer korumasini BILEREK atliyor.
   // Panel hem 'zorla' hem 'force' gonderebiliyor; ikisini de kabul ediyoruz.
   const zorla = !!(req.body && (req.body.zorla || req.body.force));
@@ -8469,10 +8494,50 @@ app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
       if (!yonetici) throw new Error('Grup sadece yoneticilere yazma izni veriyor');
     }
 
-    // ── GONDER: 45 saniyede yanit gelmezse iptal (askida kalmasin) ──
+    // ── ICERIK: dosya varsa BELGE (PDF), yoksa duz metin ──
+    // Dosya geldiginde mesaj metni belgenin ACIKLAMASI (caption) olur;
+    // WhatsApp'ta tek mesaj olarak, PDF'in altinda gorunur.
+    let icerik = { text };
+    let kind = 'text';
+    let dosyaBuf = null, dosyaAd = '', dosyaMime = '', webPath = '';
+    if (dosya && dosya.veri) {
+      try {
+        dosyaBuf = Buffer.from(String(dosya.veri), 'base64');
+      } catch (_) { throw new Error('Dosya okunamadi (base64 bozuk)'); }
+      if (!dosyaBuf || !dosyaBuf.length) throw new Error('Dosya bos geldi');
+      if (dosyaBuf.length > 16 * 1024 * 1024) throw new Error('Dosya cok buyuk (en fazla 16 MB)');
+      dosyaAd = (dosya.ad || 'belge.pdf').replace(/[\\/:*?"<>|]/g, '_');
+      if (!dosyaAd.includes('.')) dosyaAd += '.pdf';
+      dosyaMime = dosya.tur || 'application/pdf';
+      kind = 'document';
+      icerik = { document: dosyaBuf, mimetype: dosyaMime, fileName: dosyaAd, caption: text };
+      // Diske kaydet ki CRM panelinde de gorunup indirilebilsin
+      // (panelden yuklenen dosyalarla ayni yol).
+      try {
+        // DISKE YAZILAN UZANTI: sadece bilinen belge/gorsel turleri.
+        // MEDIA_DIR web'den servis ediliyor; .html/.js gibi bir uzantiyla
+        // dosya birakilabilmesi istenmez. WhatsApp'a giden dosya adi bundan
+        // etkilenmez (o ayri alanda, oldugu gibi gidiyor).
+        const GUVENLI_UZANTI = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'xlsx', 'xls', 'docx', 'doc', 'csv', 'txt', 'zip'];
+        const hamExt = (dosyaAd.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const ext = GUVENLI_UZANTI.includes(hamExt) ? hamExt : 'bin';
+        const savedName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        fs.writeFileSync(path.join(MEDIA_DIR, savedName), dosyaBuf);
+        webPath = '/media/' + savedName;
+      } catch (yazHatasi) {
+        console.error('[POLICE] dosya diske yazilamadi:', yazHatasi.message);
+      }
+      console.log(`[POLICE] belge hazir: ${dosyaAd} (${(dosyaBuf.length / 1048576).toFixed(2)} MB)`);
+    }
+
+    // ── GONDER ──
+    // Belge gonderimi WhatsApp'a YUKLEME gerektirir; duz metinden cok daha uzun
+    // surer. Bu yuzden dosyada 90 saniye, metinde 45 saniye taniyoruz.
+    const sure = dosyaBuf ? 90000 : 45000;
     const gonderilen = await Promise.race([
-      sock.sendMessage(jid, { text }),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('WhatsApp 45 saniyede yanit vermedi')), 45000)),
+      sock.sendMessage(jid, icerik),
+      new Promise((_, rej) => setTimeout(() => rej(new Error(
+        dosyaBuf ? 'Dosya 90 saniyede yuklenemedi (cok buyuk olabilir)' : 'WhatsApp 45 saniyede yanit vermedi')), sure)),
     ]);
 
     if (!gonderilen || !gonderilen.key || !gonderilen.key.id) {
@@ -8489,12 +8554,14 @@ app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
     // ── CRM sohbet gecmisine yaz ("Yenileme Robotu") ──
     // Bu adim patlasa bile mesaj GITTI; panele basarili donuyoruz.
     try {
-      await policeCrmKaydet({ jid, text, robot, msgId: gonderilen.key.id, test, ref, kim });
+      await policeCrmKaydet({ jid, text, robot, msgId: gonderilen.key.id, test, ref, kim, tur,
+        kind, fileName: dosyaAd, mime: dosyaMime, mediaUrl: webPath });
     } catch (kayitHatasi) {
       console.error('[POLICE] CRM kaydi yazilamadi:', kayitHatasi.message);
     }
 
-    console.log(`[POLICE]${test ? ' TEST' : ''} ${robot} → ${grupAdi} (${ref}) id=${gonderilen.key.id}`);
+    console.log(`[POLICE]${test ? ' TEST' : ''}${tur ? ' [' + tur + ']' : ''} ${robot} → ${grupAdi}` +
+      `${dosyaAd ? ' 📎' + dosyaAd : ''} (${ref}) id=${gonderilen.key.id}`);
     policeHizlan();
     const sonraki = policeSonrakiBekleme();
     return res.json({ ok: true, id: gonderilen.key.id, group: grupAdi, robot, at: Date.now(),
