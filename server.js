@@ -307,6 +307,7 @@ async function kuyrukluGonder(lineId, gonderFn, medyaMi = false, _deneme = 0) {
     await new Promise((r) => d.bekleyen.push(r));
   }
   d.aktif++;
+  _sonGidenMesaj = Date.now();   // giden mesaj var -> arka plan kisa sure beklesin
   let birakildi = false;
   const kanalBirak = () => {
     if (birakildi) return;
@@ -362,6 +363,7 @@ const ARKA_MAX_BEKLEME = 25000;    // bu kadar bekledi de sira gelmediyse isi AT
 let _arkaAktif = 0;
 let _arkaSonSorgu = 0;
 let _arkaOncelikliBekleyen = 0;    // kac ONCELIKLI is sirada bekliyor
+let _sonGidenMesaj = 0;            // en son ne zaman MESAJ GONDERDIK (gelen sayilmaz)
 
 // ═══ IKI SERITLI ARKA PLAN ═══════════════════════════════════════════
 // 1. serit (ONCELIKLI): grup ADI ve ACIKLAMASI — kullanici bunlari aninda
@@ -378,7 +380,13 @@ function mesajIsiVarMi() {
     if (d.aktif > 0) return true;            // su an gonderim suruyor
     if (d.bekleyen && d.bekleyen.length) return true; // sirada mesaj var
   }
-  return mesajTrafigiVar();                  // son 10sn icinde mesaj gelip gitti
+  // ═══ DUZELTME (2026-08): SADECE GIDEN mesaja bak ═══════════════════
+  // ESKIDEN mesajTrafigiVar() kullaniliyordu; o GELEN mesajlari da sayiyor.
+  // 4000+ gruplu bir ofiste gelen mesaj HIC KESILMEZ -> bu kontrol her zaman
+  // "mesaj var" diyordu -> arka plan isleri (grup adi/aciklamasi) HIC
+  // calisamiyordu ve sonsuza kadar bekliyordu.
+  // GELEN mesaj bizim GONDERIM butcemizi harcamaz; sadece giden onemli.
+  return (Date.now() - _sonGidenMesaj) < 3000;
 }
 
 // ARKA PLAN SORGUSU ICIN IZIN AL.
@@ -5217,8 +5225,11 @@ async function metaQueueRun() {
     // aynı bağlantıda yarışıyordu -> WhatsApp "rate-overlimit" deyip MESAJLARI reddediyordu.
     // Çözüm: ekip mesaj atarken grup bilgisi çekmeyi duraklat. Mesaj her zaman önceliklidir;
     // grup ismi/üye listesi birkaç saniye geç gelse hiçbir şey olmaz.
+    // NOT: mesajTrafigiVar() GELEN mesajlari da sayiyor; 4000+ gruplu ofiste
+    // hic kesilmedigi icin bu dongu her turda 60sn bekliyordu. Artik giden
+    // mesaja bakiyoruz (mesajIsiVarMi) ve tavan 10sn.
     let mesajBeklemesi = 0;
-    while (mesajTrafigiVar() && mesajBeklemesi < 60) { // en fazla 60sn bekle (sonsuz döngü olmasın)
+    while (mesajIsiVarMi() && mesajBeklemesi < 10) {
       await new Promise(r => setTimeout(r, 1000));
       mesajBeklemesi++;
     }
@@ -5237,9 +5248,17 @@ async function metaQueueRun() {
         // ayri gruplarda dogru hat calisir); verilmediyse ofis (waSock).
         const s = sock || waSock;
         // MESAJ ONCELIGI: mesaj isi varsa burasi BEKLER, sorgu atmaz.
+        // ═══ KRITIK DUZELTME (2026-08) ══════════════════════════════
+        // ESKIDEN: izin cikmazsa is kuyruga GERI KONUYOR ve resolve HIC
+        // CAGRILMIYORDU. Yogun ofiste izin hicbir zaman cikmadigi icin
+        // bekleyen soz (promise) SONSUZA KADAR askida kaliyordu.
+        // getGroupMeta'yi bekleyen HER YER kilitleniyordu — police gonderim
+        // ucunun 120 saniye yanit vermemesinin sebebi buydu.
+        // ARTIK: izin cikmazsa BOS cevap doneriz. Cagiran taraf bunu
+        // "simdilik bilinmiyor" diye ele alir; is daha sonra zaten
+        // tekrar denenir (grup adi tazeleme / aciklama motoru).
         if (!(await arkaPlanIzin('grup bilgisi', true))) {
-          // Mesaj trafigi yogun -> bu grup sorgusunu ERTELE (kaybetme, kuyruga geri koy)
-          metaQueue.push({ jid, resolve, sock });
+          resolve(null);
           return;
         }
         try { result = await s.groupMetadata(jid); }
@@ -5639,7 +5658,20 @@ async function getGroupMeta(jid, maxYas = 30 * 60 * 1000, sock = null) {
   }
   // kuyruga koy, sonucu bekle. sock verildiyse O HATTIN soketiyle sorgulanir
   // (pazarlama gruplari icin kritik: ofis o gruba uye degilse ofis soketi goremez).
-  return new Promise((resolve) => metaQueuePush(jid, resolve, sock));
+  //
+  // EMNIYET AGI: bu cagri HICBIR SEKILDE sonsuza kadar askida kalmamali.
+  // Kuyrukta bir aksilik olursa 20 saniye sonra bos cevap doner. Boylece
+  // bu fonksiyonu bekleyen hicbir yer (police gonderimi, grup adi tazeleme,
+  // sohbet acma) kilitlenemez. Bayat da olsa onbellek varsa onu dondururuz.
+  return new Promise((resolve) => {
+    let bitti = false;
+    const bir = (v) => { if (bitti) return; bitti = true; clearTimeout(zaman); resolve(v); };
+    const zaman = setTimeout(() => {
+      const eski = groupMetaCache.get(jid);
+      bir(eski && eski.meta ? eski.meta : null);   // bayat onbellek > hic cevap yok
+    }, 20000);
+    metaQueuePush(jid, bir, sock);
+  });
 }
 
 // ============================================================
@@ -8158,7 +8190,6 @@ const POLICE_TEKRAR_SURESI = 24 * 60 * 60 * 1000;  // ayni gruba 24 saat icinde 
 
 let policeGrupCache = { zaman: null, liste: [] };
 const _policeGonderilen = new Map();   // "jid|ref" -> zaman  (tekrar korumasi)
-let _policeGonderimSuruyor = false;    // ayni anda tek gonderim
 
 // --- 1) Anahtar kontrolu ------------------------------------------------
 function policeYetki(req, res) {
@@ -8218,7 +8249,7 @@ app.post('/api/police/wa/durum', express.json(), (req, res) => {
     robot: POLICE_ROBOT_ADI,
     gruplar: policeGrupCache.liste.length,
     gruplarZaman: policeGrupCache.zaman,
-    sonMesaj: l && l.saglik ? l.saglik.sonBasariliGonderim : 0,
+    sonMesaj: policeSonMesajZaman,   // gercek deger: en son ne zaman police mesaji gitti
   });
 });
 
@@ -8277,6 +8308,24 @@ async function policeCrmKaydet({ jid, text, robot, msgId, test, ref, kim }) {
 }
 
 // --- 7) Mesaj gonder -----------------------------------------------------
+// --- 7) Mesaj gonder -----------------------------------------------------
+// SADELESTIRILDI (2026-08): bu uc ARTIK hicbir paylasilan kuyrugu BEKLEMEZ.
+// Panel mesajlari zaten teker teker ve araliklarla gonderiyor, ikinci bir
+// kuyruga gerek yok — sadece kilitlenme riski yaratiyordu.
+// AMA hiz siniri korumasi KORUNDU: sinir varken gondermez, sinir yerse
+// sogumayi baslatir. Boylece ana hat yine korunuyor.
+//
+// GARANTI: her istek EN GEC ~50 saniyede yanit doner. Kilit try/finally
+// icinde ve ayrica emniyet zamanlayicisi var; kalici kilitlenme imkansiz.
+let policeMesgul = false;
+let policeMesgulSayaci = null;
+let policeSonMesajZaman = 0;
+
+function policeKilidiAc() {
+  policeMesgul = false;
+  if (policeMesgulSayaci) { clearTimeout(policeMesgulSayaci); policeMesgulSayaci = null; }
+}
+
 app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
   policeCors(res);
   if (!policeYetki(req, res)) return;
@@ -8292,16 +8341,12 @@ app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
   if (!policeBagliMi()) return res.status(409).json({ ok: false, error: 'WhatsApp baglantisi kopuk' });
 
   // ── HIZ SINIRI: WhatsApp yavasla dediyse panel BEKLESIN ──
-  // Bu, bugun yasanan tikanmanin tekrarini onler. Panel 429 gorunce
-  // gonderimi duraklatir; deneme hakki YAKMAZ (bu bir hata degil, bekleme).
   if (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) {
     return res.status(429).json({ ok: false, bekle: 60, yavaslama: true,
       error: 'WhatsApp gecici olarak yavaslatti — gonderim duraklatildi, birazdan devam edilecek' });
   }
 
-  // ── TEKRAR KORUMASI (sunucu tarafi) ──
-  // Panelin kendi korumasi tarayicida; sayfa yenilenince ya da baska
-  // bilgisayardan girilince unutulur. Bu kontrol sunucuda kalicidir.
+  // ── TEKRAR KORUMASI (sunucu tarafi, 24 saat) ──
   const anahtar = jid + '|' + (ref || text.slice(0, 40));
   if (!test) {
     const oncekiZaman = _policeGonderilen.get(anahtar);
@@ -8314,65 +8359,78 @@ app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
   }
 
   // ── AYNI ANDA TEK GONDERIM ──
-  if (_policeGonderimSuruyor) {
+  if (policeMesgul) {
     return res.status(429).json({ ok: false, bekle: 5,
       error: 'Onceki gonderim henuz bitmedi — birazdan tekrar deneyin' });
   }
-  _policeGonderimSuruyor = true;
+  policeMesgul = true;
+  // EMNIYET: her ihtimale karsi 90 saniye sonra kilit kendiliginden acilir
+  policeMesgulSayaci = setTimeout(() => {
+    console.error('[POLICE] UYARI: kilit 90 sn acik kaldi, zorla acildi');
+    policeMesgul = false;
+  }, 90000);
 
   try {
     const sock = policeSock();
 
-    // ── Grup var mi ve yazma iznimiz var mi? ──
-    // getGroupMeta ONBELLEKLI ve CRM'in oncelik kuyrugundan gecer.
-    // (Ham surum her mesajda ayri bir groupMetadata sorgusu atiyordu.)
-    const meta = await getGroupMeta(jid, 30 * 60 * 1000, sock).catch(() => null);
-    if (!meta) throw new Error('Grup bulunamadi (silinmis ya da cikilmis olabilir)');
-    if (meta.announce) {
+    // ── Grup kontrolu: SADECE ONBELLEKTEN, BEKLEMEDEN ──
+    // Onemli: burada kuyruga girip beklemiyoruz. Onbellekte yoksa kontrolu
+    // atlayip gonderiyoruz; grup yoksa ya da yazma izni yoksa WhatsApp
+    // zaten hata doner ve o hatayi panele iletiriz.
+    const onb = groupMetaCache.get(jid);
+    const meta = (onb && onb.meta) ? onb.meta : null;
+    let grupAdi = meta && meta.subject ? meta.subject : '';
+    if (!grupAdi) {
+      const c = hatChats(POLICE_HAT).get(jid);
+      grupAdi = (c && c.name) || jid.split('@')[0];
+    }
+    if (meta && meta.announce) {
       const benimId = ((sock.user && sock.user.id) || '').split(':')[0] + '@s.whatsapp.net';
       const yonetici = (meta.participants || []).some(p => p.id === benimId && !!p.admin);
       if (!yonetici) throw new Error('Grup sadece yoneticilere yazma izni veriyor');
     }
 
-    // ── GONDERIM: CRM'in KUYRUGUNDAN ──
-    // Hiz siniri korumasi, sirali gonderim ve otomatik yeniden deneme
-    // burada devrede. Ham surum bunlari atliyordu.
-    const gonderilen = await kuyrukluGonder(POLICE_HAT, () => Promise.race([
+    // ── GONDER: 45 saniyede yanit gelmezse iptal (askida kalmasin) ──
+    const gonderilen = await Promise.race([
       sock.sendMessage(jid, { text }),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('gonderim zaman asimi')), 25000)),
-    ]));
+      new Promise((_, rej) => setTimeout(() => rej(new Error('WhatsApp 45 saniyede yanit vermedi')), 45000)),
+    ]);
 
     if (!gonderilen || !gonderilen.key || !gonderilen.key.id) {
       throw new Error('WhatsApp mesaj kimligi dondurmedi');
     }
 
+    policeSonMesajZaman = Date.now();
     if (!test) _policeGonderilen.set(anahtar, Date.now());
     if (_policeGonderilen.size > 5000) {
       const esik = Date.now() - POLICE_TEKRAR_SURESI;
       for (const [k, t] of _policeGonderilen) if (t < esik) _policeGonderilen.delete(k);
     }
 
-    // ── CRM sohbet gecmisine yaz ──
-    // Bu blok patlasa bile mesaj GITTI; panele basarili donuyoruz.
+    // ── CRM sohbet gecmisine yaz ("Yenileme Robotu") ──
+    // Bu adim patlasa bile mesaj GITTI; panele basarili donuyoruz.
     try {
       await policeCrmKaydet({ jid, text, robot, msgId: gonderilen.key.id, test, ref, kim });
     } catch (kayitHatasi) {
       console.error('[POLICE] CRM kaydi yazilamadi:', kayitHatasi.message);
     }
 
-    console.log(`[POLICE]${test ? ' TEST' : ''} ${robot} → ${meta.subject} (${ref}) id=${gonderilen.key.id}`);
-    res.json({ ok: true, id: gonderilen.key.id, group: meta.subject, robot, at: Date.now() });
+    console.log(`[POLICE]${test ? ' TEST' : ''} ${robot} → ${grupAdi} (${ref}) id=${gonderilen.key.id}`);
+    return res.json({ ok: true, id: gonderilen.key.id, group: grupAdi, robot, at: Date.now() });
   } catch (e) {
-    const rateMi = /rate-overlimit|429/i.test(e.message || '');
+    const m = (e && e.message ? e.message : '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
+    const rateMi = /rate.?overlimit|429|too many|rate.?limit/i.test(m);
     console.error(`[POLICE] gonderim hatasi (${ref}):`, e.message);
-    // Hiz siniri bir HATA degil, bekleme sebebidir -> panel deneme hakki yakmasin
     if (rateMi) {
-      return res.status(429).json({ ok: false, bekle: 90, yavaslama: true,
+      // Ana hatti korumak icin CRM'in sogumasini da baslat — bu uc kuyrugu
+      // atladigi icin sogumayi ELLE tetiklememiz gerekiyor.
+      try { if (typeof _rateSinirinaTakildi === 'function') _rateSinirinaTakildi(POLICE_HAT, _gd(POLICE_HAT), true); } catch (_) {}
+      return res.status(429).json({ ok: false, yavaslama: true, bekle: 60,
         error: 'WhatsApp yavaslatti — gonderim duraklatildi' });
     }
-    res.status(500).json({ ok: false, error: e.message });
+    return res.status(500).json({ ok: false, error: e.message });
   } finally {
-    _policeGonderimSuruyor = false;
+    policeKilidiAc();   // HER DURUMDA kilidi ac
   }
 });
 
