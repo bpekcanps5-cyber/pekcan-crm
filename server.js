@@ -8250,6 +8250,9 @@ app.post('/api/police/wa/durum', express.json(), (req, res) => {
     gruplar: policeGrupCache.liste.length,
     gruplarZaman: policeGrupCache.zaman,
     sonMesaj: policeSonMesajZaman,   // gercek deger: en son ne zaman police mesaji gitti
+    sonraki: policeSonrakiBekleme(), // onerilen bekleme (ms) — panel bunu kullansin
+    saatlik: policeButceDoldu(),     // son 1 saatte gonderilen police mesaji
+    saatlikButce: POLICE_SAAT_BUTCE,
   });
 });
 
@@ -8321,6 +8324,65 @@ let policeMesgul = false;
 let policeMesgulSayaci = null;
 let policeSonMesajZaman = 0;
 
+// ═══ UYARLANIR HIZ (2026-08) ═══════════════════════════════════════════
+// ESKIDEN: panel her mesaj arasinda SABIT 6-11 saniye bekliyor, her 25
+// mesajda 1 dakika mola veriyordu. Bu, WhatsApp sakinken bile gereksiz
+// yavaslikti (100 mesaj ~18 dakika suruyordu).
+//
+// ARTIK: sunucu her basarili gonderimden sonra "sonraki mesaja su kadar
+// bekle" diye SAYI doner (yanittaki 'sonraki' alani, milisaniye).
+//   • Her sey yolundaysa hiz KADEMELI artar (2.5sn -> 1.2sn'e kadar)
+//   • WhatsApp bir kez bile "yavasla" derse hemen 20sn'ye cikar,
+//     sonra yine kademeli hizlanir
+//   • Saatlik butce asilirsa kendiliginden yavaslar (ani patlama olmaz)
+// Panel bu sayiyi kullanirsa hem hizli hem guvenli olur.
+// NOT: bu sayilar bilerek "hizli ama olculu" secildi.
+// 2 saniyenin altina inmek dakikada 30+ mesaj demek; bu, WhatsApp'in
+// otomatik gonderim olarak gorup HESABI KISITLAMA riskini ciddi sekilde
+// artirir. Burasi ofisin ANA hatti — kisitlanirsa 48 kisi etkilenir.
+// 2 saniye, eski 6-11 saniyeye gore zaten 4 kat hizli.
+const POLICE_HIZ_MIN = 2000;        // en hizli (ms) — daha asagi INMEYIN
+const POLICE_HIZ_TABAN = 3500;      // baslangic (ilk mesajlar temkinli)
+const POLICE_HIZ_TAVAN = 20000;     // sorun cikarsa
+const POLICE_SAAT_BUTCE = 120;      // saatte bu kadar mesajdan sonra kendiliginden yavasla
+let policeHiz = POLICE_HIZ_TABAN;
+const _policeSonGonderimler = [];   // son 1 saatin zaman damgalari
+
+function policeButceDoldu() {
+  const esik = Date.now() - 3600000;
+  while (_policeSonGonderimler.length && _policeSonGonderimler[0] < esik) _policeSonGonderimler.shift();
+  return _policeSonGonderimler.length;
+}
+
+// Basarili gonderimden sonra: biraz daha hizlan
+function policeHizlan() {
+  policeHiz = Math.max(POLICE_HIZ_MIN, Math.round(policeHiz * 0.92));  // kademeli hizlanma
+  _policeSonGonderimler.push(Date.now());
+}
+// Sorun cikinca: hemen yavasla
+function policeYavasla() { policeHiz = POLICE_HIZ_TAVAN; }
+
+// Panele onerilecek bekleme (ms). Saatlik butce asildikca uzar.
+function policeSonrakiBekleme() {
+  const saatlik = policeButceDoldu();
+  let ms = policeHiz;
+  if (saatlik > POLICE_SAAT_BUTCE) {
+    // butce asildi -> her 25 fazla mesaj icin bir kat yavasla (ust sinir 20sn)
+    const kat = 1 + (saatlik - POLICE_SAAT_BUTCE) / 25;
+    ms = Math.min(POLICE_HIZ_TAVAN, Math.round(ms * kat));
+  }
+  return ms;
+}
+
+// Hiz sinirinin bitmesine kac saniye kaldi? (sabit 60 yerine GERCEK sure)
+function policeKalanSoguma() {
+  try {
+    const d = _gd(POLICE_HAT);
+    const kalan = Math.ceil((d.kisitliBitis - Date.now()) / 1000);
+    return kalan > 0 ? Math.min(kalan, 900) : 5;
+  } catch (_) { return 30; }
+}
+
 function policeKilidiAc() {
   policeMesgul = false;
   if (policeMesgulSayaci) { clearTimeout(policeMesgulSayaci); policeMesgulSayaci = null; }
@@ -8342,12 +8404,19 @@ app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
 
   // ── HIZ SINIRI: WhatsApp yavasla dediyse panel BEKLESIN ──
   if (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) {
-    return res.status(429).json({ ok: false, bekle: 60, yavaslama: true,
-      error: 'WhatsApp gecici olarak yavaslatti — gonderim duraklatildi, birazdan devam edilecek' });
+    const kalan = policeKalanSoguma();
+    return res.status(429).json({ ok: false, bekle: kalan, yavaslama: true,
+      error: `WhatsApp gecici olarak yavaslatti — ${kalan} saniye sonra devam edilecek` });
   }
 
   // ── TEKRAR KORUMASI (sunucu tarafi, 24 saat) ──
-  const anahtar = jid + '|' + (ref || text.slice(0, 40));
+  // TEKRAR ANAHTARI: grup + POLICE. Ayni gruba FARKLI policeler icin
+  // birden fazla mesaj GONDERILEBILIR (bir galeride birden cok arac olur).
+  // Engellenen tek sey: AYNI police icin 24 saat icinde ikinci mesaj.
+  // ref yoksa metnin tamamindan kisa bir imza uretiriz (ilk 40 karakter
+  // yetmiyordu: ayni sablonla farkli araclar ayni gorunebiliyordu).
+  const _imza = ref || ('t' + text.length + '_' + Array.from(text).reduce((a, c) => ((a * 31 + c.charCodeAt(0)) | 0), 7).toString(36));
+  const anahtar = jid + '|' + _imza;
   if (!test) {
     const oncekiZaman = _policeGonderilen.get(anahtar);
     if (oncekiZaman && (Date.now() - oncekiZaman) < POLICE_TEKRAR_SURESI) {
@@ -8416,7 +8485,11 @@ app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
     }
 
     console.log(`[POLICE]${test ? ' TEST' : ''} ${robot} → ${grupAdi} (${ref}) id=${gonderilen.key.id}`);
-    return res.json({ ok: true, id: gonderilen.key.id, group: grupAdi, robot, at: Date.now() });
+    policeHizlan();
+    const sonraki = policeSonrakiBekleme();
+    return res.json({ ok: true, id: gonderilen.key.id, group: grupAdi, robot, at: Date.now(),
+      sonraki,                       // panel bir sonraki mesaji bu kadar ms sonra gondersin
+      saatlik: policeButceDoldu() }); // son 1 saatte kac mesaj gitti
   } catch (e) {
     const m = (e && e.message ? e.message : '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
     const rateMi = /rate.?overlimit|429|too many|rate.?limit/i.test(m);
@@ -8425,8 +8498,10 @@ app.post('/api/police/wa/gonder', express.json(), async (req, res) => {
       // Ana hatti korumak icin CRM'in sogumasini da baslat — bu uc kuyrugu
       // atladigi icin sogumayi ELLE tetiklememiz gerekiyor.
       try { if (typeof _rateSinirinaTakildi === 'function') _rateSinirinaTakildi(POLICE_HAT, _gd(POLICE_HAT), true); } catch (_) {}
-      return res.status(429).json({ ok: false, yavaslama: true, bekle: 60,
-        error: 'WhatsApp yavaslatti — gonderim duraklatildi' });
+      policeYavasla();
+      const kalan = policeKalanSoguma();
+      return res.status(429).json({ ok: false, yavaslama: true, bekle: kalan, sonraki: POLICE_HIZ_TAVAN,
+        error: `WhatsApp yavaslatti — ${kalan} saniye sonra devam edilecek` });
     }
     return res.status(500).json({ ok: false, error: e.message });
   } finally {
