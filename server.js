@@ -283,6 +283,17 @@ function hizSinirindaMi() {
 // Hiz sinirine takildik -> sogumayi baslat/uzat
 function _rateSinirinaTakildi(lineId, d, ilkDenemeMi) {
   const n = Date.now();
+
+  // ═══ CEZA PATLAMASI KORUMASI (2026-08) ═══════════════════════════════
+  // ZATEN soguma devredeyken gelen basarisizliklar BEKLENEN seylerdir
+  // (yolda olan mesajlar). Bunlari yeni ihlal sayip cezayi buyutmek,
+  // sistemin kendi kendini 15 dakika kilitlemesine yol aciyordu.
+  // Zaten soguyorsak sadece sureyi KORU, ARTIRMA.
+  if (n < d.kisitliBitis) {
+    d.sonRate = n;
+    return d.kisitliBitis - n;
+  }
+
   // son 5 dakika icinde tekrar takildiysa ceza artar; degilse sayac sifirlanir
   if (n - d.sonRate > 5 * 60 * 1000) d.ustUste = 0;
   d.sonRate = n;
@@ -299,8 +310,38 @@ function _rateSinirinaTakildi(lineId, d, ilkDenemeMi) {
   }
   return sure;
 }
+// Soguma bitene kadar en fazla bu kadar bekleriz; sonra hata doneriz.
+const SOGUMA_BEKLE_TAVAN = 120 * 1000;
+
 async function kuyrukluGonder(lineId, gonderFn, medyaMi = false, _deneme = 0) {
   const d = _gd(lineId);
+
+  // ═══ KRITIK DUZELTME (2026-08) ═══════════════════════════════════════
+  // ESKIDEN: hiz siniri (soguma) devredeyken de mesaj GONDERILMEYE
+  // CALISILIYORDU; sadece es zamanlilik 1'e dusuruluyordu. Her deneme
+  // WhatsApp'tan yeni bir "rate-overlimit" yiyordu ve her yeni mesaj
+  // cezayi BUYUTUYORDU: 30sn -> 2dk -> 5dk -> 15dk. Sonuc: sistem kendi
+  // kendini kilitliyor, hicbir mesaj gitmiyordu.
+  //
+  // ARTIK: soguma devredeyse GONDERMEYI DENEMEYIZ — sogumanin bitmesini
+  // BEKLERIZ. Beklemek yeni ihlal uretmez, ceza buyumez ve soguma bitince
+  // mesaj normal sekilde gider.
+  if (Date.now() < d.kisitliBitis) {
+    const kalan = d.kisitliBitis - Date.now();
+    if (kalan > SOGUMA_BEKLE_TAVAN) {
+      // Cok uzun soguma: mesaji denemeden birakiyoruz. DENEMEK cezayi
+      // buyutur; birakmak buyutmez. Panel kirmizi gosterir, elle tekrar
+      // denenebilir.
+      const e2 = new Error(`WhatsApp gecici olarak yavaslatti — ${Math.ceil(kalan / 1000)} saniye sonra tekrar deneyin`);
+      e2._sogumaBekliyor = true;
+      throw e2;
+    }
+    if (_deneme === 0) {
+      console.log(`⏳ Soguma devrede [${lineId}] — ${Math.ceil(kalan / 1000)} saniye beklenip gonderilecek (denenmiyor, ceza buyumesin)`);
+    }
+    await new Promise((r) => setTimeout(r, kalan + 250));
+  }
+
   const limit = (Date.now() < d.kisitliBitis) ? ESZAMANLI_KISITLI : ESZAMANLI_KANAL;
   // kanal doluysa SIRADA bekle (sabit gecikme yok — biri biter bitmez uyanır)
   if (d.aktif >= limit) {
@@ -325,6 +366,7 @@ async function kuyrukluGonder(lineId, gonderFn, medyaMi = false, _deneme = 0) {
     const m = (e && e.message ? e.message : '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
     const rateMi = /rate.?overlimit|429|too many|rate.?limit/i.test(m);
     kanalBirak(); // her durumda kanalı bırak
+    if (e && e._sogumaBekliyor) throw e;   // soguma cok uzun: denenmedi, tekrar da denenmeyecek
     if (rateMi) {
       _rateSinirinaTakildi(lineId, d, _deneme === 0);
       // ═══ YENIDEN DENEME — AMA SABIRLI ═══
@@ -4553,8 +4595,12 @@ wss.on('connection', (ws) => {
         const isaretli = !!msg.isaretli;
         if (!cjid || !msgId) return;
         // bellekteki mesaja işaretle
-        const chat = (ws._lineId === 'ofis' || !ws._lineId) ? CC.get(cjid) : null;
-        const hedefChat = chat || CC.get(cjid);
+        // DUZELTME (2026-08): burada 'CC' diye bir degisken TANIMLI DEGILDI.
+        // Foto isaretleme her denendiginde "CC is not defined" hatasi olusup
+        // islem sessizce basarisiz oluyordu (isaret kalici olmuyordu).
+        // Dogrusu: hattin kendi sohbet listesini almak.
+        const CC = hatChats(ws._lineId || 'ofis');
+        const hedefChat = CC.get(cjid);
         let hedefMsg = null;
         if (hedefChat && hedefChat.messages) {
           hedefMsg = hedefChat.messages.find(x => x.id === msgId);
