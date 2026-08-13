@@ -6251,6 +6251,13 @@ async function fetchAllGroups() {
     }
   } catch (e) {
     console.error('Gruplar cekilemedi:', e.message);
+    // rate-overlimit ise: bu cagri hesap icin fazla agir demektir.
+    // Araligi ikiye katla ve GENEL sogumayi da baslat ki diger arka plan
+    // isleri de nefes alsin.
+    if (/rate.?overlimit|429|too many/i.test(e.message || '')) {
+      try { if (global._grupTazelemeYavasla) global._grupTazelemeYavasla(); } catch (_) {}
+      try { _rateSinirinaTakildi('ofis', _gd('ofis'), true); } catch (_) {}
+    }
   }
 }
 
@@ -7368,15 +7375,47 @@ async function _startWAIc(lineId = 'ofis') {
       // Boylece sonradan ID'de kalan/yeni gruplarin adlari otomatik duzelir.
       // (fetchAllGroups zaten kendi icinde sadece ofis icin calisir.)
       if (lineId === 'ofis' && !global._grupTazelemeTimer) {
-        // ═══ TOPLU TAZELEME: 10 dk -> 2 dk ═══════════════════════════
-        // Bu cagri TEK SORGUDA butun gruplarin ADINI ve ACIKLAMASINI getirir
-        // (1500 grup icin 1500 degil, 1 sorgu). Yani sik calismasi ucuz.
-        // Grup adi/aciklamasi degisiklikleri artik en gec 2 dakikada panele
-        // duser; cogu zaman zaten 'groups.update' ile ANINDA duser.
-        global._grupTazelemeTimer = setInterval(() => {
-          const ol = lines.get('ofis');
-          if (ol && ol.connected) fetchAllGroups();
-        }, 2 * 60 * 1000); // 2 dakika — TEK sorgu, ucuz
+        // ═══ TOPLU TAZELEME — KENDINI AYARLAYAN ARALIK (2026-08) ═════
+        // ONCEKI HATA: "grup adlari da hizli guncellensin" diye bu cagri
+        // 2 dakikaya cekilmisti. Kucuk hesaplarda sorunsuz, AMA 4000+
+        // gruplu bir hesapta groupFetchAllParticipating COK AGIR bir
+        // sorgu — WhatsApp bunu 2 dakikada bir kaldirmiyor ve
+        // "rate-overlimit" veriyordu ("Gruplar cekilemedi" satirlari).
+        //
+        // ARTIK: aralik kendini ayarliyor.
+        //   • Basarili gecerse kademeli hizlanir (en hizli 4 dakika)
+        //   • rate-overlimit yerse aralik IKIYE KATLANIR (en yavas 45 dk)
+        // Zaten grup adi/aciklamasi degisiklikleri 'groups.update' ile
+        // ANINDA geliyor; bu toplu cagri sadece kacanlari toplayan yedek yol.
+        const GRUP_TAZELEME_MIN = 4 * 60 * 1000;
+        const GRUP_TAZELEME_MAX = 45 * 60 * 1000;
+        global._grupTazelemeAralik = 5 * 60 * 1000;
+        const grupTazelemePlanla = () => {
+          clearTimeout(global._grupTazelemeTimer);
+          global._grupTazelemeTimer = setTimeout(async () => {
+            try {
+              const ol = lines.get('ofis');
+              if (ol && ol.connected) {
+                const oncekiHata = global._grupTazelemeHata || 0;
+                await fetchAllGroups();
+                if ((global._grupTazelemeHata || 0) === oncekiHata) {
+                  // basarili -> kademeli hizlan
+                  global._grupTazelemeAralik = Math.max(GRUP_TAZELEME_MIN,
+                    Math.round(global._grupTazelemeAralik * 0.8));
+                }
+              }
+            } catch (_) {}
+            grupTazelemePlanla();
+          }, global._grupTazelemeAralik);
+        };
+        grupTazelemePlanla();
+        global._grupTazelemeYavasla = () => {
+          const eski = global._grupTazelemeAralik;
+          global._grupTazelemeAralik = Math.min(GRUP_TAZELEME_MAX, eski * 2);
+          global._grupTazelemeHata = (global._grupTazelemeHata || 0) + 1;
+          console.log(`   🐢 Grup tazeleme yavaslatildi: ${Math.round(eski / 60000)} dk -> ${Math.round(global._grupTazelemeAralik / 60000)} dk (WhatsApp yormasin)`);
+          grupTazelemePlanla();
+        };
       }
       // CANLILIK: Artık merkezi "kalp atışı" sistemi TÜM hatları (ofis+pazarlama) denetliyor
       // (yukarıda tanımlı global._kalpAtisiTimer). Eski ofis-only kontrol kaldırıldı — çakışma olmasın.
