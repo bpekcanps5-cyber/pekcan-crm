@@ -269,7 +269,7 @@ const _gonderimDurum = new Map(); // lineId -> { aktif, bekleyen, kisitliBitis, 
 
 function _gd(lineId) {
   let d = _gonderimDurum.get(lineId);
-  if (!d) { d = { aktif: 0, bekleyen: [], kisitliBitis: 0, ustUste: 0, sonRate: 0 }; _gonderimDurum.set(lineId, d); }
+  if (!d) { d = { aktif: 0, bekleyen: [], kisitliBitis: 0, mesajKisitBitis: 0, ustUste: 0, sonRate: 0 }; _gonderimDurum.set(lineId, d); }
   return d;
 }
 
@@ -281,8 +281,28 @@ function hizSinirindaMi() {
 }
 
 // Hiz sinirine takildik -> sogumayi baslat/uzat
-function _rateSinirinaTakildi(lineId, d, ilkDenemeMi) {
+// mesajMi=true  -> gercek bir MESAJ gonderimi sinira takildi
+// mesajMi=false -> ARKA PLAN isi (grup cekme, kalp atisi) takildi
+function _rateSinirinaTakildi(lineId, d, ilkDenemeMi, mesajMi) {
   const n = Date.now();
+
+  // ═══ KRITIK DUZELTME (2026-08) ═══════════════════════════════════════
+  // HATA: arka plan isleri (grup cekme, kalp atisi) sinira takilinca ayni
+  // sogumayi tetikliyordu ve o soguma GIDEN MESAJLARI da bloke ediyordu.
+  // Sonuc: "mesajlar geliyor ama gonderemiyoruz". Tam tersi olmali —
+  // mesajlar her seyin ONUNDE.
+  //
+  // ARTIK: mesaj freni yalnizca GERCEK bir mesaj gonderimi reddedilince
+  // devreye girer ve KISA tutulur. Arka plan sorunlari mesaji durduramaz.
+  if (mesajMi) {
+    // Mesaj freni SABIT ve KISA (12 sn). Katlanarak buyumez — mesajlar
+    // hicbir kosulda uzun sure bekletilmez.
+    d.mesajKisitBitis = Math.max(d.mesajKisitBitis || 0, n + MESAJ_FREN);
+    if (!d._mesajFrenLog || n - d._mesajFrenLog > 30000) {
+      d._mesajFrenLog = n;
+      console.log(`🐢 Mesaj freni [${lineId}] — ${MESAJ_FREN / 1000} sn (mesajlar durmuyor, sadece yavasliyor)`);
+    }
+  }
 
   // ═══ CEZA PATLAMASI KORUMASI (2026-08) ═══════════════════════════════
   // ZATEN soguma devredeyken gelen basarisizliklar BEKLENEN seylerdir
@@ -311,7 +331,11 @@ function _rateSinirinaTakildi(lineId, d, ilkDenemeMi) {
   return sure;
 }
 // Soguma bitene kadar en fazla bu kadar bekleriz; sonra hata doneriz.
-const SOGUMA_BEKLE_TAVAN = 120 * 1000;
+// Mesaj freni: bir mesaj gonderimi sinira takilinca SADECE bu kadar beklenir.
+// Kisa tutuluyor cunku mesajlari uzun sure bloke etmek kabul edilemez.
+const MESAJ_FREN = 12 * 1000;
+// Bir mesaj icin en fazla bu kadar beklenir, sonra HER HALUKARDA denenir.
+const MESAJ_BEKLE_TAVAN = 20 * 1000;
 
 async function kuyrukluGonder(lineId, gonderFn, medyaMi = false, _deneme = 0) {
   const d = _gd(lineId);
@@ -326,23 +350,24 @@ async function kuyrukluGonder(lineId, gonderFn, medyaMi = false, _deneme = 0) {
   // ARTIK: soguma devredeyse GONDERMEYI DENEMEYIZ — sogumanin bitmesini
   // BEKLERIZ. Beklemek yeni ihlal uretmez, ceza buyumez ve soguma bitince
   // mesaj normal sekilde gider.
-  if (Date.now() < d.kisitliBitis) {
-    const kalan = d.kisitliBitis - Date.now();
-    if (kalan > SOGUMA_BEKLE_TAVAN) {
-      // Cok uzun soguma: mesaji denemeden birakiyoruz. DENEMEK cezayi
-      // buyutur; birakmak buyutmez. Panel kirmizi gosterir, elle tekrar
-      // denenebilir.
-      const e2 = new Error(`WhatsApp gecici olarak yavaslatti — ${Math.ceil(kalan / 1000)} saniye sonra tekrar deneyin`);
-      e2._sogumaBekliyor = true;
-      throw e2;
+  // ═══ MESAJ ASLA DENENMEDEN BIRAKILMAZ ═══════════════════════════════
+  // ESKIDEN: uzun soguma varsa mesaj HIC DENENMEDEN hata veriyordu.
+  // Arka plan isleri sogumayi tetikleyince giden mesajlar tamamen
+  // duruyordu ("mesajlar geliyor ama gonderemiyoruz").
+  //
+  // ARTIK: sadece MESAJ frenine bakilir (arka plan frenine DEGIL), o da
+  // en fazla 20 saniye bekletir. Sonra mesaj HER HALUKARDA denenir.
+  // Denemek, gondermemekten her zaman iyidir.
+  const mFren = d.mesajKisitBitis || 0;
+  if (Date.now() < mFren) {
+    const kalan = Math.min(mFren - Date.now(), MESAJ_BEKLE_TAVAN);
+    if (_deneme === 0 && kalan > 1000) {
+      console.log(`⏳ Mesaj freni [${lineId}] — ${Math.ceil(kalan / 1000)} sn beklenip GONDERILECEK`);
     }
-    if (_deneme === 0) {
-      console.log(`⏳ Soguma devrede [${lineId}] — ${Math.ceil(kalan / 1000)} saniye beklenip gonderilecek (denenmiyor, ceza buyumesin)`);
-    }
-    await new Promise((r) => setTimeout(r, kalan + 250));
+    await new Promise((r) => setTimeout(r, kalan + 100));
   }
 
-  const limit = (Date.now() < d.kisitliBitis) ? ESZAMANLI_KISITLI : ESZAMANLI_KANAL;
+  const limit = (Date.now() < (d.mesajKisitBitis || 0)) ? ESZAMANLI_KISITLI : ESZAMANLI_KANAL;
   // kanal doluysa SIRADA bekle (sabit gecikme yok — biri biter bitmez uyanır)
   if (d.aktif >= limit) {
     await new Promise((r) => d.bekleyen.push(r));
@@ -366,9 +391,8 @@ async function kuyrukluGonder(lineId, gonderFn, medyaMi = false, _deneme = 0) {
     const m = (e && e.message ? e.message : '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
     const rateMi = /rate.?overlimit|429|too many|rate.?limit/i.test(m);
     kanalBirak(); // her durumda kanalı bırak
-    if (e && e._sogumaBekliyor) throw e;   // soguma cok uzun: denenmedi, tekrar da denenmeyecek
     if (rateMi) {
-      _rateSinirinaTakildi(lineId, d, _deneme === 0);
+      _rateSinirinaTakildi(lineId, d, _deneme === 0, true);   // GERCEK mesaj takildi
       // ═══ YENIDEN DENEME — AMA SABIRLI ═══
       // ESKIDEN: 0.8 / 1.6 / 3.2 saniye. Bu kadar hizli tekrar denemek
       // WhatsApp'in gozunde durumu KOTULESTIRIYORDU (tikanma buyuyordu).
@@ -5758,7 +5782,7 @@ async function kalpAtisiTuru() {
         hizHatasi = /rate.?overlimit|too many|429/i.test(m);
         canli = hizHatasi;                       // WhatsApp cevap verdi -> canli
         if (hizHatasi) {
-          try { _rateSinirinaTakildi(lineId, _gd(lineId), true); } catch (_) {}
+          try { _rateSinirinaTakildi(lineId, _gd(lineId), true, false); } catch (_) {}   // arka plan
           console.log(`💓 Kalp atisi [${lineId}]: WhatsApp yavaslatiyor — baglanti CANLI, kesilmiyor`);
         }
       }
@@ -6439,7 +6463,7 @@ async function fetchAllGroups() {
     // isleri de nefes alsin.
     if (/rate.?overlimit|429|too many/i.test(e.message || '')) {
       try { if (global._grupTazelemeYavasla) global._grupTazelemeYavasla(); } catch (_) {}
-      try { _rateSinirinaTakildi('ofis', _gd('ofis'), true); } catch (_) {}
+      try { _rateSinirinaTakildi('ofis', _gd('ofis'), true, false); } catch (_) {}   // arka plan
     }
   }
 }
@@ -9078,7 +9102,7 @@ app.post('/api/police/wa/gonder', express.json({ limit: '15mb' }), async (req, r
     if (rateMi) {
       // Ana hatti korumak icin CRM'in sogumasini da baslat — bu uc kuyrugu
       // atladigi icin sogumayi ELLE tetiklememiz gerekiyor.
-      try { if (typeof _rateSinirinaTakildi === 'function') _rateSinirinaTakildi(POLICE_HAT, _gd(POLICE_HAT), true); } catch (_) {}
+      try { if (typeof _rateSinirinaTakildi === 'function') _rateSinirinaTakildi(POLICE_HAT, _gd(POLICE_HAT), true, true); } catch (_) {}
       policeYavasla();
       const kalan = policeKalanSoguma();
       return res.status(429).json({ ok: false, yavaslama: true, bekle: kalan, sonraki: POLICE_HIZ_TAVAN,
