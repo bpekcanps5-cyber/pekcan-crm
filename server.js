@@ -838,7 +838,41 @@ function _resimOlcu(buf) {
   return null;
 }
 
+// ═══ OCR MOTORU KENDINI ONARIYOR (2026-08) ════════════════════════════
+// ASIL SORUN: tesseract motoru bozuk/devasa bir goruntude TAKILIRSA ya da
+// bellek yetmeyip cokerse, o motor bir daha calismaz. Eski kod motoru bir
+// kez kurup SONSUZA KADAR ayni motoru kullaniyordu; motor olduyse her yeni
+// belge 45 saniye bekleyip bos donuyordu. Panel "OCR hazir" diyordu ama
+// robot hicbir sey algilamiyordu. SUNUCU RESTART ATILINCA duzeliyordu —
+// yasanan "arada bir calismiyor" sorunu tam olarak buydu.
+//
+// COZUM: her basarisizlikta motor KAPATILIP YENIDEN kuruluyor. Ayrica OCR
+// islemleri sıraya alindi (ayni anda iki okuma motoru zorluyordu).
+let _ocrArizaUstUste = 0;
+let _ocrSonBasari = Date.now();
+let _ocrToplamAriza = 0;
+let _ocrSira = Promise.resolve();   // OCR islerini sıraya sokar
+
+async function _ocrMotoruYenile(sebep) {
+  const eski = _ocrWorker;
+  _ocrWorker = null;
+  _ocrDurum = 'kuruluyor';
+  console.log(`🤖 OCR motoru yeniden kuruluyor — sebep: ${sebep}`);
+  _rlog(`OCR motoru yenilendi (${sebep})`);
+  try { if (eski && eski.terminate) await Promise.race([eski.terminate(), new Promise(r => setTimeout(r, 5000))]); }
+  catch (_) {}
+  try { await _ocrHazirla(); } catch (_) {}
+}
+
 async function _fotodanMetin(buf, tamOku = false) {
+  // SIRAYA AL: ayni anda tek okuma. Motor zaten tek is yapiyor; paralel
+  // cagri kuyruk olusturup zaman asimini tetikliyordu.
+  const sonuc = _ocrSira.then(() => _fotodanMetinIc(buf, tamOku));
+  _ocrSira = sonuc.catch(() => {});   // sira zinciri hata ile kopmasin
+  return sonuc;
+}
+
+async function _fotodanMetinIc(buf, tamOku = false) {
   const w = await _ocrHazirla();
   if (!w) { _rlog('OCR motoru yok -> foto okunamadi'); return ''; }
   const t0 = Date.now();
@@ -856,8 +890,23 @@ async function _fotodanMetin(buf, tamOku = false) {
     const ornek = _norm(metin).slice(0, 220);
     console.log(`   ⏱️  OCR ${((Date.now() - t0) / 1000).toFixed(1)}sn — okunan: "${ornek}"`);
     _rlog(`OCR okudu (${metin.length} karakter): ${ornek.slice(0, 130)}`);
+    _ocrArizaUstUste = 0;             // basarili -> ariza sayaci sifir
+    _ocrSonBasari = Date.now();
     return metin;
-  } catch (e) { console.log('   ⚠️ OCR: ' + e.message); return ''; }
+  } catch (e) {
+    _ocrArizaUstUste++;
+    _ocrToplamAriza++;
+    console.log(`   ⚠️ OCR: ${e.message} (ust uste ${_ocrArizaUstUste}. ariza)`);
+    _rlog(`OCR HATASI: ${e.message} (ust uste ${_ocrArizaUstUste})`);
+    // Zaman asimi = motor takildi demek; motor bir daha kendine gelmez.
+    // Hemen yenile ki SONRAKI belge normal islensin.
+    const takildi = /zaman asimi|timeout|terminated|closed|destroyed/i.test(e.message || '');
+    if (takildi || _ocrArizaUstUste >= 2) {
+      await _ocrMotoruYenile(takildi ? 'okuma takildi' : `${_ocrArizaUstUste} ust uste ariza`);
+      _ocrArizaUstUste = 0;
+    }
+    return '';
+  }
 }
 
 async function _pdfdenMetin(buf) {
@@ -867,6 +916,54 @@ async function _pdfdenMetin(buf) {
     return (r && r.text) || '';
   } catch (e) { console.log('   ⚠️ PDF okunamadi: ' + e.message); return ''; }
 }
+
+// ═══ ROBOT BEKCISI (2026-08) ══════════════════════════════════════════
+// Robot 7/24 kesintisiz calismak zorunda. Bu bekci her 2 dakikada bir
+// robotun gercekten ayakta olup olmadigini denetler ve kendi kendine
+// toparlar. Boylece "sunucuyu restart atinca duzeliyor" durumu ortadan
+// kalkar — sistem restarti KENDISI yapmis gibi davranir.
+let _robotBekciSayaci = 0;
+setInterval(async () => {
+  try {
+    _robotBekciSayaci++;
+
+    // 1) TIKANMIS KUYRUK: is var gorunuyor ama uzun suredir hicbiri bitmemis
+    if (_robotCalisan > 0 && (Date.now() - _robotSonIsBitis) > (ROBOT_IS_TAVAN + 60000)) {
+      console.log(`🤖 BEKCI: kuyruk ${Math.round((Date.now() - _robotSonIsBitis) / 60000)} dakikadir tikali — sayac sifirlaniyor`);
+      _rlog('BEKCI: tikali kuyruk temizlendi');
+      _robotCalisan = 0;
+      _robotSonIsBitis = Date.now();
+      setImmediate(_robotKuyrukIsle);
+    }
+
+    // 2) BEKLEYEN IS VAR AMA KIMSE ISLEMIYOR
+    if (_robotKuyruk.length > 0 && _robotCalisan === 0) {
+      setImmediate(_robotKuyrukIsle);
+    }
+
+    // 3) OLU OCR MOTORU: kurulu gorunuyor ama uzun suredir hic basarili
+    //    okuma yok ve arizalar birikmis -> yenile.
+    if (robotAktif && _ocrDurum === 'hazir' && _ocrToplamAriza > 0 &&
+        _ocrArizaUstUste >= 1 && (Date.now() - _ocrSonBasari) > 10 * 60 * 1000) {
+      await _ocrMotoruYenile('bekci: uzun suredir basarili okuma yok');
+      _ocrArizaUstUste = 0;
+    }
+
+    // 4) OCR HIC KURULMAMIS: robot acik ama motor yok -> kurmayi tekrar dene
+    if (robotAktif && !_ocrWorker && _ocrDurum !== 'yok' && !_ocrHazirlanyor) {
+      console.log('🤖 BEKCI: OCR motoru yok, kuruluyor...');
+      _ocrHazirla().catch(() => {});
+    }
+
+    // 5) SAATTE BIR durum ozeti (log'da robotun yasadigi gorunsun)
+    if (_robotBekciSayaci % 30 === 0) {
+      console.log(`🤖 ROBOT DURUM: ${robotAktif ? 'ACIK' : 'kapali'} | OCR: ${_ocrDurum} | ` +
+                  `kuyruk: ${_robotKuyruk.length} | islenen: ${_robotCalisan} | ` +
+                  `son basarili okuma: ${Math.round((Date.now() - _ocrSonBasari) / 60000)} dk once | ` +
+                  `toplam ariza: ${_ocrToplamAriza}`);
+    }
+  } catch (e) { console.log('   ⚠️ robot bekci: ' + e.message); }
+}, 2 * 60 * 1000);
 
 // ═══ ROBOTUN GONDERECEGI MESAJ ve KIMLIGI ═══
 const ROBOT_ADI = 'İPTAL ROBOTU';
@@ -1029,14 +1126,32 @@ function robotKuyrugaEkle(is) {
 }
 let _robotCalisan = 0;
 const ROBOT_PARALEL = 2;   // ayni anda 2 belge (arka arkaya gelenler beklemesin)
+const ROBOT_IS_TAVAN = 3 * 60 * 1000;   // bir belge en fazla 3 dakika islenir
+let _robotSonIsBitis = Date.now();
 async function _robotKuyrukIsle() {
   while (_robotKuyruk.length && _robotCalisan < ROBOT_PARALEL) {
     const is = _robotKuyruk.shift();
     _robotCalisan++;
     (async () => {
-      try { await _robotBelgeIncele(is); }
-      catch (e) { console.log('   ⚠️ robot: ' + e.message); }
-      finally { _robotCalisan--; setImmediate(_robotKuyrukIsle); }
+      // SERT ZAMAN ASIMI: bir belge HERHANGI bir sebeple askida kalirsa
+      // (OCR takilmasi, ag, disk) calisan sayaci ASLA azalmiyordu. Iki
+      // boyle olay olunca kuyruk kalici tikaniyor ve robot tamamen
+      // susuyordu — restart atilinca duzelmesinin bir sebebi de buydu.
+      // Artik her is en gec ROBOT_IS_TAVAN icinde biter.
+      try {
+        await Promise.race([
+          _robotBelgeIncele(is),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('belge islemesi zaman asimina ugradi')), ROBOT_IS_TAVAN)),
+        ]);
+      } catch (e) {
+        console.log('   ⚠️ robot: ' + e.message);
+        _rlog(`is basarisiz: ${e.message}${is && is.chatAd ? ' — ' + is.chatAd : ''}`);
+      } finally {
+        _robotCalisan--;
+        if (_robotCalisan < 0) _robotCalisan = 0;   // emniyet
+        _robotSonIsBitis = Date.now();
+        setImmediate(_robotKuyrukIsle);
+      }
     })();
   }
 }
@@ -2250,6 +2365,25 @@ app.post('/api/robot/test', express.json(), async (req, res) => {
   const ornek = 'Turkiye Cumhuriyeti ARAC SATIS SOZLESMESI PLAKA NO 34DRJ024 MOTOR NO 123 SASI NO 456 SATIS BEDELI 400.000 NOTERLIGI SATICI ALICI';
   const t = robotPuanla(ornek);
   rapor.motorTest = { puan: t.puan, esik: ROBOT_ESIK, gecti: t.puan >= ROBOT_ESIK, plaka: t.plaka };
+
+  // ═══ SAGLIK BILGISI: robotun 7/24 ayakta oldugunu gosterir ═══
+  const dk = (t0) => (t0 ? Math.round((Date.now() - t0) / 60000) : -1);
+  rapor.saglik = {
+    kuyruk: _robotKuyruk.length,            // bekleyen belge
+    islenen: _robotCalisan,                 // su an islenen
+    sonIsBitisDk: dk(_robotSonIsBitis),     // en son ne zaman bir belge bitti
+    sonBasariliOkumaDk: dk(_ocrSonBasari),  // en son ne zaman OCR basarili okudu
+    toplamAriza: _ocrToplamAriza,           // acilistan beri OCR arizasi
+    ustUsteAriza: _ocrArizaUstUste,
+    motorVar: !!_ocrWorker,
+  };
+  // Tek cumlelik ozet — panelde dogrudan gosterilebilir
+  if (!rapor.paketler['tesseract.js']) rapor.saglik.ozet = 'OCR paketi kurulu degil';
+  else if (rapor.ocrDurum !== 'hazir') rapor.saglik.ozet = 'OCR motoru hazirlaniyor';
+  else if (_robotCalisan > 0 && rapor.saglik.sonIsBitisDk > 5) rapor.saglik.ozet = 'Kuyruk tikanmis olabilir (bekci temizleyecek)';
+  else if (_ocrToplamAriza > 0 && _ocrArizaUstUste > 0) rapor.saglik.ozet = 'Son okumada ariza vardi, motor yenilendi';
+  else rapor.saglik.ozet = 'Robot saglikli calisiyor';
+
   res.json({ ok: true, rapor });
 });
 
@@ -8183,7 +8317,63 @@ async function _startWAIc(lineId = 'ofis') {
    ===================================================================== */
 
 // --- 0) Ayarlar ---------------------------------------------------------
-const POLICE_API_KEY = process.env.POLICE_API_KEY || '';
+// ═══ API ANAHTARI OKUMA (2026-08 — saglamlastirildi) ══════════════════
+// SORUN: .env'deki anahtar degistirilip pm2 restart yapilmasina ragmen
+// ESKI anahtar gecerli kaliyordu.
+// SEBEBI: pm2, uygulamayi ILK baslattigi andaki ortam degiskenlerini
+// saklar ve her restart'ta ayni degerleri geri enjekte eder. dotenv ise
+// ZATEN TANIMLI bir degiskenin uzerine YAZMAZ. Sonuc: .env guncellense
+// bile bellekteki eski deger kullanilmaya devam eder.
+// ('pm2 restart --update-env' ya da 'pm2 delete + pm2 start' gerekirdi.)
+//
+// COZUM: anahtari .env DOSYASINDAN DOGRUDAN okuyoruz. Boylece
+// duz 'pm2 restart' her zaman guncel anahtari alir.
+// Ayrica sik yapilan yazim hatalarina karsi toleransli:
+//   tirnak isaretleri, bastaki/sondaki bosluk, Windows satir sonu (\r)
+function _envDosyasindanOku(ad) {
+  const adaylar = [
+    path.join(__dirname, '.env'),
+    path.join(process.cwd(), '.env'),
+    path.join(__dirname, '..', '.env'),
+  ];
+  for (const yol of adaylar) {
+    try {
+      if (!fs.existsSync(yol)) continue;
+      const satirlar = fs.readFileSync(yol, 'utf8').split(/\r?\n/);
+      for (const satir of satirlar) {
+        const t = satir.trim();
+        if (!t || t.startsWith('#')) continue;
+        const i = t.indexOf('=');
+        if (i < 0) continue;
+        if (t.slice(0, i).trim() !== ad) continue;
+        let deger = t.slice(i + 1).trim();
+        // "deger" veya 'deger' -> deger
+        if ((deger.startsWith('"') && deger.endsWith('"')) ||
+            (deger.startsWith("'") && deger.endsWith("'"))) deger = deger.slice(1, -1);
+        return deger.trim();
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+const POLICE_API_KEY = (_envDosyasindanOku('POLICE_API_KEY') || process.env.POLICE_API_KEY || '').trim();
+
+// Acilista TESHIS: anahtarin yuklenip yuklenmedigi ve PARMAK IZI yazilir.
+// Anahtarin kendisi loglanmaz; panele girilenle karsilastirmak icin yeterli.
+(function () {
+  if (!POLICE_API_KEY) {
+    console.log('⚠️  [POLICE] POLICE_API_KEY BULUNAMADI — .env dosyasina eklenmeli');
+    return;
+  }
+  const iz = POLICE_API_KEY.slice(0, 3) + '…' + POLICE_API_KEY.slice(-2);
+  const kaynak = _envDosyasindanOku('POLICE_API_KEY') ? '.env dosyasi' : 'ortam degiskeni';
+  console.log(`🔑 [POLICE] API anahtari yuklendi — ${POLICE_API_KEY.length} karakter, ${iz} (kaynak: ${kaynak})`);
+  const eski = (process.env.POLICE_API_KEY || '').trim();
+  if (eski && eski !== POLICE_API_KEY) {
+    console.log('   ℹ️  pm2 bellekte ESKI bir anahtar tutuyordu; .env dosyasindaki guncel deger kullanildi.');
+  }
+})();
 // CRM'de gorunecek gonderen adlari — gonderim TURUNE gore ayrilir.
 // Panel her istekte 'tur' yolluyor: yenileme / borc / cizgi
 const POLICE_ROBOT_ADI = 'Yenileme Robotu';   // varsayilan (tur bilinmezse)
@@ -8209,9 +8399,17 @@ function policeYetki(req, res) {
     res.status(500).json({ ok: false, error: 'POLICE_API_KEY tanimlanmamis' });
     return false;
   }
-  const k = (req.body && req.body.key) || req.headers['x-police-key'] || '';
+  const k = String((req.body && req.body.key) || req.headers['x-police-key'] || '').trim();
   if (k !== POLICE_API_KEY) {
-    res.status(401).json({ ok: false, error: 'Gecersiz API anahtari' });
+    // TESHIS: anahtarin kendisi ASLA yazilmaz; sadece uzunluk ve parmak izi.
+    // Bu, "panelde farkli anahtar mi var, yoksa sunucu eskisini mi tutuyor"
+    // sorusunu tek bakista cevaplar.
+    const iz = (v) => (v ? v.slice(0, 3) + '…' + v.slice(-2) : '(bos)');
+    console.log(`[POLICE] ANAHTAR UYUSMADI — panel: ${k.length} karakter ${iz(k)} | sunucu: ${POLICE_API_KEY.length} karakter ${iz(POLICE_API_KEY)}`);
+    res.status(401).json({
+      ok: false, error: 'Gecersiz API anahtari',
+      teshis: { panelUzunluk: k.length, sunucuUzunluk: POLICE_API_KEY.length },
+    });
     return false;
   }
   return true;
