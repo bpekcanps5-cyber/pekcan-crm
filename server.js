@@ -441,7 +441,8 @@ async function arkaPlanIzin(etiket, oncelikli = false) {
     for (;;) {
       const aralik = oncelikli ? ARKA_ARALIK_ONCELIKLI : ARKA_ARALIK;
       const bekleSebep =
-        (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) ? 'hiz siniri'
+        (typeof sakinModdaMi === 'function' && sakinModdaMi()) ? 'sakin mod'
+        : (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) ? 'hiz siniri'
         : mesajIsiVarMi() ? 'mesaj trafigi'
         // NORMAL isler, sirada ONCELIKLI is varken beklesin
         : (!oncelikli && _arkaOncelikliBekleyen > 0) ? 'oncelikli is var'
@@ -957,6 +958,144 @@ async function _pdfdenMetin(buf) {
     const r = await pdf(buf);
     return (r && r.text) || '';
   } catch (e) { console.log('   ⚠️ PDF okunamadi: ' + e.message); return ''; }
+}
+
+// ═══ BELLEK YONETIMI (2026-08) ════════════════════════════════════════
+// SORUN: 4062 sohbet bellekte tutuluyor. Her mesajin yaninda WhatsApp'in
+// ham nesnesi ('raw') de duruyordu. Bu, sureci GB'larca bellege cikariyor;
+// VPS'te baska projeler de varken Linux bellegi bitince sureci HABERSIZ
+// olduruyor, pm2 yeniden basliyor. Kullanici bunu "uyari gelmeden
+// WhatsApp gitti" diye yasiyor. Log'da da hicbir hata gorunmuyor —
+// cunku surec hata vermeden oldurulmus oluyor.
+let MESAJ_TAVAN = 400;          // sohbet basina bellekte tutulacak mesaj
+let RAW_TUT = 40;               // bunlarin kacinda ham veri saklanacak
+const BELLEK_UYARI_MB = 900;    // bu esikte sikilastir
+const BELLEK_KRITIK_MB = 1300;  // bu esikte agresif temizle
+
+function bellekMB() { try { return Math.round(process.memoryUsage().rss / 1048576); } catch (_) { return 0; } }
+
+// Bellek baskisinda kademeli olarak yer acar. Sohbetler ve mesajlar
+// veritabaninda DURUYOR — bellekten dusurmek VERI KAYBI DEGIL, sohbet
+// acilinca DB'den geri yukleniyor.
+function bellekTemizle(agresif) {
+  let dusurulen = 0, temizlenenRaw = 0;
+  const tavan = agresif ? 120 : 250;
+  const rawTut = agresif ? 10 : 25;
+  for (const [, C] of hatSohbetleri()) {
+    for (const [, c] of C) {
+      if (!c || !c.messages) continue;
+      if (c.messages.length > tavan) { dusurulen += c.messages.length - tavan; c.messages = c.messages.slice(-tavan); }
+      const ms = c.messages, sinir = Math.max(0, ms.length - rawTut);
+      for (let i = 0; i < sinir; i++) { if (ms[i] && ms[i].raw) { ms[i].raw = undefined; temizlenenRaw++; } }
+    }
+  }
+  // sinirsiz buyuyen onbellekleri de kirp
+  try {
+    if (groupMetaCache.size > 5000) { const k2 = [...groupMetaCache.keys()].slice(0, groupMetaCache.size - 5000); k2.forEach(x => groupMetaCache.delete(x)); }
+    if (lidToPn.size > 20000) { const k2 = [...lidToPn.keys()].slice(0, lidToPn.size - 20000); k2.forEach(x => lidToPn.delete(x)); }
+    if (typeof grupAdlari !== 'undefined' && grupAdlari.size > 8000) { const k2 = [...grupAdlari.keys()].slice(0, grupAdlari.size - 8000); k2.forEach(x => grupAdlari.delete(x)); }
+  } catch (_) {}
+  if (agresif) { MESAJ_TAVAN = 150; RAW_TUT = 12; }
+  return { dusurulen, temizlenenRaw };
+}
+
+// Tum hatlarin sohbet haritalari
+function hatSohbetleri() {
+  const liste = [];
+  try { for (const [lid] of lines) { const C = hatChats(lid); if (C) liste.push([lid, C]); } } catch (_) {}
+  if (!liste.length) { try { liste.push(['ofis', chats]); } catch (_) {} }
+  return liste;
+}
+
+// BELLEK BEKCISI: dakikada bir olcer, esikte kendiliginden yer acar.
+setInterval(() => {
+  try {
+    const mb = bellekMB();
+    if (mb >= BELLEK_KRITIK_MB) {
+      const r = bellekTemizle(true);
+      console.log(`🧠 BELLEK KRITIK: ${mb} MB — agresif temizlik yapildi ` +
+                  `(${r.dusurulen} mesaj bellekten dusuruldu, ${r.temizlenenRaw} ham veri silindi). ` +
+                  `Veri KAYBOLMADI, veritabaninda duruyor.`);
+      if (global.gc) { try { global.gc(); } catch (_) {} }
+    } else if (mb >= BELLEK_UYARI_MB) {
+      const r = bellekTemizle(false);
+      console.log(`🧠 Bellek ${mb} MB — onlem alindi (${r.temizlenenRaw} ham veri temizlendi)`);
+    } else if (MESAJ_TAVAN < 400 && mb < BELLEK_UYARI_MB * 0.6) {
+      MESAJ_TAVAN = 400; RAW_TUT = 40;   // rahatladik, normale don
+    }
+  } catch (e) { console.log('bellek bekcisi: ' + e.message); }
+}, 60 * 1000);
+
+// ═══ BAGLANTI GUNLUGU (2026-08) ═══════════════════════════════════════
+// "Bazen uyari geliyor bazen gelmiyor" sikayetinin sebebi: kopma cok kisa
+// surdugunde panel farkina varmadan geri baglaniyordu, ama o arada gelen
+// mesajlar kayboluyordu. Artik HER kopma/baglanma kaydediliyor ve panelde
+// gorulebiliyor. Boylece "gitti mi gitmedi mi" tartismasi bitiyor.
+const _baglantiGunlugu = [];   // { ts, olay, sebep, sureSn }
+let _sonKopmaZamani = 0;
+
+function baglantiOlayKaydet(lineId, olay, sebep) {
+  const n = Date.now();
+  let sureSn = 0;
+  if (olay === 'acildi' && _sonKopmaZamani) sureSn = Math.round((n - _sonKopmaZamani) / 1000);
+  if (olay === 'koptu') _sonKopmaZamani = n;
+  _baglantiGunlugu.unshift({ ts: n, lineId, olay, sebep: sebep || '', sureSn });
+  if (_baglantiGunlugu.length > 200) _baglantiGunlugu.pop();
+  if (olay === 'acildi' && sureSn > 0) {
+    console.log(`🔌 [${lineId}] baglanti geri geldi — ${sureSn} saniye kopuk kaldi`);
+  }
+}
+
+// Panelin sorabilecegi teshis ucu — "gercekte ne oluyor" tek ekranda
+app.post('/api/baglanti/durum', express.json(), (req, res) => {
+  const bilgi = oturumBilgi(req.body && req.body.token);
+  if (!bilgi) return res.json({ ok: false, error: 'Giris gerekli' });
+  const l = lines.get('ofis');
+  const bellek = process.memoryUsage();
+  const son24 = _baglantiGunlugu.filter(x => x.olay === 'koptu' && x.ts > Date.now() - 24 * 3600000);
+  res.json({
+    ok: true,
+    bagli: !!(l && l.connected),
+    sakinMod: sakinModdaMi(),
+    sakinModKalanDk: sakinModdaMi() ? Math.ceil((_sakinModBitis - Date.now()) / 60000) : 0,
+    hizSinirinda: (typeof hizSinirindaMi === 'function') ? hizSinirindaMi() : false,
+    kopma24Saat: son24.length,
+    toplamKopukSn: son24.length ? _baglantiGunlugu.filter(x => x.olay === 'acildi').reduce((a, x) => a + (x.sureSn || 0), 0) : 0,
+    calismaSuresiDk: Math.round(process.uptime() / 60),
+    bellekMB: Math.round(bellek.rss / 1048576),
+    bellekYigiMB: Math.round(bellek.heapUsed / 1048576),
+    grupSayisi: (hatChats('ofis') || new Map()).size,
+    gunluk: _baglantiGunlugu.slice(0, 40),
+  });
+});
+
+// ═══ KOPMA FIRTINASI FRENI (2026-08) ══════════════════════════════════
+// Kisa surede cok kopma olduysa sistem "sakin mod"a gecer: TUM arka plan
+// isleri (grup cekme, aciklama taramasi, avatar, medya) DURUR. Sadece
+// mesajlar akar. Boylece baglanti kendini toparlar ve dongu kirilir.
+//
+// Bunu koymamizin sebebi: kopma -> agir isler -> hiz siniri -> kopma
+// dongusune girildiginde, sistem kendi kendini kurtaramiyordu.
+const _kopmaGecmisi = [];
+let _sakinModBitis = 0;
+
+function kopmaKaydet(lineId) {
+  const n = Date.now();
+  _kopmaGecmisi.push(n);
+  while (_kopmaGecmisi.length && _kopmaGecmisi[0] < n - 15 * 60 * 1000) _kopmaGecmisi.shift();
+  if (_kopmaGecmisi.length >= 3 && n > _sakinModBitis) {
+    _sakinModBitis = n + 20 * 60 * 1000;
+    console.log(`🛡️  SAKIN MOD acildi — son 15 dakikada ${_kopmaGecmisi.length} kopma. ` +
+                `20 dakika boyunca TUM arka plan isleri durdu, sadece mesajlar akacak.`);
+  }
+}
+function sakinModdaMi() { return Date.now() < _sakinModBitis; }
+
+// Arka plan isleri bunu sorar: calisayim mi?
+function arkaPlanCalisabilirMi() {
+  if (sakinModdaMi()) return false;
+  if (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) return false;
+  return true;
 }
 
 // ═══ ROBOT BEKCISI (2026-08) ══════════════════════════════════════════
@@ -5579,10 +5718,21 @@ async function kalpAtisiTuru() {
     if (line.kalpTestCalisiyor) continue;
     const gecen = Date.now() - (line.sonAktivite || 0);
     if (gecen < KALP_SESSIZLIK) continue; // yakinda veri geldi -> saglikli, test gereksiz
+    // ═══ HIZ SINIRINDA SORGU ATMA (2026-08 — KRITIK) ══════════════════
+    // WhatsApp bizi yavaslatmisken kalp atisi sorgusu da reddediliyordu.
+    // Kod bunu "baglanti olmus" sanip SAGLIKLI baglantiyi kesiyordu.
+    // Kesince yeniden baglaniyor, yeniden baglanma agir isler tetikliyor,
+    // o da yeni hiz siniri getiriyordu -> SONSUZ KOPMA DONGUSU.
+    // Cozum: hiz siniri varken sorgu ATMA. WebSocket acikken zaten saglikli.
+    if (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) {
+      if (_wsAcikMi(line.sock)) { line.kalpBasarisiz = 0; }
+      continue;
+    }
     line.kalpTestCalisiyor = true;
     (async () => {
       let canli = false;
       let wsAcik = false;
+      let hizHatasi = false;
       try {
         const sock = line.sock;
         const num = line.myNumber;
@@ -5599,7 +5749,19 @@ async function kalpAtisiTuru() {
           new Promise((_, rej) => setTimeout(() => rej(new Error('kalp-timeout')), KALP_TIMEOUT)),
         ]);
         if (test !== undefined) canli = true;
-      } catch (e) { canli = false; }
+      } catch (e) {
+        // ═══ HIZ SINIRI = BAGLANTI CANLI DEMEKTIR ═══════════════════════
+        // "rate-overlimit" cevabini WhatsApp'in KENDISI gonderiyor. Yani
+        // baglanti calisiyor, sadece bizi yavaslatiyor. Bunu "olu baglanti"
+        // sayip soketi kesmek, calisan baglantiyi bosu bosuna oldurmekti.
+        const m = (e && e.message ? e.message : '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
+        hizHatasi = /rate.?overlimit|too many|429/i.test(m);
+        canli = hizHatasi;                       // WhatsApp cevap verdi -> canli
+        if (hizHatasi) {
+          try { _rateSinirinaTakildi(lineId, _gd(lineId), true); } catch (_) {}
+          console.log(`💓 Kalp atisi [${lineId}]: WhatsApp yavaslatiyor — baglanti CANLI, kesilmiyor`);
+        }
+      }
       finally { line.kalpTestCalisiyor = false; }
 
       if (canli) {
@@ -6091,7 +6253,12 @@ async function aciklamaMotorTur() {
 // Boylece WhatsApp'a giden sorgu gunde ~65.000'den ~4.000'e duser (%94 az).
 // Aciklama/ad degisiklikleri zaten 'groups.update' olayiyla ANLIK geliyor;
 // bu tarama sadece o olayin kacirdiklarini toplayan yedek yoldur.
-setInterval(() => { aciklamaMotorTur().catch(() => {}); }, 20 * 1000);
+// 20 saniyede bir calisiyordu -> 60 saniye. Ilk dolumdan sonra zaten
+// cogu grubun aciklamasi dolu oluyor ve atlaniyor; sik calismasinin faydasi yok.
+setInterval(() => {
+  if (!arkaPlanCalisabilirMi()) return;
+  aciklamaMotorTur().catch(() => {});
+}, 60 * 1000);
 
 // ── ESKİ toplu senkron: SADECE ad + üye sayısı için (hızlı, açıklama motoru ayrı hallediyor) ──
 async function topluAciklamaSenkron(lineId) {
@@ -6136,8 +6303,19 @@ async function topluAciklamaSenkron(lineId) {
   isle();
 }
 // ad/üye senkronu: bağlanınca bir kez + her 5dk (açıklama motoru ayrı, 20sn'de dönüyor)
+// ═══ KAPATILDI (2026-08) ══════════════════════════════════════════════
+// Bu is, fetchAllGroups ile AYNI agir cagriyi (groupFetchAllParticipating)
+// yapiyordu. Yani 5 dakikada bir 4062 grubun bilgisi IKI KEZ cekiliyordu.
+// Ayni bilgiyi iki ayri sistemin cekmesinin hicbir faydasi yok; ikisi
+// birlikte hiz sinirinin ana sebebiydi. fetchAllGroups zaten calisiyor.
+// Sadece YENIDEN BAGLANMA sonrasi bir kez calisir (kopukken kacirdiklarimiz).
 setInterval(() => {
-  try { for (const [lid, line] of lines) { if (line && line.connected) topluAciklamaSenkron(lid); } } catch (_) {}
+  try {
+    if (!arkaPlanCalisabilirMi()) return;
+    if (!global._senkronGerekli) return;      // sadece gerektiginde
+    global._senkronGerekli = false;
+    for (const [lid, line] of lines) { if (line && line.connected) topluAciklamaSenkron(lid); }
+  } catch (_) {}
 }, 5 * 60 * 1000);
 
 // ============================================================
@@ -6190,7 +6368,12 @@ async function ofisAciklamaTaramasi() {
   finally { _aciklamaTaramaCalisiyor = false; }
 }
 // Grup fotoğrafları: bağlanınca + her 15 dakikada eksikleri doldur
-setInterval(() => { try { ofisAciklamaTaramasi(); } catch (_) {} }, 15 * 60 * 1000);
+// Eksik aciklama/foto taramasi: 15 dakikada bir SABIT calisiyordu.
+// Artik sadece sistem sakinken ve 45 dakikada bir. Aciklamalar zaten
+// 'groups.update' ile anlik geliyor; bu yalnizca yedek yol.
+setInterval(() => {
+  try { if (!arkaPlanCalisabilirMi()) return; ofisAciklamaTaramasi(); } catch (_) {}
+}, 45 * 60 * 1000);
 
 async function fetchAllGroups() {
   // Bu fonksiyon SADECE ofis hatti icindir. Global waSock yerine ofis hattinin
@@ -6389,8 +6572,23 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
   // BELLEK OPTIMIZASYONU (40 kullanici): her sohbette bellekte en fazla 400 mesaj tut.
   // Daha eskiler bellekten dusurulur (DB'de KALIR — sohbet acilinca oradan yuklenir).
   // 400 mesaj = yogun bir grupta bile rahat 2 hafta gerisini kapsar.
-  if (chat.messages.length > 400) {
-    chat.messages = chat.messages.slice(-400);
+  if (chat.messages.length > MESAJ_TAVAN) {
+    chat.messages = chat.messages.slice(-MESAJ_TAVAN);
+  }
+  // ═══ BELLEK: ESKI MESAJLARDAN 'raw' ALANINI DUSUR (2026-08) ══════════
+  // 'raw' = WhatsApp'in ham mesaj nesnesi. Bir mesajin ~4 KATI yer kaplar.
+  // 4062 sohbet x 400 mesaj x raw = 3-4 GB'a kadar cikabiliyordu. VPS'te
+  // baska projeler de varken bellek bitince Linux sureci OLDURUYOR ve pm2
+  // yeniden basliyor -> "hicbir uyari olmadan WhatsApp gitti" durumu.
+  //
+  // 'raw' sadece SU AN gereken yerlerde lazim:
+  //   • medya indirme  -> mesaj daha yeni gelmisken kullaniliyor
+  //   • getMessage     -> WhatsApp yalnizca YENI mesajlar icin tekrar ister
+  // Bu yuzden sadece son RAW_TUT mesajda tutuyoruz, oncekilerden siliyoruz.
+  const ms = chat.messages;
+  if (ms.length > RAW_TUT) {
+    const sinir = ms.length - RAW_TUT;
+    for (let i = 0; i < sinir; i++) { if (ms[i] && ms[i].raw) ms[i].raw = undefined; }
   }
   chat.lastTime = message.time;
   chat.lastTs = now;
@@ -6991,7 +7189,7 @@ async function medyaKuyrukIsle() {
     return; // her turda TEK indirme denemesi (WhatsApp'ı yorma)
   }
 }
-setInterval(() => { if (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) return; medyaKuyrukIsle(); }, 30000);
+setInterval(() => { if (!arkaPlanCalisabilirMi()) return; medyaKuyrukIsle(); }, 30000);
 
 // Medyayi indir, public/media'ya kaydet, web yolunu dondur.
 // 30 sn icinde inmezse veya hata olursa null doner — sunucu ASLA cokmemeli.
@@ -7311,6 +7509,7 @@ async function _startWAIc(lineId = 'ofis') {
       _reconnectSayac = 0;          // basarili baglandi -> sayac sifir (bir dahaki kopmada yine hizli dene)
       line.reBekleme = 1500; line.reSayac = 0;   // HAT BAZLI sayaclar da sifirlansin
       line.saglik.sonAcilma = Date.now();
+      try { baglantiOlayKaydet(lineId, 'acildi', ''); } catch (_) {}
       _yenidenBaglaniyor.delete(lineId); // varsa bekleyen plani temizle (artik bagliyiz)
       console.log(`\n✅ WhatsApp baglandi (hat: ${lineId})! Panel: http://localhost:${PORT}\n`);
       console.log(`   👤 numaram: ${buNumara}${buLID ? ' | LID: ' + buLID : ''}`);
@@ -7334,16 +7533,37 @@ async function _startWAIc(lineId = 'ofis') {
             console.log(`   ✅ ${chats.size} sohbet DB'den geri yuklendi.`);
           } catch (e) { console.log('   ⚠️  DB yukleme hatasi: ' + e.message); }
         }
-        // Katildigim TUM gruplari cek (ofis ortak hatti — tum gruplari gorur)
-        setTimeout(() => fetchAllGroups(), 8000);
-        setTimeout(() => fetchAllGroups(), 30000);
-        // ACIKLAMA+FOTO TARAMASI: adlar geldikten sonra eksik aciklama/fotolari tek tek doldur
-        setTimeout(() => ofisAciklamaTaramasi(), 45000);
-        // AÇIKLAMA MOTORU: bağlanınca imleci sıfırla + hemen başlat (ilk dolum hızlı başlasın)
-        _aciklamaImlec.set('ofis', 0);
-        _aciklamaDinlenme.delete('ofis');   // yeni baglantida bir tur tam tara, sonra dinlen
-        setTimeout(() => { aciklamaMotorTur().catch(() => {}); }, 8000);
-        setTimeout(() => fetchAllGroups(), 75000);
+        // ═══ YENIDEN BAGLANMA MALIYETI DUSURULDU (2026-08 — KRITIK) ═════
+        // ESKIDEN: her baglantida 3 kez fetchAllGroups (4062 grubun hepsi!)
+        // + tam aciklama taramasi + imlec sifirlama calisiyordu.
+        // Kopma dongusune girildiginde bu, her turda WhatsApp'a devasa yuk
+        // bindiriyor ve bir sonraki kopmayi KENDISI hazirliyordu.
+        //
+        // ARTIK: ILK baglantida bir kez tam cekim yapilir. Sonraki yeniden
+        // baglanmalarda gruplar zaten bellekte/veritabaninda oldugu icin
+        // tekrar cekilmez — degisiklikler 'groups.update' ile anlik geliyor.
+        const ilkKurulum = !global._ilkGrupCekimiYapildi;
+        if (ilkKurulum) {
+          global._ilkGrupCekimiYapildi = true;
+          setTimeout(() => fetchAllGroups(), 8000);
+          setTimeout(() => ofisAciklamaTaramasi(), 60000);
+          _aciklamaImlec.set('ofis', 0);
+          _aciklamaDinlenme.delete('ofis');
+          setTimeout(() => { aciklamaMotorTur().catch(() => {}); }, 15000);
+          console.log('   📋 Ilk kurulum: gruplar bir kez toplu cekilecek.');
+        } else {
+          // Yeniden baglanma: SADECE bir kez hafif tazeleme, o da 45sn sonra
+          // (baglantinin oturmasini bekle). Aciklama imleci SIFIRLANMAZ —
+          // kaldigi yerden devam eder, bastan taramaz.
+          setTimeout(() => {
+            const ol = lines.get('ofis');
+            if (ol && ol.connected && !(typeof hizSinirindaMi === 'function' && hizSinirindaMi())) {
+              fetchAllGroups();
+            }
+          }, 45000);
+          global._senkronGerekli = true;   // kopukken kacirilan degisiklikler icin bir kez
+          console.log('   ↻ Yeniden baglanma: agir toplu cekim ATLANDI (gruplar zaten elimizde).');
+        }
       } else {
         // ---- PAZARLAMA HATTI ----
         // Kullanicinin istegi: ESKI gruplari toplu CEKME. Sadece QR sonrasi GELEN mesajlar
@@ -7438,6 +7658,7 @@ async function _startWAIc(lineId = 'ofis') {
       line.saglik.sonKapanma = Date.now();
       line.saglik.yenidenBaglanmaSayisi = (line.saglik.yenidenBaglanmaSayisi || 0) + 1;
       line.saglik.sonKopmaSebebi = String(lastDisconnect?.error?.output?.statusCode || '?');
+      try { kopmaKaydet(lineId); baglantiOlayKaydet(lineId, 'koptu', line.saglik.sonKopmaSebebi); } catch (_) {}
       // Kapanan soketi TEMIZ birak (dinleyicileri kaldir) — yenisi acilmadan once.
       soketiKapat(sock, 'baglanti kapandi');
       if (line.sock === sock) line.sock = null;
