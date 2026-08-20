@@ -318,7 +318,7 @@ function wahaSoketYap(secenek = {}) {
     try { await istek('/api/sessions/' + WAHA_OTURUM + '/logout', { method: 'POST' }); } catch (_) {}
     sock._kapali = true; sock.ws.isOpen = false;
   };
-  sock.end = () => { sock._kapali = true; sock.ws.isOpen = false; };
+  sock.end = () => { sock._kapali = true; sock.ws.isOpen = false; if (sock._qrTimer) { clearInterval(sock._qrTimer); sock._qrTimer = null; } };
 
   return sock;
 }
@@ -396,6 +396,66 @@ async function oturumHazirla() {
   }
 }
 
+
+// ═══ QR AKTARIMI ══════════════════════════════════════════════════════
+// WAHA QR'i kendi arayuzunde gosteriyor; panele de gelmesi icin ham
+// metnini alip Baileys gibi 'connection.update { qr }' olarak yayiyoruz.
+// Boylece panelin QR ekrani AYNEN calisiyor (kendi QR resmini uretiyor).
+async function qrAl() {
+  const yollar = [
+    '/api/' + WAHA_OTURUM + '/auth/qr?format=raw',
+    '/api/' + WAHA_OTURUM + '/auth/qr',
+  ];
+  for (const y of yollar) {
+    try {
+      const r = await istek(y);
+      const q = (r && (r.value || r.qr || r.code || r.data)) || (typeof r === 'string' ? r : '');
+      if (q && String(q).length > 20) return String(q);
+    } catch (_) {}
+  }
+  return '';
+}
+
+// QR'i duzenli araliklarla panele gonder (WAHA QR'i ~20 sn'de bir yeniliyor)
+function qrTakibiBaslat(sock) {
+  if (sock._qrTimer) return;
+  let sonQR = '';
+  const tur = async () => {
+    if (sock._kapali) return qrTakibiDurdur(sock);
+    try {
+      const s = await istek('/api/sessions/' + WAHA_OTURUM);
+      const durum = String(s.status || s.state || '').toUpperCase();
+      if (/WORKING|CONNECTED/.test(durum)) {
+        qrTakibiDurdur(sock);
+        const ben = s.me || s.user || {};
+        sock.user = { id: numaraTemizle(ben.id || ''), name: ben.pushName || ben.name || '' };
+        sock.ws.isOpen = true;
+        sock.ev.emit('connection.update', { connection: 'open' });
+        return;
+      }
+      if (/STOPPED|FAILED/.test(durum)) {
+        // oturum durmus -> yeniden baslat ki QR uretsin
+        try { await istek('/api/sessions/' + WAHA_OTURUM + '/start', { method: 'POST' }); }
+        catch (_) { try { await istek('/api/sessions/start', { method: 'POST', body: { name: WAHA_OTURUM } }); } catch (_) {} }
+        return;
+      }
+      if (/SCAN_QR/.test(durum)) {
+        const q = await qrAl();
+        if (q && q !== sonQR) {
+          sonQR = q;
+          log('QR panele gonderildi');
+          sock.ev.emit('connection.update', { qr: q });
+        }
+      }
+    } catch (e) { /* WAHA gecici olarak ulasilamaz olabilir */ }
+  };
+  sock._qrTimer = setInterval(tur, 5000);
+  tur();
+}
+function qrTakibiDurdur(sock) {
+  if (sock._qrTimer) { clearInterval(sock._qrTimer); sock._qrTimer = null; }
+}
+
 // ═══ ANA GIRIS: Baileys'in makeWASocket'i yerine bunu cagiriyoruz ═══
 async function wahaBaglan() {
   kancaSunucusuAc();
@@ -421,15 +481,16 @@ async function wahaBaglan() {
           istek('/api/sessions/' + WAHA_OTURUM).then((s) => {
             const ben = s.me || s.user || {};
             sock.user = { id: numaraTemizle(ben.id || ''), name: ben.pushName || ben.name || '' };
+            qrTakibiDurdur(sock);
             sock.ev.emit('connection.update', { connection: 'open' });
           }).catch(() => sock.ev.emit('connection.update', { connection: 'open' }));
         } else {
           sock.ev.emit('connection.update', { connection: 'open' });
         }
       } else if (/SCAN_QR|STARTING/.test(durum)) {
-        // QR bekleniyor
         if (veri.qr || veri.qrCode) sock.ev.emit('connection.update', { qr: veri.qr || veri.qrCode });
         else sock.ev.emit('connection.update', { connection: 'connecting' });
+        qrTakibiBaslat(sock);   // QR uretilene kadar takip et
       } else if (/STOPPED|FAILED|DISCONNECT/.test(durum)) {
         sock.ws.isOpen = false;
         // WAHA oturumu gercekten sonlandiysa 401 (loggedOut), degilse 428
@@ -539,8 +600,7 @@ async function wahaBaglan() {
       setImmediate(() => sock.ev.emit('connection.update', { connection: 'open' }));
     } else {
       setImmediate(() => sock.ev.emit('connection.update', { connection: 'connecting' }));
-      // QR'i sor
-      istek('/api/' + WAHA_OTURUM + '/auth/qr?format=image').catch(() => {});
+      qrTakibiBaslat(sock);   // QR'i panele akitmaya basla
     }
   } catch (e) {
     log('oturum hazirlanamadi: ' + e.message);
@@ -554,7 +614,7 @@ async function wahaBaglan() {
 
 module.exports = {
   WAHA_URL, WAHA_API_KEY, WAHA_OTURUM, WAHA_KANCA_PORT, WAHA_KANCA_URL,
-  istek, wahaSoketYap, baileysMesaji, baileysGrup, wahaMedyaIndir,
+  istek, wahaSoketYap, baileysMesaji, baileysGrup, wahaMedyaIndir, qrAl,
   wahaBaglan, oturumHazirla,
   numaraTemizle, jidAl, zamanAl, lidNumara,
 };
