@@ -93,6 +93,26 @@ function yayinla(paket) {
 
 // ───────────── WAHA VERISINI PANEL BICIMINE CEVIR ─────────────
 // WAHA surumleri arasinda alan adlari degisebiliyor; hepsini deniyoruz.
+// ZAMAN DAMGASI — WAHA surumune/motoruna gore farkli alanda gelebiliyor.
+// Bulamazsa 0 doner (Date.now() DEGIL) — cunku "simdi" koymak butun
+// sohbetleri ayni saate esitliyor ve siralamayi bozuyor.
+function zamanAl(x) {
+  if (!x) return 0;
+  const adaylar = [
+    x.timestamp, x.t, x.messageTimestamp, x.time,
+    x._data && x._data.t, x._data && x._data.timestamp,
+    x.lastMessage && x.lastMessage.timestamp, x.lastMessage && x.lastMessage.t,
+    x.conversationTimestamp, x.lastMessageTime,
+  ];
+  for (const a of adaylar) {
+    const n = Number(a);
+    if (!n || !isFinite(n)) continue;
+    if (n > 1e12) return Math.round(n);
+    if (n > 1e9) return Math.round(n * 1000);
+  }
+  return 0;
+}
+
 function jidAl(x) {
   return x?.id?._serialized || x?.id || x?.chatId || x?.from || x?.jid || '';
 }
@@ -115,42 +135,62 @@ function sohbeteCevir(c) {
     unread: c.unreadCount || 0,
     ozelUnread: c.unreadCount || 0,
     muhUnread: 0,
-    lastTime: saat(Number(c.timestamp || Date.now()) * (String(c.timestamp || '').length <= 11 ? 1000 : 1)),
-    lastTs: Number(c.timestamp || Date.now()) * (String(c.timestamp || '').length <= 11 ? 1000 : 1),
+    lastTime: zamanAl(c) ? saat(zamanAl(c)) : '',
+    lastTs: zamanAl(c),
     pinned: !!c.pinned, archived: !!c.archived, hasMention: false,
-    avatar: null,
+    avatar: c.picture || c.profilePicUrl || null,   // WAHA 'picture' aninda veriyor
     // ZORUNLU: panel liste ciziminde c.messages[son] okuyor. Bu alan
     // olmazsa cizim COKUYOR ve liste bos gorunuyor (462 sohbet gelse bile).
     // WAHA sohbet listesinde son mesaji veriyorsa onu koyuyoruz.
-    messages: c.lastMessage ? [mesajaCevir(c.lastMessage)] : [],
+    messages: (c.lastMessage || c.lastMsg) ? [mesajaCevir(c.lastMessage || c.lastMsg)] : [],
   };
 }
 
 function mesajaCevir(m) {
-  const ts = Number(m.timestamp || Date.now());
-  const tsMs = String(m.timestamp || '').length <= 11 ? ts * 1000 : ts;
-  const govde = m.body || m.text || m.caption || '';
+  // GERCEK WAHA (GOWS) yapisi — sunucudan alinan ornekle dogrulandi:
+  //   id: duz metin ("false_120363...@g.us_3EB00A...")
+  //   timestamp: saniye
+  //   body, from, fromMe, hasMedia, ack
+  //   _data.Info.PushName  -> gonderenin adi
+  //   _data.Info.Sender    -> gonderenin kimligi
+  //   _data.Info.Type      -> "text" / "image" / ...
+  //   _data.Info.IsGroup   -> grup mu
+  const bilgi = (m._data && m._data.Info) || {};
+  const tsMs = zamanAl(m) || Date.now();
+
   let kind = 'text';
-  const tip = String(m.type || m._data?.type || '').toLowerCase();
+  const tip = String(m.type || bilgi.Type || m.mediaType || '').toLowerCase();
+  const medyaVar = !!(m.hasMedia || m.media);
   if (/image|photo/.test(tip)) kind = 'image';
   else if (/video/.test(tip)) kind = 'video';
   else if (/audio|ptt|voice/.test(tip)) kind = 'audio';
   else if (/document|pdf/.test(tip)) kind = 'document';
   else if (/sticker/.test(tip)) kind = 'sticker';
+  else if (medyaVar) kind = 'document';
+
+  // Gonderen adi: once PushName (WAHA burada veriyor), sonra digerleri
+  const gonderenAd = bilgi.PushName || m.notifyName || m.pushName
+    || (m._data && m._data.notifyName) || m.author || (m.fromMe ? 'Ben' : '');
+  // Gonderen kimligi: gruplarda katilimci, kisilerde sohbetin kendisi
+  const gonderenJid = m.participant || bilgi.Sender || bilgi.SenderAlt || m.author || '';
+
+  const govde = m.body || m.text || m.caption || '';
+  const medya = m.media || {};
 
   return {
-    id: m.id?._serialized || m.id || kimlik('m'),
+    id: (m.id && m.id._serialized) || m.id || kimlik('m'),
     text: govde,
     caption: m.caption || '',
     kind,
-    fromMe: !!m.fromMe,
-    sender: m.notifyName || m._data?.notifyName || m.pushName || m.author || (m.fromMe ? 'Ben' : ''),
-    senderJid: m.author || m.participant || m.from || '',
+    fromMe: !!(m.fromMe || bilgi.IsFromMe),
+    sender: gonderenAd,
+    senderJid: gonderenJid,
     ts: tsMs,
     time: saat(tsMs),
-    durum: m.fromMe ? (m.ack || 1) : 0,
-    mediaUrl: m.mediaUrl || m.media?.url || null,
-    fileName: m.media?.filename || m._data?.filename || '',
+    durum: (m.fromMe || bilgi.IsFromMe) ? (Number(m.ack) || 1) : 0,
+    mediaUrl: medya.url || m.mediaUrl || null,
+    fileName: medya.filename || medya.fileName || (m._data && m._data.filename) || '',
+    mimeType: medya.mimetype || '',
     mentionsMe: false,
   };
 }
@@ -210,9 +250,13 @@ async function kisiAdlariniTamamla() {
 }
 
 async function mesajlariYukle(jid, adet = 100) {
+  // ONEMLI: jid'i encodeURIComponent ile KODLAMIYORUZ. '@' -> '%40' olunca
+  // WAHA sohbeti bulamiyor ve gecmis bos donuyordu ("sadece son 2 mesaj
+  // gorunuyor" sorununun sebebi buydu).
   const yollar = [
-    `/api/${OTURUM}/chats/${encodeURIComponent(jid)}/messages?limit=${adet}&downloadMedia=false`,
-    `/api/messages?session=${OTURUM}&chatId=${encodeURIComponent(jid)}&limit=${adet}`,
+    `/api/${OTURUM}/chats/${jid}/messages?limit=${adet}&downloadMedia=false`,
+    `/api/${OTURUM}/chats/${jid}/messages?limit=${adet}`,
+    `/api/messages?session=${OTURUM}&chatId=${jid}&limit=${adet}&downloadMedia=false`,
   ];
   for (const y of yollar) {
     try {
