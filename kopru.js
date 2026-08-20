@@ -783,6 +783,37 @@ app.get('/waha/durum', (req, res) => {
 });
 
 const server = http.createServer(app);
+// ═══ TESHIS UCU ══════════════════════════════════════════════════════
+// WAHA'nin GERCEKTE ne dondurdugunu gormek icin. Tahmin etmek yerine
+// gercek veriyi okuyup ona gore kod yaziyoruz.
+//   curl -s "http://localhost:3002/waha/tani" | head -c 4000
+app.get('/waha/tani', async (req, res) => {
+  const jid = req.query.jid || [...sohbetler.keys()].find((x) => grupMu(x)) || '';
+  const rapor = { oturum: OTURUM, jid, sonuc: {} };
+  const dene = async (ad, yol) => {
+    try {
+      const r = await waha(yol);
+      rapor.sonuc[ad] = {
+        yol, durum: 'OK',
+        tip: Array.isArray(r) ? ('dizi[' + r.length + ']') : typeof r,
+        alanlar: Array.isArray(r) ? (r[0] ? Object.keys(r[0]) : []) : (r ? Object.keys(r) : []),
+        ornek: JSON.stringify(Array.isArray(r) ? r[0] : r).slice(0, 1000),
+      };
+    } catch (e) { rapor.sonuc[ad] = { yol, durum: 'HATA', hata: String(e.message).slice(0, 200) }; }
+  };
+  await dene('grup_bilgisi', '/api/' + OTURUM + '/groups/' + jid);
+  await dene('grup_uyeleri', '/api/' + OTURUM + '/groups/' + jid + '/participants');
+  await dene('grup_aciklama', '/api/' + OTURUM + '/groups/' + jid + '/description');
+  await dene('gruplar_listesi', '/api/' + OTURUM + '/groups?limit=2');
+  await dene('kisiler', '/api/' + OTURUM + '/contacts/all?limit=2');
+  try {
+    const ms = await waha('/api/' + OTURUM + '/chats/' + jid + '/messages?limit=40&downloadMedia=true');
+    const medyali = (Array.isArray(ms) ? ms : []).find((x) => x.hasMedia || x.media || /image|document|video|audio/i.test(String(x.type || '')));
+    rapor.medyaliMesaj = medyali ? JSON.stringify(medyali).slice(0, 1800) : 'bulunamadi';
+  } catch (e) { rapor.medyaliMesaj = 'HATA: ' + e.message; }
+  res.json(rapor);
+});
+
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws) => {

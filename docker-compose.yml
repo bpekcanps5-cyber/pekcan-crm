@@ -17,6 +17,15 @@ services:
       TZ: Europe/Istanbul
       WAHA_DEFAULT_ENGINE: GOWS
 
+      # ═══ MEDYA INDIRME (2026-08) ═══════════════════════════════════
+      # WAHA VARSAYILAN OLARAK MEDYAYI INDIRMEZ. Bu ayar acik olmadan
+      # fotograf/PDF icin 'media' alani bos geliyor ve panelde
+      # "Dosya inmedi" yaziyordu. Asil sebep buydu.
+      WHATSAPP_DOWNLOAD_MEDIA: "True"
+      WHATSAPP_FILES_MIMETYPES: ""          # bos = HEPSI (pdf, foto, ses, video)
+      WHATSAPP_FILES_LIFETIME: "0"          # 0 = dosyalari silme
+      WAHA_MEDIA_STORAGE: LOCAL
+
       # Oturum kalici olsun (yeniden baslatinca QR istemesin)
       WHATSAPP_DEFAULT_ENGINE: GOWS
       WAHA_LOG_LEVEL: info
