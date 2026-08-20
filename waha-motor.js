@@ -311,31 +311,45 @@ async function _sayfaliCek(temelYol, zamanAsimiMs) {
 function yeniSohbetleriYayinla(sock, kayitlar, kaynak) {
   if (!sock || sock._kapali) return 0;
   if (!sock._gorulenSohbetler) sock._gorulenSohbetler = new Set();
-  const yeniler = [];
+  const liste = [];
+  let yeniSayisi = 0;
   for (const k of (kayitlar || [])) {
     if (!k) continue;
     let jid = jidAl(k);
     if (!jid || !jid.includes('@')) continue;
     if (jid.endsWith('@c.us')) jid = jid.split('@')[0] + '@s.whatsapp.net';
     if (jid === 'status@broadcast' || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
-    if (sock._gorulenSohbetler.has(jid)) continue;
-    sock._gorulenSohbetler.add(jid);
-    const ad = sohbetAdi(k);
-    const zaman = sohbetZamani(k);
-    yeniler.push({
+    if (!sock._gorulenSohbetler.has(jid)) { sock._gorulenSohbetler.add(jid); yeniSayisi++; }
+    liste.push({
       id: jid,
-      name: ad || undefined,                       // bos ise server.js jid'den turetir
-      conversationTimestamp: zaman || undefined,   // bilinmiyorsa hic gonderme
+      name: sohbetAdi(k) || undefined,                  // bos ise server.js jid'den turetir
+      conversationTimestamp: sohbetZamani(k) || undefined,
       unreadCount: Number(k.unreadCount || k.UnreadCount || k.unread || 0) || 0,
     });
   }
-  if (!yeniler.length) return 0;
-  const grup = yeniler.filter((x) => x.id.endsWith('@g.us')).length;
-  log('liste (' + kaynak + '): ' + yeniler.length + ' yeni sohbet panele gonderildi ('
-    + grup + ' grup, ' + (yeniler.length - grup) + ' kisi)');
-  // Baileys'in gecmis paketi bicimi — server.js 7875. satir bunu isler
-  sock.ev.emit('messaging-history.set', { chats: yeniler, contacts: [], messages: [], isLatest: true });
-  return yeniler.length;
+  if (!liste.length) return 0;
+
+  // ═══ NEDEN HEPSINI GONDERIYORUZ, SADECE YENILERI DEGIL ═══════════
+  // Kullanici panelden "verileri sil" dediginde sohbetler hem
+  // veritabanindan hem bellekten gidiyor. Eger burada "bunu zaten
+  // gondermistim" diye elersek gruplar bir daha GERI GELMEZ — sunucuyu
+  // yeniden baslatmak gerekirdi. Bu yuzden her turda tam liste gidiyor.
+  // Maliyeti yok: server.js zaten 'if (!chats.has(jid))' ile bakiyor,
+  // mevcut olani atliyor. Sadece EKSIK olanlar geri ekleniyor.
+  const grup = liste.filter((x) => x.id.endsWith('@g.us')).length;
+  log('liste (' + kaynak + '): ' + liste.length + ' sohbet gonderildi ('
+    + grup + ' grup, ' + (liste.length - grup) + ' kisi'
+    + (yeniSayisi ? ', ' + yeniSayisi + ' yeni' : '') + ')');
+
+  // ═══ 'messages' ALANI BILEREK GONDERILMIYOR ══════════════════════
+  // server.js'te o alan bir dizi ise, SADECE mesaj islemek icin degil,
+  // BELLEKTEKI TUM SOHBETLERI tek tek veritabanina yazmak icin de bir
+  // dongu doner. Bos dizi ([]) bile o donguyu tetikliyor. 7000 sohbette
+  // her yayinda 7000 yazma demek — Supabase'i bogar. Alani hic
+  // gondermeyince o dongu atlaniyor; sohbetleri zaten fetchAllGroups
+  // kendi olculu kuyruguyla (siraliKaydet) yaziyor.
+  sock.ev.emit('messaging-history.set', { chats: liste, contacts: [], isLatest: true });
+  return liste.length;
 }
 
 // Sohbet listesi uclarini SIRAYLA dene. Her adim loga yazilir —
@@ -660,6 +674,39 @@ async function wahaMedyaIndir(m) {
 const http = require('http');
 let _kancaSunucu = null;
 const _dinleyiciler = new Set();   // aktif soketler (olaylari dagitmak icin)
+let _olaySayaci = 0;               // WAHA'dan kac olay geldi
+const _olayTipleri = new Map();
+
+// ═══ KANCA BEKCISI ══════════════════════════════════════════════════
+// Baglanti kuruldugu halde WAHA'dan hic olay gelmiyorsa panel bos kalir
+// ve sebebi anlasilmaz (mesaj dusmez, tik gelmez). 90 saniye sonra
+// kontrol edip NE YAPILACAGINI yaziyoruz.
+function kancaBekcisi(sock) {
+  if (sock._kancaBekcisiKuruldu) return;
+  sock._kancaBekcisiKuruldu = true;
+  setTimeout(() => {
+    if (sock._kapali || _olaySayaci > 0) return;
+    log('');
+    log('╔═══════════════════════════════════════════════════════════');
+    log('║ ⚠️  WAHA BAGLI AMA 90 SANIYEDIR HIC OLAY GELMEDI');
+    log('║');
+    log('║ Panelde mesaj gorunmemesinin sebebi budur. Baglanti var,');
+    log('║ gruplar geliyor, ama WAHA olaylari bize ULASAMIYOR.');
+    log('║');
+    log('║ WAHA su adrese gondermeye calisiyor:');
+    log('║   ' + WAHA_KANCA_URL + '/olay');
+    log('║');
+    log('║ Sirayla kontrol et:');
+    log('║  1) Guvenlik duvari Docker\'dan gelen istegi engelliyor olabilir:');
+    log('║     ufw allow from 172.16.0.0/12 to any port ' + WAHA_KANCA_PORT);
+    log('║  2) docker-compose.yml icindeki WHATSAPP_HOOK_URL eski');
+    log('║     kopruyu (kopru:3002) gosteriyorsa sil ya da duzelt.');
+    log('║  3) .env icinde WAHA_KANCA_URL satiri OLMAMALI.');
+    log('║  4) WAHA kutusunda extra_hosts host.docker.internal tanimli mi?');
+    log('╚═══════════════════════════════════════════════════════════');
+    log('');
+  }, 90000);
+}
 
 // WAHA'dan gelen olaylari alan kucuk sunucu (tek kez acilir)
 function kancaSunucusuAc() {
@@ -674,6 +721,17 @@ function kancaSunucusuAc() {
       let olay = null;
       try { olay = JSON.parse(govde || '{}'); } catch (_) { return; }
       for (const s of _dinleyiciler) { try { s._olayIsle(olay); } catch (e) { log('olay hatasi:', e.message); } }
+      // ── OLAY SAYACI ──
+      // WAHA'dan hic olay gelmezse panel sessizce bos kalir ve sebebi
+      // anlasilmaz. Ilk olayi ve sonra periyodik ozeti yaziyoruz.
+      _olaySayaci++;
+      const tip = String(olay.event || olay.type || '?');
+      _olayTipleri.set(tip, (_olayTipleri.get(tip) || 0) + 1);
+      if (_olaySayaci === 1) log('✅ WAHA\'dan ilk olay geldi: "' + tip + '" — koprü calisiyor');
+      else if (_olaySayaci % 200 === 0) {
+        log('olay ozeti (' + _olaySayaci + ' toplam): '
+          + [..._olayTipleri].map(([t, n]) => t + '=' + n).join(' '));
+      }
     });
   });
   // 0.0.0.0 -> Docker kutusundan da erisilebilsin (sadece localhost YETMEZ)
@@ -684,22 +742,49 @@ function kancaSunucusuAc() {
 }
 
 // Oturumu hazirla: yoksa olustur, webhook'u bizim kopruye yonlendir
+const KANCA_OLAYLARI = ['message', 'message.any', 'message.ack', 'message.revoked', 'message.reaction',
+  'session.status', 'state.change', 'group.v2.update', 'group.v2.participants',
+  'presence.update', 'chat.archive'];
+
 async function oturumHazirla() {
-  const kanca = {
-    url: WAHA_KANCA_URL + '/olay',
-    events: ['message', 'message.any', 'message.ack', 'message.revoked', 'message.reaction',
-             'session.status', 'state.change', 'group.v2.update', 'group.v2.participants',
-             'presence.update', 'chat.archive'],
-  };
+  const kanca = { url: WAHA_KANCA_URL + '/olay', events: KANCA_OLAYLARI };
   try {
     const s = await istek('/api/sessions/' + WAHA_OTURUM);
-    // webhook adresimiz kayitli mi? degilse guncelle
-    const mevcut = ((s.config && s.config.webhooks) || []).map((w) => w.url);
-    if (!mevcut.includes(kanca.url)) {
+    const kayitli = (s.config && s.config.webhooks) || [];
+    // Ne kayitli oldugunu HER ZAMAN yaz — bir daha koru koruna aramayalim
+    log('WAHA kayitli olay adresi: ' + (kayitli.map((w) => w.url).join(' , ') || '(HIC YOK)'));
+    for (const w of kayitli) {
+      log('   ' + w.url + '  ->  olaylar: ' + ((w.events || []).join(',') || '(bos)'));
+    }
+
+    // ═══ SADECE ADRESE BAKMAK YETMIYOR (2026-08) ════════════════════
+    // ESKI HATA: yalnizca url karsilastiriliyordu. Oturum daha once
+    // baska bir surumle (ya da eski kopruyle) kurulduysa adres AYNI
+    // kalir ama kayitli olay listesi eksik olabilir — ornegin sadece
+    // 'session.status'. O zaman baglanti kurulur, QR gelir, gruplar
+    // gelir AMA MESAJ HIC DUSMEZ. Kod da "adres dogru" deyip hicbir sey
+    // yapmazdi. Artik olay listesi de karsilastiriliyor.
+    const bizim = kayitli.find((w) => w.url === kanca.url);
+    const eksikOlaylar = bizim
+      ? KANCA_OLAYLARI.filter((e) => !((bizim.events || []).includes(e)))
+      : KANCA_OLAYLARI;
+    if (!bizim || eksikOlaylar.length) {
+      log(bizim
+        ? 'olay listesi eksik (' + eksikOlaylar.join(',') + ') — duzeltiliyor'
+        : 'olay adresimiz kayitli degil — ekleniyor');
       try {
         await istek('/api/sessions/' + WAHA_OTURUM, { method: 'PUT', body: { config: { webhooks: [kanca] } } });
-        log('olay adresi guncellendi');
+        log('olay adresi + olay listesi guncellendi');
+        // Dogrulama: WAHA gercekten kaydetti mi?
+        try {
+          const k = await istek('/api/sessions/' + WAHA_OTURUM);
+          const y = ((k.config && k.config.webhooks) || []).find((w) => w.url === kanca.url);
+          if (y) log('   dogrulandi -> ' + (y.events || []).length + ' olay kayitli');
+          else log('   ⚠ WAHA kaydetmemis gorunuyor — WAHA arayuzunden elle bakman gerekebilir');
+        } catch (_) {}
       } catch (e) { log('olay adresi guncellenemedi: ' + e.message); }
+    } else {
+      log('olay adresi ve olay listesi zaten dogru');
     }
     return s;
   } catch (e) {
@@ -846,7 +931,7 @@ async function wahaBaglan() {
   // kendisini dinliyoruz — hangi yoldan acilirsa acilsin yakalanir.
   // ilkListeBaslat kendi icinde tek sefer korumali.
   sock.ev.on('connection.update', (u) => {
-    if (u && u.connection === 'open') ilkListeBaslat(sock);
+    if (u && u.connection === 'open') { ilkListeBaslat(sock); kancaBekcisi(sock); }
   });
 
   // ── WAHA olayi -> Baileys olayi ──
