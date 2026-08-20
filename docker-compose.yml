@@ -1,0 +1,60 @@
+services:
+  # ═══════════════════════════════════════════════════════════════════
+  # WAHA — WhatsApp motoru (ayri kutuda calisir)
+  #
+  # ONEMLI: WAHA_DEFAULT_ENGINE=GOWS
+  #   GOWS  = whatsmeow (Go)  -> BAILEYS'TEN FARKLI kutuphane, test edecegimiz bu
+  #   NOWEB = Baileys         -> su an kullandigimizin AYNISI, test etmenin anlami yok
+  #   WEBJS = Chrome tabanli  -> cok daha agir, alternatif
+  # ═══════════════════════════════════════════════════════════════════
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: waha-test
+    restart: unless-stopped
+    ports:
+      - "3001:3000"                 # WAHA arayuzu: http://SUNUCU:3001
+    environment:
+      TZ: Europe/Istanbul
+      WAHA_DEFAULT_ENGINE: GOWS
+
+      # Oturum kalici olsun (yeniden baslatinca QR istemesin)
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      WAHA_LOG_LEVEL: info
+
+      # Kopruye olay gonder (mesajlar buraya dusecek)
+      WHATSAPP_HOOK_URL: http://kopru:3002/waha/olay
+      WHATSAPP_HOOK_EVENTS: message,message.any,message.ack,session.status,state.change
+
+      # WAHA arayuzunu sifreyle koru (test sunucusu disari acikken sart)
+      WAHA_DASHBOARD_USERNAME: admin
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_PANEL_SIFRE:-degistir-beni}
+      WHATSAPP_API_KEY: ${WAHA_API_KEY:-test-anahtari-degistir}
+    volumes:
+      - ./waha-veri:/app/.sessions   # oturum dosyalari burada kalir
+    networks: [waha-ag]
+
+  # ═══════════════════════════════════════════════════════════════════
+  # KOPRU — WAHA ile bizim panel arasinda cevirmen
+  # Panel hic degismeden calisir; kopru WAHA'yi bizim protokole cevirir.
+  # ═══════════════════════════════════════════════════════════════════
+  kopru:
+    build: .
+    container_name: waha-kopru
+    restart: unless-stopped
+    ports:
+      - "3002:3002"                 # TEST PANELI: http://SUNUCU:3002
+    environment:
+      TZ: Europe/Istanbul
+      WAHA_URL: http://waha:3000
+      WAHA_API_KEY: ${WAHA_API_KEY:-test-anahtari-degistir}
+      WAHA_OTURUM: test
+      PANEL_KULLANICI: ${PANEL_KULLANICI:-demo}
+      PANEL_SIFRE: ${PANEL_SIFRE:-demo}
+    volumes:
+      - ./medya:/app/medya
+    depends_on: [waha]
+    networks: [waha-ag]
+
+networks:
+  waha-ag:
+    driver: bridge

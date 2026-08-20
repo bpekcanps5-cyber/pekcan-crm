@@ -46,7 +46,19 @@ const istemciler = new Set();
 
 const log = (...a) => console.log(new Date().toLocaleTimeString('tr-TR'), ...a);
 const kimlik = (p) => p + '_' + Math.random().toString(36).slice(2, 10);
-const saat = (ts) => { const d = new Date(ts); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+// SAAT: kutu UTC calissa bile Turkiye saatini yaz. (Docker kutulari
+// varsayilan UTC; bu yuzden butun saatler 3 saat geri gorunuyordu.)
+const SAAT_DILIMI = process.env.TZ || 'Europe/Istanbul';
+const saat = (ts) => {
+  try {
+    return new Intl.DateTimeFormat('tr-TR', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SAAT_DILIMI,
+    }).format(new Date(ts));
+  } catch (_) {
+    const d = new Date(ts);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+};
 
 // ─────────────────────── WAHA'YA ISTEK ────────────────────────
 async function waha(yol, secenek = {}) {
@@ -195,6 +207,60 @@ function mesajaCevir(m) {
   };
 }
 
+// ═══ MEDYA INDIRME ══════════════════════════════════════════════════
+// Sigorta isinde medya cok kritik: ruhsat fotografi, police PDF'i, dekont.
+// WAHA medyayi kendi adresinde tutuyor; biz indirip panelin gorebilecegi
+// yere koyuyoruz (/medya/...). Panel WAHA'ya dogrudan erisemeyebilir.
+const _medyaIniyor = new Set();
+
+function uzantiBul(mime, ad) {
+  if (ad && ad.includes('.')) {
+    const u = ad.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (u && u.length <= 5) return u;
+  }
+  const m = String(mime || '').toLowerCase();
+  if (m.includes('pdf')) return 'pdf';
+  if (m.includes('jpeg') || m.includes('jpg')) return 'jpg';
+  if (m.includes('png')) return 'png';
+  if (m.includes('webp')) return 'webp';
+  if (m.includes('mp4')) return 'mp4';
+  if (m.includes('ogg') || m.includes('opus')) return 'ogg';
+  if (m.includes('mpeg') || m.includes('mp3')) return 'mp3';
+  if (m.includes('sheet') || m.includes('excel')) return 'xlsx';
+  if (m.includes('word')) return 'docx';
+  return 'bin';
+}
+
+async function medyaIndir(jid, m) {
+  const kaynak = (m.media && m.media.url) || m.mediaUrl;
+  if (!kaynak || _medyaIniyor.has(m.id)) return null;
+  _medyaIniyor.add(m.id);
+  try {
+    const url = kaynak.startsWith('http') ? kaynak : (WAHA_URL + kaynak);
+    const bas = WAHA_API_KEY ? { 'X-Api-Key': WAHA_API_KEY } : {};
+    const r = await fetch(url, { headers: bas });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (!buf.length) throw new Error('bos dosya');
+    const ext = uzantiBul(m.mimeType, m.fileName);
+    const ad = Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
+    fs.writeFileSync(path.join(MEDYA_DIZIN, ad), buf);
+    const yol = '/medya/' + ad;
+    log(`📎 medya indi: ${m.fileName || m.kind} (${(buf.length / 1024).toFixed(0)} KB)`);
+
+    // mesaji guncelle + panele bildir
+    const liste = mesajlar.get(jid) || [];
+    const hedef = liste.find((x) => x.id === m.id);
+    if (hedef) { hedef.mediaUrl = yol; hedef.indiriliyor = false; }
+    m.mediaUrl = yol;
+    yayinla({ type: 'msgUpdate', jid, mesaj: hedef || m });
+    return yol;
+  } catch (e) {
+    log(`✗ medya inmedi (${m.fileName || m.kind}): ${e.message}`);
+    return null;
+  } finally { _medyaIniyor.delete(m.id); }
+}
+
 // ───────────────── WAHA'DAN SOHBETLERI YUKLE ─────────────────
 async function sohbetleriYukle() {
   // SIRA ONEMLI: 'overview' daha zengin veri veriyor — kisi ISIMLERI ve
@@ -273,6 +339,12 @@ async function mesajlariYukle(jid, adet = 100) {
         for (const x of eldeki) if (!harita.has(x.id)) harita.set(x.id, x);
         const ms = [...harita.values()].sort((a, b) => a.ts - b.ts);
         mesajlar.set(jid, ms);
+        // Son 25 mesajdaki medyayi indir (hepsini indirmek gereksiz yuk)
+        ms.slice(-25).forEach((x) => {
+          if (x.kind !== 'text' && !String(x.mediaUrl || '').startsWith('/medya/')) {
+            medyaIndir(jid, x).catch(() => {});
+          }
+        });
         return ms;
       }
     } catch (_) {}
@@ -339,6 +411,11 @@ app.post('/waha/olay', (req, res) => {
       if (!m.fromMe) { c.unread = (c.unread || 0) + 1; c.ozelUnread = (c.ozelUnread || 0) + 1; }
 
       c.messages = [m];        // liste onizlemesi guncel kalsin
+      // Medya varsa arka planda indir (mesaj hemen gorunsun, foto sonra gelsin)
+      if (m.kind !== 'text' && (veri.hasMedia || veri.media)) {
+        m.indiriliyor = true;
+        medyaIndir(jid, m).catch(() => {});
+      }
       log(`📩 ${c.isGroup ? '[grup]' : '[kisi]'} ${c.name}: ${(m.text || m.kind).slice(0, 50)}`);
       yayinla({ type: 'msgAppend', jid, mesaj: m });
       yayinla({ type: 'chatSync', jid, unread: c.unread, ozelUnread: c.ozelUnread, muhUnread: 0, lastTime: c.lastTime, lastTs: c.lastTs });
@@ -348,6 +425,57 @@ app.post('/waha/olay', (req, res) => {
       return;
     }
   } catch (e) { log('olay islenemedi:', e.message); }
+});
+
+// ═══ DOSYA GONDERME (panelden WhatsApp'a) ═══════════════════════════
+// Panel dosyayi /upload?jid=..&name=..&mime=.. adresine HAM olarak POST eder.
+// Sigorta isinde surekli kullaniliyor: police PDF'i, dekont, ruhsat fotosu.
+app.post('/upload', express.raw({ type: '*/*', limit: '64mb' }), async (req, res) => {
+  const jid = req.query.jid;
+  const ad = req.query.name || 'dosya';
+  const mime = req.query.mime || 'application/octet-stream';
+  const caption = req.query.caption || '';
+  if (!jid || !req.body || !req.body.length) {
+    return res.status(400).json({ ok: false, error: 'jid ve dosya zorunlu' });
+  }
+  const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body);
+  const t0 = Date.now();
+  try {
+    const ext = uzantiBul(mime, ad);
+    const kayitAd = Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
+    fs.writeFileSync(path.join(MEDYA_DIZIN, kayitAd), buf);
+    const yol = '/medya/' + kayitAd;
+
+    const b64 = buf.toString('base64');
+    const gorsel = /^image\//.test(mime);
+    const ses = /^audio\//.test(mime);
+    const video = /^video\//.test(mime);
+    const uc = gorsel ? '/api/sendImage' : ses ? '/api/sendVoice' : video ? '/api/sendVideo' : '/api/sendFile';
+    const govde = { session: OTURUM, chatId: jid, file: { mimetype: mime, filename: ad, data: b64 } };
+    if (caption && !ses) govde.caption = caption;
+
+    const r = await waha(uc, { method: 'POST', body: govde });
+    const id = (r && ((r.id && r.id._serialized) || r.id)) || kimlik('d');
+    const sure = Date.now() - t0;
+
+    const yeni = {
+      id, text: (gorsel || video) ? (caption || '') : ad, caption: caption,
+      kind: gorsel ? 'image' : video ? 'video' : ses ? 'audio' : 'document',
+      fromMe: true, sender: 'Ben', ts: Date.now(), time: saat(Date.now()), durum: 1,
+      mediaUrl: yol, fileName: ad, mimeType: mime,
+    };
+    const liste = mesajlar.get(jid) || [];
+    liste.push(yeni); mesajlar.set(jid, liste);
+    const c = sohbetler.get(jid);
+    if (c) { c.lastTs = yeni.ts; c.lastTime = yeni.time; c.messages = [yeni]; }
+    log('📤 dosya gonderildi (' + sure + ' ms): ' + ad + ' (' + (buf.length / 1024).toFixed(0) + ' KB)');
+    yayinla({ type: 'msgAppend', jid, mesaj: yeni });
+    if (c) yayinla({ type: 'chats', chats: [sohbetGuvenli(c)], append: true });
+    res.json({ ok: true, id: id, url: yol });
+  } catch (e) {
+    log('✗ DOSYA GONDERILEMEDI: ' + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 // ─────────────────────── PANEL API ───────────────────────
@@ -436,19 +564,25 @@ wss.on('connection', (ws) => {
       if (m.type === 'send') {
         const t0 = Date.now();
         try {
-          const r = await waha('/api/sendText', { method: 'POST', body: { session: OTURUM, chatId: m.jid, text: m.text || '' } });
+          const govde = { session: OTURUM, chatId: m.jid, text: m.text || '' };
+          if (m.replyTo || m.replyId) govde.reply_to = m.replyTo || m.replyId;   // alintili yanit
+          if (m.mentions && m.mentions.length) govde.mentions = m.mentions;      // @etiketleme
+          const r = await waha('/api/sendText', { method: 'POST', body: govde });
           const sure = Date.now() - t0;
           const id = r?.id?._serialized || r?.id || kimlik('g');
           const yeni = {
             id, text: m.text || '', kind: 'text', fromMe: true, sender: 'Ben',
             ts: Date.now(), time: saat(Date.now()), durum: 1,
+            replyTo: m.replyTo || m.replyId || null,
           };
           const liste = mesajlar.get(m.jid) || [];
           liste.push(yeni); mesajlar.set(m.jid, liste);
           const c = sohbetler.get(m.jid);
           if (c) { c.lastTs = yeni.ts; c.lastTime = yeni.time; }
           log(`📤 gonderildi (${sure} ms): ${(m.text || '').slice(0, 40)}`);
+          if (c) c.messages = [yeni];
           yayinla({ type: 'msgAppend', jid: m.jid, mesaj: yeni });
+          if (c) yayinla({ type: 'chats', chats: [sohbetGuvenli(c)], append: true });
         } catch (e) {
           log('✗ GONDERILEMEDI:', e.message);
           G({ type: 'sendError', jid: m.jid, error: e.message });
@@ -464,13 +598,94 @@ wss.on('connection', (ws) => {
         return;
       }
 
+      // ── GRUP UYELERI (etiketleme ve "kim yazdi" icin) ──
+      if (m.type === 'getGroupMembers') {
+        const c = sohbetler.get(m.jid);
+        if (c && (!c.members || !c.members.length) && grupMu(m.jid)) {
+          try {
+            const g = await waha(`/api/${OTURUM}/groups/${m.jid}`);
+            const uyeler = (g.participants || g.groupMetadata?.participants || []).map((p) => ({
+              jid: jidAl(p), name: p.name || p.pushName || '', number: String(jidAl(p)).split('@')[0],
+              admin: !!(p.admin || p.isAdmin),
+            }));
+            c.members = uyeler;
+            c.memberCount = uyeler.length;
+            if (g.description || g.desc) c.description = g.description || g.desc;
+          } catch (e) { log('grup uyeleri alinamadi: ' + e.message); }
+        }
+        return G({ type: 'chatSync', jid: m.jid, members: (c && c.members) || [], memberCount: (c && c.memberCount) || 0 });
+      }
+
+      // ── GRUP ACIKLAMASI TAZELE ──
+      if (m.type === 'aciklamaTazele' || m.type === 'refreshChat' || m.type === 'syncChat') {
+        const c = sohbetler.get(m.jid);
+        let aciklama = (c && c.description) || '';
+        if (grupMu(m.jid)) {
+          try {
+            const g = await waha(`/api/${OTURUM}/groups/${m.jid}`);
+            aciklama = g.description || g.desc || aciklama;
+            if (c) { c.description = aciklama; if (g.subject) c.name = g.subject; }
+          } catch (_) {}
+        }
+        if (c) G({ type: 'chats', chats: [sohbetGuvenli(c)], append: true });
+        return G({ type: 'aciklamaTazeleSonuc', jid: m.jid, ok: true, description: aciklama });
+      }
+
+      // ── YAZIYOR GOSTERGESI ──
+      if (m.type === 'typing' || m.type === 'yaziyor') {
+        try {
+          await waha(m.deger === false ? '/api/stopTyping' : '/api/startTyping',
+            { method: 'POST', body: { session: OTURUM, chatId: m.jid } });
+        } catch (_) {}
+        return;
+      }
+
+      // ── MESAJ SIL (herkesten) ──
+      if (m.type === 'delete') {
+        try {
+          await waha(`/api/${OTURUM}/chats/${m.jid}/messages/${m.id}`, { method: 'DELETE' });
+          yayinla({ type: 'mesajYerelSil', jid: m.jid, id: m.id });
+        } catch (e) { G({ type: 'opError', message: 'Silinemedi: ' + e.message }); }
+        return;
+      }
+
+      // ── TEPKI (emoji) ──
+      if (m.type === 'react') {
+        try {
+          await waha('/api/reaction', { method: 'PUT', body: { session: OTURUM, messageId: m.id, reaction: m.emoji || '' } });
+          yayinla({ type: 'msgUpdate', jid: m.jid, mesaj: { id: m.id, myReaction: m.emoji || '' } });
+        } catch (e) { G({ type: 'opError', message: 'Tepki gonderilemedi: ' + e.message }); }
+        return;
+      }
+
+      // ── KISI LISTESI (yeni sohbet acarken) ──
+      if (m.type === 'getContacts') {
+        const kisiler = [...sohbetler.values()].filter((c) => !c.isGroup)
+          .map((c) => ({ jid: c.jid, name: c.name, number: c.jid.split('@')[0] }));
+        return G({ type: 'contactsList', contacts: kisiler });
+      }
+
+      // ── YENI SOHBET ──
+      if (m.type === 'newChat') {
+        const num = String(m.number || '').replace(/\D/g, '');
+        if (!num) return G({ type: 'newChatResult', ok: false, error: 'Numara gecersiz' });
+        const jid = num + '@c.us';
+        if (!sohbetler.has(jid)) {
+          sohbetler.set(jid, {
+            jid, name: m.name || num, isGroup: false, description: '', avatar: null,
+            memberCount: 0, members: [], unread: 0, ozelUnread: 0, muhUnread: 0,
+            lastTime: saat(Date.now()), lastTs: Date.now(),
+            pinned: false, archived: false, hasMention: false, messages: [],
+          });
+          mesajlar.set(jid, []);
+        }
+        G({ type: 'chats', chats: [sohbetGuvenli(sohbetler.get(jid))], append: true });
+        return G({ type: 'newChatResult', ok: true, jid });
+      }
+
       if (m.type === 'getTeam') return G({ type: 'teamList', team: [{ username: KULLANICI, displayName: 'WAHA Test', role: 'admin' }] });
       if (m.type === 'getLabels') return G({ type: 'labelsList', labels: [] });
       if (m.type === 'internalList') return G({ type: 'internalListResult', items: [], users: [], me: KULLANICI });
-      if (m.type === 'getGroupMembers') {
-        const c = sohbetler.get(m.jid);
-        return G({ type: 'chatSync', jid: m.jid, members: (c && c.members) || [] });
-      }
       if (m.type === 'searchMessages') {
         const k = String(m.kelime || '').toLowerCase();
         const bulunan = [];
