@@ -24,7 +24,7 @@ const { WebSocketServer } = require('ws');
 const WAHA_URL = process.env.WAHA_URL || 'http://localhost:3000';
 const WAHA_API_KEY = process.env.WAHA_API_KEY || '';
 const OTURUM = process.env.WAHA_OTURUM || 'test';
-const PORT = 3002;
+const PORT = Number(process.env.PORT) || 3002;
 const KULLANICI = process.env.PANEL_KULLANICI || 'demo';
 const SIFRE = process.env.PANEL_SIFRE || 'demo';
 const MEDYA_DIZIN = path.join(__dirname, 'medya');
@@ -84,16 +84,23 @@ async function waha(yol, secenek = {}) {
 // ───────────────────── PANELE YAYIN ──────────────────────────
 // Panele giden her sohbette 'messages' dizisi OLMAK ZORUNDA — yoksa panel
 // liste ciziminde cokuyor. Tek noktadan garanti altina aliyoruz.
-function sohbetGuvenli(c) {
+// hafif=true -> "bu pakette sadece SON mesaj var, elindeki tam listeyi SILME"
+// PANELIN KURALI: bu isaret yoksa panel, gonderdigimiz 1 mesajlik diziyi
+// TAM liste sanip eldeki gecmisi EZIYOR. "Yeni mesaj gelince sadece son 2
+// mesaj kaliyor" sorununun sebebi tam olarak buydu.
+function sohbetGuvenli(c, hafif) {
   if (!c) return c;
-  if (!Array.isArray(c.messages)) {
-    const ms = mesajlar.get(c.jid);
-    c.messages = Array.isArray(ms) && ms.length ? [ms[ms.length - 1]] : [];
+  const kopya = Object.assign({}, c);
+  if (!Array.isArray(kopya.messages) || hafif) {
+    const ms = mesajlar.get(kopya.jid);
+    kopya.messages = Array.isArray(ms) && ms.length ? [ms[ms.length - 1]] : (kopya.messages || []);
   }
-  return c;
+  if (hafif) kopya._hafif = true;      // panel gecmisi korusun
+  return kopya;
 }
 function sohbetListesi() {
-  return [...sohbetler.values()].map(sohbetGuvenli).sort((a, b) => b.lastTs - a.lastTs);
+  // Liste paketleri HAFIF: sadece son mesaj tasiyor, panelin gecmisini silmiyor.
+  return [...sohbetler.values()].map((c) => sohbetGuvenli(c, true)).sort((a, b) => b.lastTs - a.lastTs);
 }
 
 function yayinla(paket) {
@@ -124,6 +131,18 @@ function zamanAl(x) {
   }
   return 0;
 }
+
+// "905399265440:98@s.whatsapp.net" -> "905399265440@s.whatsapp.net"
+// WhatsApp numaranin sonuna cihaz numarasi ekliyor, temizliyoruz.
+function numaraDuzelt(j) {
+  if (!j) return '';
+  const s2 = String(j);
+  if (!s2.includes('@')) return '';
+  const [sol, sag] = s2.split('@');
+  return sol.split(':')[0] + '@' + sag;
+}
+// @lid -> gercek numara eslesmesi (bir kez ogrenince hep kullaniriz)
+const lidNumara = new Map();
 
 function jidAl(x) {
   return x?.id?._serialized || x?.id || x?.chatId || x?.from || x?.jid || '';
@@ -158,6 +177,22 @@ function sohbeteCevir(c) {
   };
 }
 
+// Mesajda kimlerden bahsedilmis (@etiket)
+function bahsedilenler(m, bilgi) {
+  const ham = m.mentionedIds || m.mentions
+    || (m._data && m._data.Message && m._data.Message.extendedTextMessage
+        && m._data.Message.extendedTextMessage.contextInfo
+        && m._data.Message.extendedTextMessage.contextInfo.mentionedJID)
+    || [];
+  return (Array.isArray(ham) ? ham : []).map((x) => numaraDuzelt(x) || x);
+}
+// Bizden bahsedilmis mi?
+function bendenBahsedilmis(m, bilgi) {
+  if (!benimJid) return false;
+  const benimNum = String(benimJid).split('@')[0].split(':')[0];
+  return bahsedilenler(m, bilgi).some((x) => String(x).includes(benimNum));
+}
+
 function mesajaCevir(m) {
   // GERCEK WAHA (GOWS) yapisi — sunucudan alinan ornekle dogrulandi:
   //   id: duz metin ("false_120363...@g.us_3EB00A...")
@@ -184,7 +219,16 @@ function mesajaCevir(m) {
   const gonderenAd = bilgi.PushName || m.notifyName || m.pushName
     || (m._data && m._data.notifyName) || m.author || (m.fromMe ? 'Ben' : '');
   // Gonderen kimligi: gruplarda katilimci, kisilerde sohbetin kendisi
-  const gonderenJid = m.participant || bilgi.Sender || bilgi.SenderAlt || m.author || '';
+  // GERCEK NUMARA: GOWS gruplarda "@lid" (gizli kimlik) kullaniyor.
+  // Gercek telefon numarasi SenderAlt icinde geliyor. Panelde numara
+  // gorunmesi ve kisi eslestirmesi icin ONCE onu tercih ediyoruz.
+  const gercekNumara = bilgi.SenderAlt || bilgi.RecipientAlt || '';
+  const gonderenJid = numaraDuzelt(gercekNumara) || m.participant || bilgi.Sender || m.author || '';
+
+  // @lid <-> gercek numara eslesmesini ogren (grup uyelerinde ise yarayacak)
+  try {
+    if (bilgi.Sender && gercekNumara) lidNumara.set(bilgi.Sender, numaraDuzelt(gercekNumara));
+  } catch (_) {}
 
   const govde = m.body || m.text || m.caption || '';
   const medya = m.media || {};
@@ -199,11 +243,15 @@ function mesajaCevir(m) {
     senderJid: gonderenJid,
     ts: tsMs,
     time: saat(tsMs),
-    durum: (m.fromMe || bilgi.IsFromMe) ? (Number(m.ack) || 1) : 0,
+    durum: (m.fromMe || bilgi.IsFromMe)
+      ? (Number(m.ack) >= 3 ? 4 : Number(m.ack) === 2 ? 3 : Number(m.ack) >= 1 ? 2 : 1)
+      : 0,
     mediaUrl: medya.url || m.mediaUrl || null,
     fileName: medya.filename || medya.fileName || (m._data && m._data.filename) || '',
     mimeType: medya.mimetype || '',
-    mentionsMe: false,
+    // BAHSEDILME: mesajda bizden bahsedilmis mi (panelde kirmizi vurgu)
+    mentions: bahsedilenler(m, bilgi),
+    mentionsMe: bendenBahsedilmis(m, bilgi),
   };
 }
 
@@ -262,6 +310,57 @@ async function medyaIndir(jid, m) {
 }
 
 // ───────────────── WAHA'DAN SOHBETLERI YUKLE ─────────────────
+// Kendi numaramizi WAHA'dan ogren — bahsedilme tespiti ve "ben kimim"
+// bilgisi icin sart. Oturum bilgisinde 'me' alaninda geliyor.
+async function kimligimiOgren() {
+  try {
+    const s2 = await waha(`/api/sessions/${OTURUM}`);
+    const ben = s2.me || s2.user || {};
+    benimJid = numaraDuzelt(ben.id || ben.jid || '') || ben.id || '';
+    if (benimJid) log('👤 kimlik: ' + (ben.pushName || ben.name || '') + ' (' + benimJid + ')');
+    return benimJid;
+  } catch (e) { log('kimlik alinamadi: ' + e.message); return ''; }
+}
+
+// GRUPLARI AYRICA CEK — sohbet listesi bazen grup adini/aciklamasini
+// eksik veriyor. Bu cagri gruplarin TAMAMINI dogru bilgiyle getiriyor.
+async function gruplariYukle() {
+  const yollar = [`/api/${OTURUM}/groups`, `/api/groups?session=${OTURUM}`];
+  let liste = null;
+  for (const y of yollar) {
+    try { const r = await waha(y); if (Array.isArray(r)) { liste = r; break; } } catch (_) {}
+  }
+  if (!liste) { log('grup listesi alinamadi (sohbet listesindeki bilgi kullanilacak)'); return 0; }
+  let guncel = 0, yeni = 0;
+  for (const g of liste) {
+    const jid = jidAl(g);
+    if (!jid) continue;
+    const ad = g.subject || g.name || '';
+    const aciklama = g.description || g.desc || '';
+    let c = sohbetler.get(jid);
+    if (!c) {
+      c = {
+        jid, name: ad || jid.split('@')[0], isGroup: true, description: aciklama,
+        avatar: g.picture || null, memberCount: (g.participants || []).length, members: [],
+        unread: 0, ozelUnread: 0, muhUnread: 0, lastTime: '', lastTs: 0,
+        pinned: false, archived: false, hasMention: false, messages: [],
+      };
+      sohbetler.set(jid, c); mesajlar.set(jid, mesajlar.get(jid) || []);
+      yeni++;
+    } else {
+      if (ad && (!c.name || /^\d+$/.test(c.name))) { c.name = ad; guncel++; }
+      if (aciklama && !c.description) { c.description = aciklama; guncel++; }
+      if (!c.memberCount && (g.participants || []).length) c.memberCount = g.participants.length;
+      if (!c.avatar && g.picture) c.avatar = g.picture;
+    }
+  }
+  if (yeni || guncel) {
+    log(`👥 gruplar: ${yeni} yeni, ${guncel} bilgi guncellendi`);
+    yayinla({ type: 'chats', chats: sohbetListesi(), append: false });
+  }
+  return liste.length;
+}
+
 async function sohbetleriYukle() {
   // SIRA ONEMLI: 'overview' daha zengin veri veriyor — kisi ISIMLERI ve
   // SON MESAJ dahil. Duz '/chats' cogu kisi icin isim vermiyor, o yuzden
@@ -372,17 +471,30 @@ app.post('/waha/olay', (req, res) => {
       log(`🔌 WAHA durum: ${durum} -> ${bagliMi ? 'BAGLI' : 'bagli degil'}`);
       yayinla({ type: 'status', connected: bagliMi, myJid: benimJid, myName: 'WAHA Test' });
       if (bagliMi && !oncekiBagli) {
-        sohbetleriYukle().catch((e) => log('sohbet yukleme hatasi:', e.message));
+        (async () => {
+          await kimligimiOgren();
+          await sohbetleriYukle().catch((e) => log('sohbet yukleme hatasi: ' + e.message));
+          await gruplariYukle().catch(() => {});
+        })();
       }
       if (veri.qr || veri.qrCode) { sonQR = veri.qr || veri.qrCode; }
       return;
     }
 
     // ── MESAJ DURUMU (tek/cift tik) ──
-    if (/message\.ack/.test(tip)) {
-      const jid = jidAl(veri) || veri.chatId;
-      const id = veri.id?._serialized || veri.id;
-      yayinla({ type: 'msgStatus', jid, id, durum: veri.ack || 1 });
+    if (/message\.ack|ack/.test(tip)) {
+      // WAHA ack degerleri: 0 hata, 1 sunucuya gitti, 2 ulasti, 3 okundu, 4 sesli dinlendi
+      // Panelin bekledigi: 1 tek tik, 2 gonderildi, 3 cift tik, 4 okundu(mavi)
+      const jid = veri.chatId || veri.from || veri.to || jidAl(veri);
+      const id = (veri.id && veri.id._serialized) || veri.id;
+      const ham = Number(veri.ack != null ? veri.ack : veri.ackName === 'READ' ? 3 : 1);
+      const durum = ham >= 3 ? 4 : ham === 2 ? 3 : ham >= 1 ? 2 : 1;
+      if (!jid || !id) return;
+      // bellekteki mesaji da guncelle (sohbet acilinca dogru tik gorunsun)
+      const liste = mesajlar.get(jid) || [];
+      const hedef = liste.find((x) => x.id === id);
+      if (hedef && durum > (hedef.durum || 0)) hedef.durum = durum;
+      yayinla({ type: 'msgStatus', jid, id, durum });
       return;
     }
 
@@ -421,7 +533,7 @@ app.post('/waha/olay', (req, res) => {
       yayinla({ type: 'chatSync', jid, unread: c.unread, ozelUnread: c.ozelUnread, muhUnread: 0, lastTime: c.lastTime, lastTs: c.lastTs });
       // Sohbeti guncel haliyle de yolla: liste yeniden siralansin, yeni
       // sohbetse listeye eklensin, onizleme yazisi guncellensin.
-      yayinla({ type: 'chats', chats: [sohbetGuvenli(c)], append: true });
+      yayinla({ type: 'chats', chats: [sohbetGuvenli(c, true)], append: true });
       return;
     }
   } catch (e) { log('olay islenemedi:', e.message); }
@@ -470,7 +582,7 @@ app.post('/upload', express.raw({ type: '*/*', limit: '64mb' }), async (req, res
     if (c) { c.lastTs = yeni.ts; c.lastTime = yeni.time; c.messages = [yeni]; }
     log('📤 dosya gonderildi (' + sure + ' ms): ' + ad + ' (' + (buf.length / 1024).toFixed(0) + ' KB)');
     yayinla({ type: 'msgAppend', jid, mesaj: yeni });
-    if (c) yayinla({ type: 'chats', chats: [sohbetGuvenli(c)], append: true });
+    if (c) yayinla({ type: 'chats', chats: [sohbetGuvenli(c, true)], append: true });
     res.json({ ok: true, id: id, url: yol });
   } catch (e) {
     log('✗ DOSYA GONDERILEMEDI: ' + e.message);
@@ -582,7 +694,7 @@ wss.on('connection', (ws) => {
           log(`📤 gonderildi (${sure} ms): ${(m.text || '').slice(0, 40)}`);
           if (c) c.messages = [yeni];
           yayinla({ type: 'msgAppend', jid: m.jid, mesaj: yeni });
-          if (c) yayinla({ type: 'chats', chats: [sohbetGuvenli(c)], append: true });
+          if (c) yayinla({ type: 'chats', chats: [sohbetGuvenli(c, true)], append: true });
         } catch (e) {
           log('✗ GONDERILEMEDI:', e.message);
           G({ type: 'sendError', jid: m.jid, error: e.message });
@@ -604,10 +716,19 @@ wss.on('connection', (ws) => {
         if (c && (!c.members || !c.members.length) && grupMu(m.jid)) {
           try {
             const g = await waha(`/api/${OTURUM}/groups/${m.jid}`);
-            const uyeler = (g.participants || g.groupMetadata?.participants || []).map((p) => ({
-              jid: jidAl(p), name: p.name || p.pushName || '', number: String(jidAl(p)).split('@')[0],
-              admin: !!(p.admin || p.isAdmin),
-            }));
+            const uyeler = (g.participants || (g.groupMetadata && g.groupMetadata.participants) || []).map((p) => {
+              const ham = jidAl(p);
+              // gercek numara: once alan adaylarindan, sonra ogrendigimiz lid haritasindan
+              const gercek = numaraDuzelt(p.phoneNumber || p.pn || p.jid || p.alt || '')
+                || lidNumara.get(ham) || (String(ham).includes('@lid') ? '' : ham);
+              return {
+                jid: gercek || ham,
+                lid: ham,
+                name: p.name || p.pushName || p.notify || '',
+                number: gercek ? String(gercek).split('@')[0] : '',
+                admin: !!(p.admin || p.isAdmin || p.isSuperAdmin),
+              };
+            });
             c.members = uyeler;
             c.memberCount = uyeler.length;
             if (g.description || g.desc) c.description = g.description || g.desc;
@@ -627,7 +748,7 @@ wss.on('connection', (ws) => {
             if (c) { c.description = aciklama; if (g.subject) c.name = g.subject; }
           } catch (_) {}
         }
-        if (c) G({ type: 'chats', chats: [sohbetGuvenli(c)], append: true });
+        if (c) G({ type: 'chats', chats: [sohbetGuvenli(c, true)], append: true });
         return G({ type: 'aciklamaTazeleSonuc', jid: m.jid, ok: true, description: aciklama });
       }
 
@@ -679,7 +800,7 @@ wss.on('connection', (ws) => {
           });
           mesajlar.set(jid, []);
         }
-        G({ type: 'chats', chats: [sohbetGuvenli(sohbetler.get(jid))], append: true });
+        G({ type: 'chats', chats: [sohbetGuvenli(sohbetler.get(jid), true)], append: true });
         return G({ type: 'newChatResult', ok: true, jid });
       }
 
@@ -724,7 +845,9 @@ server.listen(PORT, async () => {
       log('oturum durumu:', s.status || s.state);
       if (/WORKING|CONNECTED/i.test(s.status || s.state || '')) {
         bagliMi = true;
-        await sohbetleriYukle().catch((e) => log('sohbet yukleme:', e.message));
+        await kimligimiOgren();
+        await sohbetleriYukle().catch((e) => log('sohbet yukleme: ' + e.message));
+        await gruplariYukle().catch(() => {});
       }
       return true;
     } catch (e) {
