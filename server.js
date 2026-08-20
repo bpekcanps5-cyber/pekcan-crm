@@ -18,6 +18,23 @@ const https = require('https');
 const { WebSocketServer } = require('ws');
 const db = require('./db'); // Supabase (PostgreSQL) veri katmani
 
+// ═══ MOTOR SECIMI (2026-08) ═══════════════════════════════════════════
+// VARSAYILAN 'baileys' — canli sistem HIC ETKILENMEZ.
+// MOTOR=waha ile calistirilirsa WhatsApp katmani WAHA'ya gecer; panelin
+// ve sunucunun geri kalani (robot, satislar, odemeler, kullanicilar,
+// etiketler, veritabani) AYNEN calismaya devam eder.
+const MOTOR = (process.env.MOTOR || 'baileys').toLowerCase();
+const wahaMotor = (MOTOR === 'waha') ? require('./waha-motor') : null;
+if (wahaMotor) {
+  console.log('');
+  console.log('╔══════════════════════════════════════════════════════════');
+  console.log('║  MOTOR: WAHA  (Baileys DEVRE DISI)');
+  console.log('║  WAHA   : ' + wahaMotor.WAHA_URL + '  (oturum: ' + wahaMotor.WAHA_OTURUM + ')');
+  console.log('║  Panelin ve sunucunun geri kalani AYNEN calisiyor.');
+  console.log('╚══════════════════════════════════════════════════════════');
+  console.log('');
+}
+
 // ============================================================
 // SUNUCU BAŞLANGIÇ KİMLİĞİ (boot id) — OTOMATİK PANEL YENİLEME
 // Sunucu HER başladığında benzersiz bir kimlik üretir. Panel bağlanınca bu kimliği alır.
@@ -145,7 +162,7 @@ console.info = (...args) => { if (!_gurultuMu(args)) _origInfo(...args); };
 console.warn = (...args) => { if (!_gurultuMu(args)) _origWarn(...args); };
 console.debug = (...args) => { if (!_gurultuMu(args)) _origDebug(...args); };
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;   // test surumu ayri portta calisabilsin
 // Mesaj saklama suresi: bundan eski mesajlar panele dusmez, DB'ye yazilmaz ve periyodik silinir.
 const MESAJ_SAKLAMA_GUN = 30;
 const MESAJ_SAKLAMA_MS = MESAJ_SAKLAMA_GUN * 24 * 60 * 60 * 1000;
@@ -207,6 +224,10 @@ function createLine(lineId, label, ownerUser) {
 // ediyordu. Sonuc: ayni mesaj birden fazla islenmesi, bellek sismesi,
 // eski soketin "koptum" demesiyle sahte uyarilar ve ust uste yeniden
 // baglanma denemeleri (WhatsApp bunu cakisma sanip 440 veriyordu).
+// WAHA motorunda Baileys oturum dosyalari YOK; auth silme islemleri
+// anlamsiz ve zararli olur. Bu yardimci onu engeller.
+function authSilinebilirMi() { return !wahaMotor; }
+
 function soketiKapat(sock, sebep) {
   if (!sock) return;
   try { sock.ev.removeAllListeners(); } catch (_) {}
@@ -5082,7 +5103,7 @@ wss.on('connection', (ws) => {
             try { if (line.sock) await line.sock.logout(); } catch (e) {}
             try { if (line.sock) line.sock.end(); } catch (e) {}
             // bu hattin auth klasorunu sil
-            try { fs.rmSync(line.authDir, { recursive: true, force: true }); }
+            try { if (authSilinebilirMi()) fs.rmSync(line.authDir, { recursive: true, force: true }); }
             catch (e) { console.error(`${_LID} auth silinemedi:`, e.message); }
             // baglanti durumunu sifirla (kendi sohbetleri DB'de korunur)
             line.connected = false; line.myNumber = null; line.myLID = null;
@@ -7220,10 +7241,16 @@ setInterval(() => { if (!arkaPlanCalisabilirMi()) return; medyaKuyrukIsle(); }, 
 async function saveMedia(m, kind, sock = waSock) {
   const extMap = { image: 'jpg', video: 'mp4', audio: 'ogg', document: '', sticker: 'webp' };
   try {
-    const downloadPromise = downloadMediaMessage(
-      m, 'buffer', {},
-      { logger: silentLogger, reuploadRequest: (sock || waSock).updateMediaMessage }
-    );
+    // ═══ MOTOR AYRIMI ═══════════════════════════════════════════════
+    // Baileys medyayi kendi cozer. WAHA ise dosyayi kendi sunucusunda
+    // tutup adresini verir; oradan indiriyoruz. (WAHA tarafinda
+    // WHATSAPP_DOWNLOAD_MEDIA acik olmali.)
+    const downloadPromise = wahaMotor
+      ? wahaMotor.wahaMedyaIndir(m)
+      : downloadMediaMessage(
+          m, 'buffer', {},
+          { logger: silentLogger, reuploadRequest: (sock || waSock).updateMediaMessage }
+        );
     // zaman asimi: 60 sn (30->60). Buyuk PDF'ler ve WhatsApp yogun oldugunda 30sn
     // yetmiyordu -> dosya inmiyordu. Artik daha sabirli.
     const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('indirme zaman asimi')), 60000));
@@ -7412,7 +7439,11 @@ async function _startWAIc(lineId = 'ofis') {
     console.log('   ⏩ Surum sorgusu atlandi (gomulu surumle hizli baglaniliyor)');
   }
 
-  const sock = makeWASocket({
+  // ═══ MOTOR SECIMI ═══════════════════════════════════════════════
+  // WAHA soketi Baileys ile AYNI arayuzu sunuyor; bu yuzden asagidaki
+  // TUM kod (olay dinleyicileri, gonderim, grup islemleri) degismeden
+  // calisiyor. Tek degisen: altta hangi motorun oldugu.
+  const sock = wahaMotor ? await wahaMotor.wahaBaglan() : makeWASocket({
     version, auth: state,
     logger: silentLogger,         // ÖNEMLI: Baileys'in JSON log selini sustur (terminal okunabilir kalsin)
     printQRInTerminal: false,
@@ -7726,7 +7757,7 @@ async function _startWAIc(lineId = 'ofis') {
         // Boylece elle "auth klasorunu sil" yapmaya gerek kalmaz.
         console.log('⚠️  Oturum gecersiz oldu (telefondan cikis/cakisma olabilir). Auth temizleniyor, yeni QR uretilecek...');
         try {
-          fs.rmSync(line.authDir, { recursive: true, force: true }); // bu HATTIN auth'u
+          if (authSilinebilirMi()) fs.rmSync(line.authDir, { recursive: true, force: true }); // bu HATTIN auth'u
           console.log('   🗑️  auth klasoru temizlendi.');
         } catch (e) { console.error('   auth temizlenemedi:', e.message); }
         if (lineId === 'ofis') { myNumber = null; myLID = null; lastQR = null; }

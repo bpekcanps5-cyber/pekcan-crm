@@ -4,6 +4,18 @@
 // .env icindeki DATABASE_URL'i kullanir.
 // ============================================================
 require('dotenv').config();
+
+// ═══ HAT ONEKI (2026-08) ═══════════════════════════════════════════════
+// AMAC: Test surumunun (WAHA) verilerinin CANLI panele karismamasi.
+// Ayni Supabase kullanilir; test surumu hat kimliklerine onek ekler:
+//   'ofis' -> 'waha_ofis'
+// Butun sorgular line_id ile filtrelendigi icin iki taraf birbirini
+// HIC gormez.
+//
+// CANLI SISTEM: DB_HAT_ONEK bos oldugu icin HICBIR SEY DEGISMEZ.
+const DB_HAT_ONEK = process.env.DB_HAT_ONEK || '';
+function H(lineId) { return DB_HAT_ONEK + (lineId || 'ofis'); }
+if (DB_HAT_ONEK) console.log('🗄️  Veritabani hat oneki: "' + DB_HAT_ONEK + '" (test verileri canlidan AYRI)');
 const { Pool } = require('pg');
 
 let pool = null;
@@ -143,7 +155,7 @@ async function saveChat(c, lineId = 'ofis') {
        has_mention=EXCLUDED.has_mention, custom_name=COALESCE(EXCLUDED.custom_name, chats.custom_name),
        ozel_unread=EXCLUDED.ozel_unread, muh_unread=EXCLUDED.muh_unread,
        updated_at=now()`,
-    [lineId, c.jid, c.name || '', !!c.isGroup, c.description || '', c.avatar || null,
+    [H(lineId), c.jid, c.name || '', !!c.isGroup, c.description || '', c.avatar || null,
      c.memberCount || 0, JSON.stringify(c.members || []), c.unread || 0,
      c.lastTime || '', c.lastTs || 0, !!c.pinned, !!c.archived, !!c.hasMention, c.customName || null, c.ozelUnread || 0, c.muhUnread || 0]
   );
@@ -171,7 +183,7 @@ async function saveMessage(chatJid, m, lineId = 'ofis') {
        caption=COALESCE(EXCLUDED.caption, messages.caption),
        reaction_by=EXCLUDED.reaction_by,
        arac_bilgi=COALESCE(EXCLUDED.arac_bilgi, messages.arac_bilgi)`,
-    [lineId, m.id, chatJid, !!m.fromMe, m.kind || 'text', m.text || '', m.mediaUrl || null,
+    [H(lineId), m.id, chatJid, !!m.fromMe, m.kind || 'text', m.text || '', m.mediaUrl || null,
      m.thumb || null, m.sender || '', m.senderJid || '', m.senderPush || '',
      m.replyTo ? JSON.stringify(m.replyTo) : null,
      m.contact ? JSON.stringify(m.contact) : null,
@@ -191,7 +203,7 @@ async function saveMessage(chatJid, m, lineId = 'ofis') {
          text=EXCLUDED.text, kind=EXCLUDED.kind, media_url=COALESCE(EXCLUDED.media_url, messages.media_url),
          reaction=EXCLUDED.reaction, my_reaction=EXCLUDED.my_reaction,
          edited=EXCLUDED.edited, deleted=EXCLUDED.deleted`,
-      [lineId, m.id, chatJid, !!m.fromMe, m.kind || 'text', m.text || '', m.mediaUrl || null,
+      [H(lineId), m.id, chatJid, !!m.fromMe, m.kind || 'text', m.text || '', m.mediaUrl || null,
        m.thumb || null, m.sender || '', m.senderJid || '', m.senderPush || '',
        m.replyTo ? JSON.stringify(m.replyTo) : null,
        m.contact ? JSON.stringify(m.contact) : null,
@@ -289,7 +301,7 @@ async function loadAll(lineId = 'ofis') {
   try {
     // sohbetler — SADECE bu hatta ait + mesaj trafigi olanlar (last_ts>0).
     // line_id ile filtreleme: her hat sadece kendi sohbetlerini yukler (izolasyon).
-    const ch = await pool.query('SELECT * FROM chats WHERE line_id=$1 AND last_ts > 0 ORDER BY last_ts DESC', [lineId]);
+    const ch = await pool.query('SELECT * FROM chats WHERE line_id=$1 AND last_ts > 0 ORDER BY last_ts DESC', [H(lineId)]);
     out.chats = ch.rows;
     // kisiler (kayitli isimler — su an ortak; ileride hatta ozel yapilabilir)
     const co = await pool.query('SELECT * FROM contacts');
@@ -308,6 +320,34 @@ async function loadAll(lineId = 'ofis') {
 const SAKLAMA_GUN = 30;
 function eskiEsikMs() { return Date.now() - SAKLAMA_GUN * 24 * 60 * 60 * 1000; }
 
+// ═══ DUZGUN KAPANIS ════════════════════════════════════════════════════
+// pm2 restart sirasinda cagrilir. Havuzdaki bekleyen sorgularin bitmesini
+// bekler, sonra baglantiyi kapatir -> yarim kalan yazma olmaz.
+async function kapat() {
+  if (!pool) return;
+  try { await pool.end(); console.log('   ✓ Veritabani baglantisi duzgun kapatildi'); }
+  catch (e) { console.log('   ⚠️ Veritabani kapatma: ' + e.message); }
+}
+
+// ═══ HAM MESAJ (Baileys getMessage icin) ═══════════════════════════════
+// WhatsApp bir mesaji cozemeyip "tekrar gonder" isterse Baileys orijinal
+// mesaji bizden ister. Sunucu restart olduysa bellek bostur; burada
+// veritabanindaki kayittan geri kurariz. Bulamazsa null doner (zararsiz).
+async function getRawMessage(msgId, lineId = 'ofis') {
+  if (!aktif || !msgId) return null;
+  try {
+    const r = await pool.query('SELECT text, kind, caption FROM messages WHERE id=$1 AND line_id=$2 LIMIT 1',
+      [msgId, H(lineId)]);
+    const row = r && r.rows && r.rows[0];
+    if (!row) return null;
+    // Metin mesajlarini birebir kurabiliriz. Medya icin ham sifreli icerik
+    // saklanmadigi icin null doneriz -> Baileys bos ile devam eder, KOPMAZ.
+    const t = row.text || row.caption || '';
+    if (row.kind === 'text' && t) return { conversation: t };
+    return null;
+  } catch (e) { return null; }
+}
+
 async function loadMessages(chatJid, limit = 60, lineId = 'ofis', beforeTs = null) {
   if (!aktif) return [];
   try {
@@ -316,10 +356,10 @@ async function loadMessages(chatJid, limit = 60, lineId = 'ofis', beforeTs = nul
     let sql, params;
     if (beforeTs) {
       sql = 'SELECT * FROM messages WHERE line_id=$1 AND chat_jid=$2 AND ts >= $3 AND ts < $4 ORDER BY ts DESC LIMIT $5';
-      params = [lineId, chatJid, eskiEsikMs(), beforeTs, limit];
+      params = [H(lineId), chatJid, eskiEsikMs(), beforeTs, limit];
     } else {
       sql = 'SELECT * FROM messages WHERE line_id=$1 AND chat_jid=$2 AND ts >= $3 ORDER BY ts DESC LIMIT $4';
-      params = [lineId, chatJid, eskiEsikMs(), limit];
+      params = [H(lineId), chatJid, eskiEsikMs(), limit];
     }
     const r = await pool.query(sql, params);
     return r.rows.reverse(); // eskiden yeniye (snake_case; çağıran taraf camelCase'e çevirir)
@@ -343,7 +383,7 @@ async function searchMessages(kelime, lineId = 'ofis', limit = 40) {
     if (!kelimeler.length) return { sohbetler: [], mesajlar: [] };
     // her kelime için ayrı LIKE koşulu (hepsi geçmeli = AND)
     const kosullar = [];
-    const params = [lineId, eskiEsikMs()];
+    const params = [H(lineId), eskiEsikMs()];
     for (const k of kelimeler) {
       params.push('%' + k + '%');
       const idx = params.length;
@@ -409,7 +449,7 @@ async function cleanupOld() {
 async function deleteMessage(chatJid, id, lineId = 'ofis') {
   if (!aktif) return;
   try {
-    await pool.query('DELETE FROM messages WHERE line_id=$1 AND chat_jid=$2 AND id=$3', [lineId, chatJid, id]);
+    await pool.query('DELETE FROM messages WHERE line_id=$1 AND chat_jid=$2 AND id=$3', [H(lineId), chatJid, id]);
   } catch (e) { /* tablo/satir yoksa sessizce gec */ }
 }
 
@@ -427,7 +467,7 @@ async function saveSatis(s, lineId = 'ofis') {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
        ON CONFLICT (id) DO NOTHING
        RETURNING *`,
-      [s.id, lineId, s.chatJid, s.chatName || '', s.urun, s.adet || 1, s.satici || '', s.saticiJid || '', s.mesajId || '', s.hamMesaj || '', s.ts || Date.now(),
+      [s.id, H(lineId), s.chatJid, s.chatName || '', s.urun, s.adet || 1, s.satici || '', s.saticiJid || '', s.mesajId || '', s.hamMesaj || '', s.ts || Date.now(),
        (s.fiyat ?? null), (s.odemeTip ?? null), (s.odemePeriyot ?? null)]
     );
     return { ok: true, row: r.rows[0] || null, yeni: r.rows.length > 0 };
@@ -440,7 +480,7 @@ async function saveSatis(s, lineId = 'ofis') {
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())
            ON CONFLICT (id) DO NOTHING
            RETURNING *`,
-          [s.id, lineId, s.chatJid, s.chatName || '', s.urun, s.adet || 1, s.satici || '', s.saticiJid || '', s.mesajId || '', s.hamMesaj || '', s.ts || Date.now()]
+          [s.id, H(lineId), s.chatJid, s.chatName || '', s.urun, s.adet || 1, s.satici || '', s.saticiJid || '', s.mesajId || '', s.hamMesaj || '', s.ts || Date.now()]
         );
         console.warn('⚠️  satislar tablosunda fiyat/odeme kolonlari yok — SQL calistirilinca detaylar da kaydedilecek');
         return { ok: true, row: r.rows[0] || null, yeni: r.rows.length > 0 };
@@ -462,10 +502,10 @@ async function loadSatislar(lineId = 'ofis', baslangicTs = null, bitisTs = null)
     let sql, params;
     if (baslangicTs !== null && bitisTs !== null) {
       sql = 'SELECT * FROM satislar WHERE line_id=$1 AND ts>=$2 AND ts<=$3 ORDER BY ts DESC';
-      params = [lineId, baslangicTs, bitisTs];
+      params = [H(lineId), baslangicTs, bitisTs];
     } else {
       sql = 'SELECT * FROM satislar WHERE line_id=$1 ORDER BY ts DESC LIMIT 500';
-      params = [lineId];
+      params = [H(lineId)];
     }
     const r = await pool.query(sql, params);
     return r.rows;
@@ -537,7 +577,7 @@ async function gunuKapat(lineId, tarih, kapatan) {
     const bit = new Date(tarih + 'T23:59:59.999').getTime();
     const upd = await pool.query(
       'UPDATE satislar SET gun_kapandi=TRUE, onayli=TRUE WHERE line_id=$1 AND ts>=$2 AND ts<=$3 RETURNING adet',
-      [lineId, bas, bit]
+      [H(lineId), bas, bit]
     );
     const toplam = upd.rows.reduce((a, r) => a + (r.adet || 0), 0);
     const kapaliId = lineId + '_' + tarih;
@@ -545,7 +585,7 @@ async function gunuKapat(lineId, tarih, kapatan) {
       `INSERT INTO kapali_gunler (id, line_id, tarih, kapatan, toplam_adet, kapatildi_at)
        VALUES ($1,$2,$3,$4,$5, now())
        ON CONFLICT (id) DO UPDATE SET kapatan=EXCLUDED.kapatan, toplam_adet=EXCLUDED.toplam_adet, kapatildi_at=now()`,
-      [kapaliId, lineId, tarih, kapatan || '', toplam]
+      [kapaliId, H(lineId), tarih, kapatan || '', toplam]
     );
     return { ok: true, toplam, adet: upd.rows.length };
   } catch (e) { return { ok: false, error: e.message }; }
@@ -555,7 +595,7 @@ async function gunuKapat(lineId, tarih, kapatan) {
 async function loadKapaliGunler(lineId = 'ofis') {
   if (!aktif) return [];
   try {
-    const r = await pool.query('SELECT * FROM kapali_gunler WHERE line_id=$1 ORDER BY tarih DESC LIMIT 60', [lineId]);
+    const r = await pool.query('SELECT * FROM kapali_gunler WHERE line_id=$1 ORDER BY tarih DESC LIMIT 60', [H(lineId)]);
     return r.rows;
   } catch (e) { return []; }
 }
@@ -577,7 +617,7 @@ async function wipeGroups(lineId = null) {
   if (!aktif) return;
   // 1) Once silinecek grup jid'lerini bul (bu hatta ait, grup olanlar)
   const kosul = lineId ? 'WHERE is_group=true AND line_id=$1' : 'WHERE is_group=true';
-  const params = lineId ? [lineId] : [];
+  const params = H(lineId) ? [H(lineId)] : [];
   const gruplar = await pool.query(`SELECT jid, line_id FROM chats ${kosul}`, params);
   // 2) Bu gruplara ait mesajlari sil
   for (const g of gruplar.rows) {
@@ -1193,7 +1233,7 @@ async function setMesajIsaret(msgId, isaretli, chatJid, lineId, mesajObj) {
   try {
     let r;
     if (chatJid && lineId) {
-      r = await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2 AND chat_jid=$3 AND line_id=$4', [!!isaretli, msgId, chatJid, lineId]);
+      r = await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2 AND chat_jid=$3 AND line_id=$4', [!!isaretli, msgId, chatJid, H(lineId)]);
     } else if (chatJid) {
       r = await pool.query('UPDATE messages SET isaretli=$1 WHERE id=$2 AND chat_jid=$3', [!!isaretli, msgId, chatJid]);
     } else {
@@ -1207,7 +1247,7 @@ async function setMesajIsaret(msgId, isaretli, chatJid, lineId, mesajObj) {
         `INSERT INTO messages (line_id, id, chat_jid, from_me, kind, text, media_url, thumb, sender, time, ts, isaretli, created_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
          ON CONFLICT (line_id, chat_jid, id) DO UPDATE SET isaretli=EXCLUDED.isaretli`,
-        [lineId, msgId, chatJid, !!m.fromMe, m.kind || 'image', m.text || '', m.mediaUrl || null,
+        [H(lineId), msgId, chatJid, !!m.fromMe, m.kind || 'image', m.text || '', m.mediaUrl || null,
          m.thumb || null, m.sender || '', m.time || '', m.ts || 0, !!isaretli]
       ).catch((e) => console.log(`   ❌ isaret INSERT hatası: ${e.message}`));
       console.log(`   🏷️ setMesajIsaret: mesaj DB'de yoktu -> isaretli=${isaretli} ile eklendi (id=${(msgId||'').slice(0,14)})`);
@@ -1302,7 +1342,7 @@ async function setUserLine(username, lineId, tip) {
     await pool.query(
       `INSERT INTO kullanici_hatlari (username, line_id, tip, created_at) VALUES ($1,$2,$3, now())
        ON CONFLICT (username) DO UPDATE SET line_id=$2, tip=$3`,
-      [username, lineId, tip || 'ofis']
+      [username, H(lineId), tip || 'ofis']
     );
   } catch (e) { console.error('setUserLine hata:', e.message); }
 }
@@ -1330,7 +1370,7 @@ async function saveLine(lineId, label, tip, owner) {
     await pool.query(
       `INSERT INTO hatlar (line_id, label, tip, owner, created_at) VALUES ($1,$2,$3,$4, now())
        ON CONFLICT (line_id) DO UPDATE SET label=$2, tip=$3`,
-      [lineId, label || '', tip || 'ofis', owner || '']
+      [H(lineId), label || '', tip || 'ofis', owner || '']
     );
   } catch (e) { console.error('saveLine hata:', e.message); }
 }
@@ -1346,8 +1386,8 @@ async function loadLines() {
 async function deleteLineData(lineId) {
   if (!aktif || lineId === 'ofis') return; // ofis hatti silinemez (guvenlik)
   try {
-    await pool.query('DELETE FROM messages WHERE line_id=$1', [lineId]);
-    await pool.query('DELETE FROM chats WHERE line_id=$1', [lineId]);
+    await pool.query('DELETE FROM messages WHERE line_id=$1', [H(lineId)]);
+    await pool.query('DELETE FROM chats WHERE line_id=$1', [H(lineId)]);
     console.log(`🗑️  '${lineId}' hattinin verileri silindi.`);
   } catch (e) { console.error('deleteLineData hata:', e.message); }
 }
@@ -1456,7 +1496,7 @@ async function savePoliceYukleme(p) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())
        ON CONFLICT (id) DO NOTHING
        RETURNING *`,
-      [p.id, p.lineId || 'ofis', p.kullanici || '', p.kullaniciAd || '', p.chatJid || '', p.chatName || '',
+      [p.id, H(p.lineId), p.kullanici || '', p.kullaniciAd || '', p.chatJid || '', p.chatName || '',
        p.dosyaAdi || '', p.brans || '', p.plaka || '', !!p.ikiAylik, p.ts || Date.now()]
     );
     return { ok: true, yeni: r.rows.length > 0, row: r.rows[0] || null };
@@ -1535,7 +1575,7 @@ async function saveAktivite(a) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
        ON CONFLICT (id) DO NOTHING
        RETURNING *`,
-      [a.id, a.lineId || 'ofis', a.kullanici || '', a.kullaniciAd || '', a.chatJid || '', a.chatName || '',
+      [a.id, H(a.lineId), a.kullanici || '', a.kullaniciAd || '', a.chatJid || '', a.chatName || '',
        a.tur || 'kesim', a.hamMesaj || '', a.ts || Date.now()]
     );
     return { ok: true, yeni: r.rows.length > 0 };
@@ -1687,6 +1727,7 @@ function startCleanup() {
 }
 
 module.exports = {
+  getRawMessage, kapat,
   init, test, isReady, startKeepAlive,
   saveChat, saveMessage, saveContact, saveSetting, getSetting,
   loadAll, loadMessages, deleteMessage, wipeAll, wipeGroups, searchMessages,
