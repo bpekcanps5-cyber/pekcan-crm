@@ -34,7 +34,12 @@ const WAHA_API_KEY = process.env.WAHA_API_KEY || '';
 const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
-const WAHA_KANCA_URL = process.env.WAHA_KANCA_URL || ('http://localhost:' + WAHA_KANCA_PORT);
+// WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
+// Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
+// ulasamaz. Bu yuzden kutudan host'a giden adresi kullaniyoruz.
+// Docker bunun icin 'host.docker.internal' adini sagliyor.
+const WAHA_KANCA_URL = process.env.WAHA_KANCA_URL
+  || ('http://host.docker.internal:' + WAHA_KANCA_PORT);
 
 // ───────────────────────── YARDIMCILAR ─────────────────────────
 const log = (...a) => console.log('[waha]', ...a);
@@ -363,7 +368,10 @@ function kancaSunucusuAc() {
       for (const s of _dinleyiciler) { try { s._olayIsle(olay); } catch (e) { log('olay hatasi:', e.message); } }
     });
   });
-  _kancaSunucu.listen(WAHA_KANCA_PORT, () => log('olay koprusu dinliyor: ' + WAHA_KANCA_URL));
+  // 0.0.0.0 -> Docker kutusundan da erisilebilsin (sadece localhost YETMEZ)
+  _kancaSunucu.listen(WAHA_KANCA_PORT, '0.0.0.0', () => {
+    log('olay koprusu dinliyor: ' + WAHA_KANCA_URL + '  (port ' + WAHA_KANCA_PORT + ')');
+  });
   _kancaSunucu.on('error', (e) => log('olay koprusu hatasi: ' + e.message));
 }
 
@@ -406,13 +414,16 @@ async function qrAl() {
     '/api/' + WAHA_OTURUM + '/auth/qr?format=raw',
     '/api/' + WAHA_OTURUM + '/auth/qr',
   ];
+  const hatalar = [];
   for (const y of yollar) {
     try {
       const r = await istek(y);
       const q = (r && (r.value || r.qr || r.code || r.data)) || (typeof r === 'string' ? r : '');
       if (q && String(q).length > 20) return String(q);
-    } catch (_) {}
+      hatalar.push(y.split('?')[0] + ' -> bos cevap');
+    } catch (e) { hatalar.push(y.split('?')[0] + ' -> ' + String(e.message).slice(0, 60)); }
   }
+  if (!global._qrHataYazildi) { global._qrHataYazildi = true; hatalar.forEach((x) => log('  qr: ' + x)); }
   return '';
 }
 
@@ -420,11 +431,18 @@ async function qrAl() {
 function qrTakibiBaslat(sock) {
   if (sock._qrTimer) return;
   let sonQR = '';
+  let sayac = 0;
   const tur = async () => {
     if (sock._kapali) return qrTakibiDurdur(sock);
+    sayac++;
     try {
       const s = await istek('/api/sessions/' + WAHA_OTURUM);
       const durum = String(s.status || s.state || '').toUpperCase();
+      // Her turu degil ama ilk turu ve durum degisimlerini yaz — sessiz kalmasin
+      if (sayac === 1 || durum !== sock._sonDurum) {
+        log('oturum durumu: ' + (durum || '(bos)'));
+        sock._sonDurum = durum;
+      }
       if (/WORKING|CONNECTED/.test(durum)) {
         qrTakibiDurdur(sock);
         const ben = s.me || s.user || {};
@@ -434,20 +452,68 @@ function qrTakibiBaslat(sock) {
         return;
       }
       if (/STOPPED|FAILED/.test(durum)) {
-        // oturum durmus -> yeniden baslat ki QR uretsin
-        try { await istek('/api/sessions/' + WAHA_OTURUM + '/start', { method: 'POST' }); }
-        catch (_) { try { await istek('/api/sessions/start', { method: 'POST', body: { name: WAHA_OTURUM } }); } catch (_) {} }
+        // ═══ OTURUM KURTARMA ═══════════════════════════════════════════
+        // FAILED: telefondan cihaz kaldirilinca ya da oturum bozulunca
+        // olusuyor. Bu durumda sadece 'start' yetmiyor; once DURDURUP
+        // sonra baslatmak gerekiyor. Sirayla deniyoruz.
+        if (sock._kurtarmaCalisiyor) return;
+        sock._kurtarmaCalisiyor = true;
+        log('oturum ' + durum + ' — kurtariliyor...');
+        const dene = async (ad, yol, govde) => {
+          try {
+            await istek(yol, { method: 'POST', body: govde });
+            log('  ' + ad + ': tamam');
+            return true;
+          } catch (e) { log('  ' + ad + ': ' + String(e.message).slice(0, 70)); return false; }
+        };
+        try {
+          if (durum === 'FAILED') {
+            // 1) yeniden baslat
+            let ok = await dene('yeniden baslat', '/api/sessions/' + WAHA_OTURUM + '/restart');
+            if (!ok) {
+              // 2) durdur + baslat
+              await dene('durdur', '/api/sessions/' + WAHA_OTURUM + '/stop');
+              await new Promise((r) => setTimeout(r, 2000));
+              ok = await dene('baslat', '/api/sessions/' + WAHA_OTURUM + '/start');
+            }
+            if (!ok) {
+              // 3) oturumu SIL ve yeniden olustur (son care — QR gerektirir)
+              await dene('sil', '/api/sessions/' + WAHA_OTURUM + '/logout');
+              await new Promise((r) => setTimeout(r, 1500));
+              await dene('yeniden olustur', '/api/sessions', {
+                name: WAHA_OTURUM, start: true,
+                config: { webhooks: [{ url: WAHA_KANCA_URL + '/olay',
+                  events: ['message', 'message.any', 'message.ack', 'message.revoked', 'message.reaction',
+                           'session.status', 'state.change', 'group.v2.update', 'group.v2.participants'] }] },
+              });
+            }
+          } else {
+            await dene('baslat', '/api/sessions/' + WAHA_OTURUM + '/start');
+          }
+        } finally {
+          // 8 saniye sonra tekrar denenebilir (kurtarma dongusune girmesin)
+          setTimeout(() => { sock._kurtarmaCalisiyor = false; }, 8000);
+        }
         return;
       }
       if (/SCAN_QR/.test(durum)) {
         const q = await qrAl();
-        if (q && q !== sonQR) {
+        if (!q) {
+          if (sayac % 4 === 1) log('QR alinamadi — WAHA henuz uretmemis olabilir, denemeye devam');
+          return;
+        }
+        if (q !== sonQR) {
           sonQR = q;
-          log('QR panele gonderildi');
+          log('QR panele gonderildi (' + q.length + ' karakter)');
           sock.ev.emit('connection.update', { qr: q });
         }
+        return;
       }
-    } catch (e) { /* WAHA gecici olarak ulasilamaz olabilir */ }
+      // Beklenmeyen durum: gorelim
+      if (sayac % 6 === 1) log('QR bekleniyor ama durum: ' + durum);
+    } catch (e) {
+      if (sayac % 4 === 1) log('QR takibi: WAHA\'ya ulasilamadi — ' + e.message);
+    }
   };
   sock._qrTimer = setInterval(tur, 5000);
   tur();
@@ -603,10 +669,9 @@ async function wahaBaglan() {
       qrTakibiBaslat(sock);   // QR'i panele akitmaya basla
     }
   } catch (e) {
-    log('oturum hazirlanamadi: ' + e.message);
-    const hata = new Error(e.message);
-    hata.output = { statusCode: 428 };
-    setImmediate(() => sock.ev.emit('connection.update', { connection: 'close', lastDisconnect: { error: hata } }));
+    log('oturum hazirlanamadi: ' + e.message + ' — yine de QR takibi basliyor');
+    setImmediate(() => sock.ev.emit('connection.update', { connection: 'connecting' }));
+    qrTakibiBaslat(sock);   // WAHA gec acilmis olabilir; pes etme
   }
 
   return sock;
