@@ -180,6 +180,178 @@ function baileysGrup(g) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  ILK SOHBET LISTESI — "gruplar gelmiyor" duzeltmesi (2026-08)
+//  -----------------------------------------------------------------
+//  SORUN NEYDI:
+//    server.js sohbet listesini SADECE iki yerden dolduruyor:
+//      1) acilista Supabase'den            (loadFromDB)
+//      2) Baileys'in gecmis paketinden     ('messaging-history.set')
+//    fetchAllGroups() listeye grup EKLEMEZ — bilerek boyle yazilmis
+//    ("bos/olu gruplar gorunmesin, mesaj geldikce eklensin"), sadece
+//    zaten listede olanin adini/uye sayisini tazeler.
+//    WAHA'da 2. yol HIC yoktu. Yeni bir hatta (waha_ oneki -> DB bos)
+//    iki kaynak da bos kaliyor ve liste sonsuza kadar "0 sohbet".
+//    Yani WAHA'nin degil, eksik olayin sorunuydu.
+//
+//  COZUM:
+//    WAHA'dan sohbet listesini cekip Baileys'in gecmis paketi bicimine
+//    cevirip AYNI olayi yayiyoruz. server.js'te tek satir degismiyor.
+//
+//  TAZE QR UYARISI:
+//    Yeni QR okutulunca WhatsApp senkronu dakikalar surebiliyor; ilk
+//    denemede liste bos gelebilir. Bu yuzden azalan siklikta tekrar
+//    deneniyor ve her turda SADECE yeni gorulen sohbetler yayinlaniyor.
+// ═══════════════════════════════════════════════════════════════════
+
+// auto = once sohbet listesi, olmazsa grup listesi
+// sohbetler / gruplar / kapali ile elle secilebilir (.env: WAHA_ILK_LISTE)
+const ILK_LISTE_MOD = (process.env.WAHA_ILK_LISTE || 'auto').toLowerCase();
+// Deneme takvimi (ms) — senkron gec biterse yakalayalim
+const ILK_LISTE_TAKVIM = [5000, 20000, 45000, 90000, 180000, 300000, 600000, 1200000];
+
+// Sohbetin son mesaj zamani (saniye). BILINMIYORSA 0 doner.
+// (zamanAl'dan farki: o bilinmeyende 'simdi' donuyor -> her sohbet
+//  yeni mesaj gelmis gibi en uste ciksin istemiyoruz.)
+function sohbetZamani(c) {
+  const son = c.lastMessage || c.LastMessage || null;
+  const adaylar = [
+    c.conversationTimestamp, c.ConversationTimestamp,
+    c.timestamp, c.Timestamp, c.t,
+    son && (son.timestamp || son.Timestamp || son.t),
+    son && son._data && son._data.Info && son._data.Info.Timestamp,
+  ];
+  for (const a of adaylar) {
+    if (typeof a === 'string' && a.includes('T')) {
+      const n = Date.parse(a); if (n) return Math.floor(n / 1000);
+    }
+    const n = Number(a);
+    if (!n || !isFinite(n)) continue;
+    return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
+  }
+  return 0;
+}
+
+// Sohbet adi — GOWS BUYUK harf veriyor, digerleri kucuk. Hepsini dene.
+function sohbetAdi(c) {
+  const son = c.lastMessage || c.LastMessage || null;
+  return String(c.name || c.Name || c.subject || c.Subject || c.DisplayName
+    || c.pushName || c.PushName || c.notifyName
+    || (son && (son.notifyName || son.pushName)) || '').trim();
+}
+
+// Bir ucu sayfa sayfa oku. Uc 'offset'i yok sayarsa ayni sayfa tekrar
+// gelir — o zaman donguye girmeden durur.
+async function _sayfaliCek(temelYol, enFazla = 5000) {
+  const hepsi = [];
+  const gorulen = new Set();
+  const ADIM = 500;
+  for (let sayfa = 0; sayfa * ADIM < enFazla; sayfa++) {
+    const ayrac = temelYol.includes('?') ? '&' : '?';
+    const veri = await istek(temelYol + ayrac + 'limit=' + ADIM + '&offset=' + (sayfa * ADIM));
+    const dizi = Array.isArray(veri) ? veri
+      : (veri && Array.isArray(veri.data)) ? veri.data
+      : (veri && Array.isArray(veri.chats)) ? veri.chats : [];
+    if (!dizi.length) break;
+    let yeni = 0;
+    for (const x of dizi) {
+      const j = jidAl(x);
+      if (!j || gorulen.has(j)) continue;
+      gorulen.add(j); hepsi.push(x); yeni++;
+    }
+    if (!yeni) break;                  // uc offset'i yok sayiyor
+    if (dizi.length < ADIM) break;     // son sayfa
+  }
+  return hepsi;
+}
+
+// Hangi uc calisiyorsa ondan listeyi al. Calisan ucun GERCEK alan
+// adlarini bir kez loga yaz — bir daha tahmin yurutmeyelim.
+async function ilkListeyiCek(sock) {
+  const denenecek = [];
+  if (ILK_LISTE_MOD !== 'gruplar') {
+    denenecek.push(['sohbetler/overview', '/api/' + WAHA_OTURUM + '/chats/overview']);
+    denenecek.push(['sohbetler', '/api/' + WAHA_OTURUM + '/chats']);
+  }
+  if (ILK_LISTE_MOD !== 'sohbetler') {
+    denenecek.push(['gruplar', '/api/' + WAHA_OTURUM + '/groups']);
+  }
+  for (const [ad, yol] of denenecek) {
+    let kayitlar;
+    try {
+      kayitlar = await _sayfaliCek(yol);
+    } catch (e) {
+      log('ilk liste — ' + ad + ' okunamadi: ' + String(e.message).slice(0, 100));
+      continue;
+    }
+    if (!kayitlar.length) { log('ilk liste — ' + ad + ': bos geldi'); continue; }
+    if (!sock._alanlarYazildi) {
+      sock._alanlarYazildi = true;
+      log('ilk liste — ' + ad + ' alan adlari: ' + Object.keys(kayitlar[0]).join(', '));
+    }
+    return { ad, kayitlar };
+  }
+  return { ad: '', kayitlar: [] };
+}
+
+// Bir deneme turu: cek -> Baileys bicimine cevir -> yayinla
+async function ilkListeTuru(sock, sira) {
+  if (sock._kapali) return;
+  let sonuc;
+  try { sonuc = await ilkListeyiCek(sock); }
+  catch (e) { log('ilk liste hatasi: ' + e.message); return; }
+
+  const yeniler = [];
+  for (const k of sonuc.kayitlar) {
+    let jid = jidAl(k);
+    if (!jid || !jid.includes('@')) continue;
+    if (jid.endsWith('@c.us')) jid = jid.split('@')[0] + '@s.whatsapp.net';
+    // panelde yeri olmayanlar
+    if (jid === 'status@broadcast' || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
+    if (sock._gorulenSohbetler.has(jid)) continue;   // onceki turda gonderildi
+    sock._gorulenSohbetler.add(jid);
+    const ad = sohbetAdi(k);
+    const zaman = sohbetZamani(k);
+    yeniler.push({
+      id: jid,
+      name: ad || undefined,                          // bos ise server.js jid'den turetsin
+      conversationTimestamp: zaman || undefined,      // bilinmiyorsa hic gonderme
+      unreadCount: Number(k.unreadCount || k.UnreadCount || k.unread || 0) || 0,
+    });
+  }
+
+  if (yeniler.length) {
+    const grup = yeniler.filter((x) => x.id.endsWith('@g.us')).length;
+    log('ilk liste (' + sonuc.ad + '): ' + yeniler.length + ' yeni sohbet panele gonderildi ('
+      + grup + ' grup, ' + (yeniler.length - grup) + ' kisi)');
+    sock.ev.emit('messaging-history.set', {
+      chats: yeniler, contacts: [], messages: [],
+      isLatest: sira >= ILK_LISTE_TAKVIM.length - 1,
+    });
+  } else if (sira === 0) {
+    log('ilk liste: WAHA henuz sohbet vermedi — senkron bitince tekrar denenecek');
+  }
+}
+
+// Baglanti acildiginda takvimi kur (soket basina bir kez)
+function ilkListeBaslat(sock) {
+  if (sock._ilkListeBasladi) return;
+  if (ILK_LISTE_MOD === 'kapali') { log('ilk liste kapali (WAHA_ILK_LISTE=kapali)'); return; }
+  sock._ilkListeBasladi = true;
+  sock._gorulenSohbetler = new Set();
+  sock._ilkListeTimerlar = [];
+  ILK_LISTE_TAKVIM.forEach((gecikme, i) => {
+    sock._ilkListeTimerlar.push(setTimeout(() => {
+      ilkListeTuru(sock, i).catch((e) => log('ilk liste turu: ' + e.message));
+    }, gecikme));
+  });
+  log('ilk liste takvimi kuruldu (ilk deneme 5sn sonra)');
+}
+function ilkListeDurdur(sock) {
+  (sock._ilkListeTimerlar || []).forEach(clearTimeout);
+  sock._ilkListeTimerlar = [];
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  SOKET — Baileys arayuzu
 // ═══════════════════════════════════════════════════════════════════
 function wahaSoketYap(secenek = {}) {
@@ -323,7 +495,11 @@ function wahaSoketYap(secenek = {}) {
     try { await istek('/api/sessions/' + WAHA_OTURUM + '/logout', { method: 'POST' }); } catch (_) {}
     sock._kapali = true; sock.ws.isOpen = false;
   };
-  sock.end = () => { sock._kapali = true; sock.ws.isOpen = false; if (sock._qrTimer) { clearInterval(sock._qrTimer); sock._qrTimer = null; } };
+  sock.end = () => {
+    sock._kapali = true; sock.ws.isOpen = false;
+    if (sock._qrTimer) { clearInterval(sock._qrTimer); sock._qrTimer = null; }
+    ilkListeDurdur(sock);   // bekleyen liste denemeleri bosuna calismasin
+  };
 
   return sock;
 }
@@ -532,6 +708,15 @@ async function wahaBaglan() {
   const eskiEnd = sock.end;
   sock.end = (...a) => { _dinleyiciler.delete(sock); return eskiEnd(...a); };
 
+  // ── BAGLANTI ACILINCA ILK LISTEYI GONDER ──
+  // 'open' UC ayri yerden yayinlanabiliyor (acilista hazir oturum, QR
+  // takibi, gelen olay). Uceni de ayri ayri yamamak yerine olayin
+  // kendisini dinliyoruz — hangi yoldan acilirsa acilsin yakalanir.
+  // ilkListeBaslat kendi icinde tek sefer korumali.
+  sock.ev.on('connection.update', (u) => {
+    if (u && u.connection === 'open') ilkListeBaslat(sock);
+  });
+
   // ── WAHA olayi -> Baileys olayi ──
   sock._olayIsle = (olay) => {
     const tip = String(olay.event || olay.type || '');
@@ -682,4 +867,5 @@ module.exports = {
   istek, wahaSoketYap, baileysMesaji, baileysGrup, wahaMedyaIndir, qrAl,
   wahaBaglan, oturumHazirla,
   numaraTemizle, jidAl, zamanAl, lidNumara,
+  ilkListeyiCek, ilkListeTuru, ilkListeBaslat, sohbetAdi, sohbetZamani,
 };
