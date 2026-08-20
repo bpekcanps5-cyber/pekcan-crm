@@ -100,7 +100,11 @@ function grupMu(jid) { return String(jid).includes('@g.us'); }
 
 function sohbeteCevir(c) {
   const jid = jidAl(c);
-  const ad = c.name || c.subject || c.pushName || c.formattedTitle || (jid.split('@')[0]);
+  // WAHA surumune gore isim farkli alanda gelebiliyor; hepsini deniyoruz.
+  const ad = c.name || c.subject || c.pushName || c.formattedTitle
+    || c.contact?.name || c.contact?.pushname || c.contact?.pushName
+    || c.chat?.name || c.notifyName
+    || (jid.split('@')[0]);
   return {
     jid,
     name: ad,
@@ -153,9 +157,12 @@ function mesajaCevir(m) {
 
 // ───────────────── WAHA'DAN SOHBETLERI YUKLE ─────────────────
 async function sohbetleriYukle() {
+  // SIRA ONEMLI: 'overview' daha zengin veri veriyor — kisi ISIMLERI ve
+  // SON MESAJ dahil. Duz '/chats' cogu kisi icin isim vermiyor, o yuzden
+  // listede telefon numaralari gorunuyordu.
   const yollar = [
-    `/api/${OTURUM}/chats?limit=500`,
     `/api/${OTURUM}/chats/overview?limit=500`,
+    `/api/${OTURUM}/chats?limit=500`,
     `/api/chats?session=${OTURUM}&limit=500`,
   ];
   let liste = null, sonHata = null;
@@ -173,6 +180,33 @@ async function sohbetleriYukle() {
   }
   log(`📋 ${sohbetler.size} sohbet yuklendi (${[...sohbetler.values()].filter(x => x.isGroup).length} grup)`);
   yayinla({ type: 'chats', chats: sohbetListesi(), append: false });
+  // isimleri arka planda tamamla (listeyi bekletmesin)
+  kisiAdlariniTamamla().catch(() => {});
+}
+
+// Kisi isimlerini rehberden tamamla. Sohbet listesinde ismi gelmeyen
+// kisiler icin (listede telefon numarasi gorunenler) bu doldurur.
+async function kisiAdlariniTamamla() {
+  const yollar = [`/api/${OTURUM}/contacts/all`, `/api/contacts/all?session=${OTURUM}`, `/api/${OTURUM}/contacts`];
+  let liste = null;
+  for (const y of yollar) {
+    try { const r = await waha(y); if (Array.isArray(r)) { liste = r; break; } } catch (_) {}
+  }
+  if (!liste) { log('kisi rehberi alinamadi (isimler numara olarak kalacak)'); return 0; }
+  let duzelen = 0;
+  for (const k of liste) {
+    const jid = jidAl(k);
+    if (!jid) continue;
+    const ad = k.name || k.pushname || k.pushName || k.shortName || k.verifiedName || '';
+    if (!ad) continue;
+    const c = sohbetler.get(jid);
+    if (c && (!c.name || /^\d+$/.test(c.name))) { c.name = ad; duzelen++; }
+  }
+  if (duzelen) {
+    log(`👤 ${duzelen} kisinin ismi rehberden tamamlandi`);
+    yayinla({ type: 'chats', chats: sohbetListesi(), append: false });
+  }
+  return duzelen;
 }
 
 async function mesajlariYukle(jid, adet = 100) {
@@ -184,7 +218,16 @@ async function mesajlariYukle(jid, adet = 100) {
     try {
       const r = await waha(y);
       if (Array.isArray(r)) {
-        const ms = r.map(mesajaCevir).sort((a, b) => a.ts - b.ts);
+        // ═══ BIRLESTIR, UZERINE YAZMA ═══════════════════════════════
+        // ESKIDEN: WAHA gecmisi elimizdekinin UZERINE yaziliyordu. Sohbet
+        // acilirken yeni gelmis bir mesaj varsa SILINIYORDU (panelde
+        // "mesaj dusmuyor" goruntusu). Artik ikisi birlestiriliyor.
+        const gelen = r.map(mesajaCevir);
+        const eldeki = mesajlar.get(jid) || [];
+        const harita = new Map();
+        for (const x of gelen) harita.set(x.id, x);
+        for (const x of eldeki) if (!harita.has(x.id)) harita.set(x.id, x);
+        const ms = [...harita.values()].sort((a, b) => a.ts - b.ts);
         mesajlar.set(jid, ms);
         return ms;
       }
@@ -197,6 +240,10 @@ async function mesajlariYukle(jid, adet = 100) {
 app.post('/waha/olay', (req, res) => {
   res.json({ ok: true });                 // WAHA'yi bekletme
   const olay = req.body || {};
+  if (!global._ilkOlayGoruldu) {
+    global._ilkOlayGoruldu = true;
+    log('✅ WAHA olaylari geliyor (webhook calisiyor). Ilk olay: ' + (olay.event || olay.type || '?'));
+  }
   const tip = olay.event || olay.type || '';
   const veri = olay.payload || olay.data || olay;
 
@@ -251,6 +298,9 @@ app.post('/waha/olay', (req, res) => {
       log(`📩 ${c.isGroup ? '[grup]' : '[kisi]'} ${c.name}: ${(m.text || m.kind).slice(0, 50)}`);
       yayinla({ type: 'msgAppend', jid, mesaj: m });
       yayinla({ type: 'chatSync', jid, unread: c.unread, ozelUnread: c.ozelUnread, muhUnread: 0, lastTime: c.lastTime, lastTs: c.lastTs });
+      // Sohbeti guncel haliyle de yolla: liste yeniden siralansin, yeni
+      // sohbetse listeye eklensin, onizleme yazisi guncellensin.
+      yayinla({ type: 'chats', chats: [sohbetGuvenli(c)], append: true });
       return;
     }
   } catch (e) { log('olay islenemedi:', e.message); }
@@ -328,8 +378,10 @@ wss.on('connection', (ws) => {
       if (m.type === 'loadMessages') {
         const c = sohbetler.get(m.jid);
         if (!c) return;
-        let ms = mesajlar.get(m.jid) || [];
-        if (ms.length < 5) ms = await mesajlariYukle(m.jid, 100);
+        // Gecmisi her acilista tazele; birlestirme yaptigimiz icin
+        // yeni gelen mesajlar artik kaybolmuyor.
+        let ms = await mesajlariYukle(m.jid, 100);
+        if (!ms.length) ms = mesajlar.get(m.jid) || [];
         c.unread = 0; c.ozelUnread = 0;
         return G({ type: 'message', jid: m.jid, chat: Object.assign({}, c, { messages: (ms || []).slice(-300), atananlar: [], etiketler: [] }) });
       }
