@@ -40,7 +40,7 @@ const SIFRE = process.env.PANEL_SIFRE || 'demo';
 const SAAT_DILIMI = process.env.TZ || 'Europe/Istanbul';
 
 const MEDYA_DIZIN = path.join(__dirname, 'medya');
-const VERI_DIZIN = path.join(__dirname, 'veri');
+const VERI_DIZIN = process.env.VERI_DIZIN || path.join(__dirname, 'veri');
 const MESAJ_DIZIN = path.join(VERI_DIZIN, 'mesajlar');
 for (const d of [MEDYA_DIZIN, VERI_DIZIN, MESAJ_DIZIN]) {
   try { fs.mkdirSync(d, { recursive: true }); } catch (_) {}
@@ -68,8 +68,11 @@ function numaraDuzelt(j) {
   return p[0].split(':')[0] + '@' + p[1];
 }
 function jidAl(x) {
+  // WAHA/GOWS kimligi BUYUK HARFLE veriyor ("JID"). Kucuk harf arayinca
+  // gruplarin TAMAMI atlaniyordu (grup listesi hic yuklenmiyordu).
   if (!x) return '';
-  return String((x.id && x.id._serialized) || x.id || x.chatId || x.from || x.jid || '');
+  return (x.id && x.id._serialized) || x.JID || x.id || x.jid || x.chatId
+    || x.ChatID || x.Chat || x.from || x.LID || x.lid || '';
 }
 function zamanAl(x) {
   if (!x) return 0;
@@ -271,14 +274,15 @@ function mesajaCevir(m, chatJid) {
 }
 function sohbeteCevir(c) {
   const jid = jidAl(c);
-  const ad = c.name || c.subject || c.pushName || c.formattedTitle
+  // WAHA surumune gore alan adi degisiyor; GOWS BUYUK harf kullaniyor.
+  const ad = c.name || c.Name || c.subject || c.pushName || c.formattedTitle
     || (c.contact && (c.contact.name || c.contact.pushname)) || c.notifyName || '';
   const z = zamanAl(c);
   return {
     jid, name: ad || jid.split('@')[0], isGroup: grupMu(jid),
-    description: c.description || c.desc || '',
+    description: (c.TopicDeleted === true) ? '' : (c.Topic || c.description || c.desc || ''),
     avatar: c.picture || c.profilePicUrl || null,
-    memberCount: c.participantsCount || (c.participants || []).length || 0,
+    memberCount: c.ParticipantCount || c.participantsCount || (c.Participants || c.participants || []).length || 0,
     members: [],
     unread: Number(c.unreadCount || 0), ozelUnread: Number(c.unreadCount || 0), muhUnread: 0,
     lastTime: z ? saat(z) : '', lastTs: z,
@@ -431,8 +435,9 @@ async function gruplariYukle() {
   for (const g of liste) {
     const jid = jidAl(g);
     if (!jid) continue;
-    const ad = g.subject || g.name || '';
-    const acik = g.description || g.desc || (g.groupMetadata && g.groupMetadata.desc) || '';
+    // GERCEK WAHA/GOWS alanlari: Name (ad), Topic (aciklama), ParticipantCount
+    const ad = g.Name || g.name || g.subject || '';
+    const acik = (g.TopicDeleted === true) ? '' : (g.Topic || g.topic || g.description || g.desc || '');
     let c = sohbetler.get(jid);
     if (!c) {
       c = {
@@ -445,7 +450,8 @@ async function gruplariYukle() {
     } else {
       if (ad && ad !== c.name) { c.name = ad; guncel++; }
       if (acik && acik !== c.description) { c.description = acik; guncel++; }
-      if (!c.memberCount && (g.participants || []).length) c.memberCount = g.participants.length;
+      const sayi = g.ParticipantCount || g.participantCount || (g.Participants || g.participants || []).length;
+      if (!c.memberCount && sayi) c.memberCount = sayi;
       if (!c.avatar && g.picture) c.avatar = g.picture;
     }
   }
@@ -482,29 +488,61 @@ async function grupBilgisiGetir(jid, zorla) {
   if (!zorla && c && c.name && !/^\d+$/.test(c.name) && c.members && c.members.length) return c;
   _grupSoruluyor.add(jid);
   try {
+    // ═══ GERCEK WAHA/GOWS ALAN ADLARI (2026-08) ═══════════════════════
+    // Sunucudan alinan gercek cevapla dogrulandi. GOWS motoru alan
+    // adlarini BUYUK HARFLE veriyor; kucuk harf araniyordu ve bu yuzden
+    // grup adi, ACIKLAMA ve UYELER hic gelmiyordu:
+    //   Name            -> grup adi     (subject DEGIL)
+    //   Topic           -> ACIKLAMA     (description DEGIL)
+    //   Participants[]  -> uyeler       (participants DEGIL)
+    //     { JID, PhoneNumber, LID, IsAdmin, IsSuperAdmin, DisplayName }
+    //   ParticipantCount-> uye sayisi
     const g = await waha('/api/' + OTURUM + '/groups/' + jid, { tekDeneme: true });
-    const uyeler = (g.participants || (g.groupMetadata && g.groupMetadata.participants) || []).map((p) => {
-      const ham = jidAl(p);
-      const gercek = numaraDuzelt(p.phoneNumber || p.pn || p.alt || '') || lidNumara.get(ham) || (String(ham).includes('@lid') ? '' : ham);
+
+    const hamUyeler = g.Participants || g.participants
+      || (g.groupMetadata && (g.groupMetadata.Participants || g.groupMetadata.participants)) || [];
+
+    const uyeler = hamUyeler.map((p) => {
+      const lid = p.LID || p.lid || p.JID || p.jid || p.id || '';
+      // NUMARA: once WAHA'nin verdigi PhoneNumber, yoksa mesajlardan
+      // ogrendigimiz lid->numara eslesmesi, yoksa jid'in kendisi
+      let num = String(p.PhoneNumber || p.phoneNumber || p.pn || '').replace(/[^0-9]/g, '');
+      if (!num) {
+        const ogrenilen = lidNumara.get(lid) || lidNumara.get(p.JID || '');
+        if (ogrenilen) num = String(ogrenilen).split('@')[0].split(':')[0];
+      }
+      if (!num) {
+        const j = String(p.JID || p.jid || '');
+        if (j && !j.includes('@lid')) num = j.split('@')[0].split(':')[0];
+      }
+      const ad = p.DisplayName || p.displayName || p.name || p.pushName || p.notify || '';
       return {
-        jid: gercek || ham, lid: ham,
-        name: p.name || p.pushName || p.notify || '',
-        number: gercek ? String(gercek).split('@')[0] : '',
-        admin: !!(p.admin || p.isAdmin || p.isSuperAdmin),
+        jid: num ? (num + '@s.whatsapp.net') : lid,
+        lid,
+        name: ad,
+        number: num,
+        admin: !!(p.IsAdmin || p.isAdmin || p.admin || p.IsSuperAdmin || p.isSuperAdmin),
       };
-    });
+    }).filter((u) => u.jid);
+
     if (c) {
-      if (g.subject) c.name = g.subject;
-      const acik = g.description || g.desc || (g.groupMetadata && g.groupMetadata.desc);
-      if (acik) c.description = acik;
+      const ad = g.Name || g.name || g.subject || '';
+      if (ad) c.name = ad;
+      // ACIKLAMA = Topic. TopicDeleted true ise aciklama silinmis demektir.
+      const acik = (g.TopicDeleted === true) ? ''
+        : (g.Topic || g.topic || g.description || g.desc || '');
+      c.description = acik;
       if (uyeler.length) { c.members = uyeler; c.memberCount = uyeler.length; }
-      if (g.picture && !c.avatar) c.avatar = g.picture;
+      else if (g.ParticipantCount || g.participantCount) c.memberCount = g.ParticipantCount || g.participantCount;
+      if ((g.picture || g.Picture) && !c.avatar) c.avatar = g.picture || g.Picture;
       sohbetleriKaydet();
       yayinla({ type: 'chats', chats: [sohbetGuvenli(c, true)], append: true });
     }
     return c;
-  } catch (_) { return null; }
-  finally { _grupSoruluyor.delete(jid); }
+  } catch (e) {
+    log('grup bilgisi alinamadi (' + String(jid).slice(0, 20) + '): ' + e.message);
+    return null;
+  } finally { _grupSoruluyor.delete(jid); }
 }
 
 let _gecmisKalip = null;
