@@ -392,6 +392,10 @@ function yeniSohbetleriYayinla(sock, kayitlar, kaynak) {
       conversationTimestamp: zaman || undefined,
       unreadCount: Number(k.unreadCount || k.UnreadCount || k.unread || 0) || 0,
     });
+    // Uc denemesi icin adi BILINEN bir grup ornegi sakla
+    if (ad && jid.endsWith('@g.us') && !sock._adliOrnekJid) {
+      sock._adliOrnekJid = jid; sock._adliOrnekAd = ad;
+    }
   }
   if (!liste.length) return 0;
 
@@ -451,11 +455,17 @@ const BILGI_YAYIN_ESIGI = 40;    // kac grupta bir panele yayin
 async function grupBilgiDoldur(sock) {
   if (BILGI_MOD === 'kapali') { log('grup bilgisi doldurma kapali (WAHA_GRUP_BILGI=kapali)'); return; }
   if (sock._bilgiCalisiyor || sock._kapali) return;
+  // Yoklama tutmadiysa bir daha girisme (yoksa her tazelemede bastan baslar)
+  if (sock._bilgiVazgecildi) return;
   sock._bilgiCalisiyor = true;
   try {
     const sira = [...(sock._adsizGruplar || [])];
     if (!sira.length) return;
     const tumu = [...sira];
+    // Once ucun kendisi calisiyor mu? Adi BILINEN bir grupla dene.
+    if (sock._adliOrnekJid) {
+      await ucDenemesi(sock, sock._adliOrnekJid, sock._adliOrnekAd);
+    }
     // ═══ ONCE YOKLA, SONRA KARAR VER (2026-08) ══════════════════════
     // Adi bos gruplarin cogu ayrilinmis/erisilemez olabiliyor; onlarda
     // tek-grup sorgusu da bos donuyor ("metadata bos geldi"). 5799 grup
@@ -524,10 +534,21 @@ async function grupBilgiDoldur(sock) {
         const oran = denenen ? dolan / denenen : 0;
         if (oran < ESIK) {
           yay();
-          log('grup bilgisi DURDURULDU: yoklanan ' + denenen + ' gruptan sadece ' + dolan
-            + ' tanesinin adi geldi. WhatsApp bunlarin bilgisini vermiyor'
-            + ' (ayrilinmis/erisilemez gruplar). ' + (tumu.length - denenen)
-            + ' grup icin bosuna sorgu atilmayacak — kasma sebebi buydu.');
+          // ═══ KALICI DURDURMA ════════════════════════════════════
+          // Bayrak konmazsa: bir sonraki tazeleme kalan gruplarla
+          // yeniden basliyor ve tarama bitmek bilmiyordu.
+          sock._bilgiVazgecildi = true;
+          // Sebebi DOGRU yaz: uc mu bozuk, gruplar mi erisilemez?
+          if (hata > adsiz) {
+            log('grup bilgisi DURDURULDU: yoklanan ' + denenen + ' grubun ' + hata
+              + ' tanesinde WAHA HATA dondu. Sorun gruplarda degil, UCTA.'
+              + ' Yukaridaki "uc denemesi" satirlarina bak.');
+          } else {
+            log('grup bilgisi DURDURULDU: yoklanan ' + denenen + ' gruptan sadece ' + dolan
+              + ' tanesinin adi geldi. WAHA yanit veriyor ama bu gruplarin adi BOS'
+              + ' — ayrilinmis/erisilemez gruplar. ' + (tumu.length - denenen)
+              + ' grup icin bosuna sorgu atilmayacak.');
+          }
           log('  Bu gruplar listede gorunmuyor; birinden mesaj gelirse otomatik eklenecek.');
           return;
         }
@@ -546,6 +567,44 @@ async function grupBilgiDoldur(sock) {
   }
 }
 const _olukUclar = new Set();   // yanit vermeyen uclar — bir daha denenmez
+
+// ═══════════════════════════════════════════════════════════════════
+//  TEK SEFERLIK UC DENEMESI
+//  -----------------------------------------------------------------
+//  "metadata bos geldi" iki AYRI sebepten olabilir:
+//    (a) tek-grup ucu hic calismiyor    -> HER grup bos doner
+//    (b) o gruplar gercekten erisilemez -> sadece onlar bos doner
+//  Ayirt etmek icin ADI BILINEN bir grupla uclari deniyoruz. Adi bilinen
+//  grup da bos donerse sorun grupta degil, UCTADIR.
+//  Toplam 3 istek — 5799 istek atmadan cevabi ogreniyoruz.
+// ═══════════════════════════════════════════════════════════════════
+async function ucDenemesi(sock, ornekJid, ornekAd) {
+  if (sock._ucDenendi || !ornekJid) return;
+  sock._ucDenendi = true;
+  log('uc denemesi — adi BILINEN bir grupla kontrol: "' + String(ornekAd || '').slice(0, 30) + '"');
+  const denemeler = [
+    ['jid ile      ', '/api/' + WAHA_OTURUM + '/groups/' + ornekJid],
+    ['@g.us olmadan', '/api/' + WAHA_OTURUM + '/groups/' + String(ornekJid).split('@')[0]],
+    ['uyeler ucu   ', '/api/' + WAHA_OTURUM + '/groups/' + ornekJid + '/participants'],
+  ];
+  for (const [ad, yol] of denemeler) {
+    try {
+      const r = await istek(yol, { zamanAsimiMs: 15000 });
+      if (Array.isArray(r)) {
+        log('   ' + ad + ' CALISIYOR -> ' + r.length + ' kayit, alanlar: ' + Object.keys(r[0] || {}).join(','));
+      } else if (r && typeof r === 'object') {
+        const adVar = r.Name || r.name || r.subject;
+        log('   ' + ad + ' CALISIYOR -> ad: ' + (adVar ? '"' + String(adVar).slice(0, 28) + '"' : 'BOS')
+          + ' | alanlar: ' + Object.keys(r).join(','));
+      } else {
+        log('   ' + ad + ' bos yanit');
+      }
+    } catch (e) {
+      log('   ' + ad + ' HATA: ' + String(e.message).slice(0, 110));
+    }
+  }
+  log('uc denemesi bitti — bu satirlar sorunun UCTA mi GRUPLARDA mi oldugunu soyler');
+}
 
 async function ilkListeyiCek(sock) {
   const denenecek = [];
@@ -732,6 +791,22 @@ function wahaSoketYap(secenek = {}) {
   const _grupOnbellek = new Map();   // jid -> { veri, ts }
   const _grupUcus = new Map();       // jid -> ucus halindeki soz
   const GRUP_ONBELLEK_MS = 20000;
+  let _grupHataYazildi = 0;
+
+  // Uyeleri ayri uctan tamamla — toplu liste 'Participants' vermiyor,
+  // bu yuzden uye sayisi 0 gorunuyordu ("0 uye").
+  async function uyeleriTamamla(jid, b) {
+    if (!b || (b.participants && b.participants.length)) return b;
+    try {
+      const p = await istek('/api/' + WAHA_OTURUM + '/groups/' + jid + '/participants', { zamanAsimiMs: 12000 });
+      const dizi = Array.isArray(p) ? p : (p && Array.isArray(p.participants) ? p.participants : []);
+      if (dizi.length) {
+        const sahte = baileysGrup({ JID: jid, Name: b.subject, Participants: dizi });
+        if (sahte && sahte.participants.length) { b.participants = sahte.participants; b.size = sahte.participants.length; }
+      }
+    } catch (_) { /* bu uc yoksa uye sayisi bos kalir */ }
+    return b;
+  }
 
   sock.groupMetadata = async (jid) => {
     const onb = _grupOnbellek.get(jid);
@@ -739,11 +814,39 @@ function wahaSoketYap(secenek = {}) {
     if (_grupUcus.has(jid)) return _grupUcus.get(jid);
     const soz = (async () => {
       try {
-        const g = await istek('/api/' + WAHA_OTURUM + '/groups/' + jid);
-        const b = baileysGrup(g);
+        // ═══ NEDEN BIRDEN FAZLA DENEME (2026-08) ══════════════════
+        // "metadata bos geldi" mesaji iki AYRI durumu ayni gosteriyordu:
+        // (a) WAHA hata dondu, (b) grup gercekten adsiz. Hangisi oldugunu
+        // bilmeden cozum aranamaz. Artik gercek hata loga yaziliyor ve
+        // kimlik bicimi farkli olabilir diye ikinci bir yol deneniyor.
+        const yollar = [
+          '/api/' + WAHA_OTURUM + '/groups/' + jid,
+          '/api/' + WAHA_OTURUM + '/groups/' + String(jid).split('@')[0],
+        ];
+        let g = null, sonHata = null;
+        for (const yol of yollar) {
+          try {
+            g = await istek(yol, { zamanAsimiMs: 15000 });
+            if (g) break;
+          } catch (e) { sonHata = e; }
+        }
+        if (!g) {
+          if (_grupHataYazildi < 5) {
+            _grupHataYazildi++;
+            log('grup bilgisi CEKILEMEDI (' + String(jid).slice(0, 24) + '): '
+              + (sonHata ? String(sonHata.message).slice(0, 140) : 'bos yanit')
+              + (_grupHataYazildi === 5 ? '  [bu uyari artik yazilmayacak]' : ''));
+          }
+          throw new Error('grup bulunamadi');
+        }
+        let b = baileysGrup(g);
         if (!b) throw new Error('grup bulunamadi');
-        // Sadece ISE YARAR sonucu sakla — bos sonucu onbelleklersek
-        // 20 saniye boyunca dogru bilgiyi de goremeyiz.
+        if (!b.subject && _grupHataYazildi < 5) {
+          _grupHataYazildi++;
+          log('grup ADSIZ dondu (' + String(jid).slice(0, 24) + ') — WAHA yaniti geldi ama Name bos. Alanlar: '
+            + Object.keys(g).join(','));
+        }
+        b = await uyeleriTamamla(jid, b);
         if (b.subject) {
           _grupOnbellek.set(jid, { veri: b, ts: Date.now() });
           if (_grupOnbellek.size > 3000) _grupOnbellek.delete(_grupOnbellek.keys().next().value);
