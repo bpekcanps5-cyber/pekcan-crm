@@ -748,6 +748,7 @@ const TAZELEME_ARALIK_MS = Number(process.env.WAHA_TAZELEME_ARALIK_MS) || 120000
 let _sonTazeleme = 0;
 let _tazelemeUcusta = null;      // ucus halindeki tazeleme sozu (paylasimli)
 let _grupBasinaTazeleme = null;  // grup basina uc calisiyor mu? (null=bilinmiyor)
+const _zorDeneme = new Map();    // jid -> en son ne zaman ZORLA denendi
 
 const uyu = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -874,11 +875,26 @@ async function adKuyrugunuCalistir(sock) {
         log('ad bekleyen ' + kalan.length + ' grup — genel tazeleme yapiliyor');
         const oldu = await genelTazele();
         if (oldu) {
-          await uyu(3000);
-          const kazanc = await topluOkuVeCoz(sock);
-          log('tazeleme sonrasi ' + kazanc + ' grup adina kavustu');
-          for (const jid of [...sock._adKuyruk.keys()]) {
-            if (sock._bilinenAdlar && sock._bilinenAdlar.get(jid)) sock._adKuyruk.delete(jid);
+          // ═══ TAZELEME ANINDA BITMIYOR ════════════════════════════
+          // WAHA binlerce grubu WhatsApp'tan cekiyor; hemen bakip
+          // "olmadi" demek yanlisti. Artan araliklarla izliyoruz ve
+          // her turda kac ad geldigini yaziyoruz. Hicbir turda ad
+          // gelmiyorsa bunu ACIKCA soyluyoruz — o zaman GOWS bu bilgiyi
+          // gercekten vermiyor demektir ve NOWEB karari netlesir.
+          let toplamKazanc = 0;
+          for (const bekle of [3000, 8000, 20000, 45000]) {
+            if (sock._kapali || !sock._adKuyruk.size) break;
+            await uyu(bekle);
+            const kazanc = await topluOkuVeCoz(sock);
+            toplamKazanc += kazanc;
+            if (kazanc) log('tazeleme sonrasi +' + kazanc + ' grup adina kavustu');
+            for (const jid of [...sock._adKuyruk.keys()]) {
+              if (sock._bilinenAdlar && sock._bilinenAdlar.get(jid)) sock._adKuyruk.delete(jid);
+            }
+            if (!sock._adKuyruk.size) break;
+          }
+          if (!toplamKazanc) {
+            log('⚠ genel tazeleme HIC ad getirmedi — WAHA/GOWS bu gruplarin adini vermiyor');
           }
         }
       }
@@ -1265,7 +1281,30 @@ function wahaSoketYap(secenek = {}) {
         if (!b.subject && sock._bilinenAdlar && sock._bilinenAdlar.get(jid)) {
           b.subject = sock._bilinenAdlar.get(jid);
         }
-        // ── 3) ADI YOKSA: BEKLEMEDEN DON, TAZELEMEYI ARKA PLANA AT ──
+        // ── 3) ADI YOKSA: SINIRLI BIR SURE ZORLA, SONRA ARKA PLANA AT ──
+        // ═══ BUTONUN CALISMASI ICIN (2026-08) ═══════════════════════
+        // Panel "Yeniden Bul" tusuna basinca server.js dogrudan bu
+        // fonksiyonu cagirip 20 SANIYE bekliyor. Ben fonksiyonu tamamen
+        // hizlandirinca 8 milisaniyede bos donuyor ve buton her seferinde
+        // "cekilemedi" diyordu — o 20 saniye bosa gidiyordu.
+        // ARTIK: 14 saniyelik butce ile tazeleyip tekrar okuyoruz
+        // (20'nin altinda, timeout yemez). Grup basina 10 dakikada bir
+        // yapiliyor ki arka plan motorlari bundan yavaslamasin.
+        if (!b.subject) {
+          const sonZor = _zorDeneme.get(jid) || 0;
+          if (Date.now() - sonZor > 10 * 60 * 1000) {
+            _zorDeneme.set(jid, Date.now());
+            if (_zorDeneme.size > 8000) _zorDeneme.delete(_zorDeneme.keys().next().value);
+            const bitis = Date.now() + 14000;
+            await grupBasinaTazele(jid);
+            while (Date.now() < bitis) {
+              await uyu(1500);
+              const ad = await grupAdiOku(jid);
+              if (ad) { b.subject = ad; break; }
+            }
+          }
+        }
+
         // ═══ NEDEN BEKLEMIYORUZ (2026-08) ═══════════════════════════
         // server.js bu cagriyi 20 saniyede (aciklama motoru 6 saniyede)
         // iptal ediyor. Tazeleme + bekleme buraya konunca her cagri
