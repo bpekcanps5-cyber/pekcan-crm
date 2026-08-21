@@ -31,8 +31,13 @@ services:
       WAHA_LOG_LEVEL: info
 
       # Kopruye olay gonder (mesajlar buraya dusecek)
-      WHATSAPP_HOOK_URL: http://kopru:3002/waha/olay
-      WHATSAPP_HOOK_EVENTS: message,message.any,message.ack,session.status,state.change
+      # ═══ GLOBAL OLAY ADRESI (2026-08 duzeltmesi) ═══════════════════
+      # ESKIDEN kapatilan eski kopruyu (kopru:3002) gosteriyordu — WAHA
+      # olaylari olu bir adrese gondermeye calisiyordu. Artik dogrudan
+      # CRM'in olay koprusune gidiyor. Oturum ayari da ayrica yaziliyor;
+      # bu ikisi birbirinin yedegi.
+      WHATSAPP_HOOK_URL: http://host.docker.internal:3210/olay/0
+      WHATSAPP_HOOK_EVENTS: message,message.any,message.ack,message.revoked,message.reaction,session.status,state.change,group.v2.update,group.v2.participants,presence.update
 
       # WAHA arayuzunu sifreyle koru (test sunucusu disari acikken sart)
       WAHA_DASHBOARD_USERNAME: admin
@@ -40,6 +45,9 @@ services:
       WHATSAPP_API_KEY: ${WAHA_API_KEY:-test-anahtari-degistir}
     volumes:
       - ./waha-veri:/app/.sessions   # oturum dosyalari burada kalir
+    # Kutunun icinden SUNUCUYA (host) ulasabilmesi icin — olaylar bu yolla geliyor
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks: [waha-ag]
 
   # ═══════════════════════════════════════════════════════════════════

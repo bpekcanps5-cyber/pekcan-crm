@@ -41,6 +41,46 @@ const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 const WAHA_KANCA_URL = process.env.WAHA_KANCA_URL
   || ('http://host.docker.internal:' + WAHA_KANCA_PORT);
 
+// ═══════════════════════════════════════════════════════════════════
+//  OLAY ADRESI ADAYLARI — "mesaj dusmuyor" kok cozumu (2026-08)
+//  -----------------------------------------------------------------
+//  ESKI SORUN: WAHA'ya TEK bir adres veriliyordu:
+//      http://host.docker.internal:3210
+//  Bu ad Docker kutusunun icinde cozulemezse (extra_hosts tanimli
+//  degilse, ya da Linux'ta host-gateway yoksa) WAHA olayi gonderemez
+//  ve HIC SES CIKARMAZ. Panel bos kalir, sebebi de anlasilmaz.
+//  Tam olarak yasadigimiz sey buydu.
+//
+//  COZUM: Tek adrese bel baglamak yerine, bize ulasabilecek TUM
+//  adresleri kaydediyoruz — makinenin kendi IP'leri (docker0 kopru
+//  adresi 172.17.0.1 dahil) ve host.docker.internal. Hangisi calisiyorsa
+//  olay oradan gelir. Her adaya AYRI YOL veriyoruz ki logda hangisinin
+//  calistigini gorelim. Ayni mesaj iki yoldan gelirse kimlige gore
+//  zaten eleniyor.
+// ═══════════════════════════════════════════════════════════════════
+function kancaAdaylari() {
+  const adaylar = [];
+  const ekle = (taban) => { if (taban && !adaylar.includes(taban)) adaylar.push(taban); };
+  // Elle verildiyse o her zaman ilk sirada
+  if (process.env.WAHA_KANCA_URL) ekle(process.env.WAHA_KANCA_URL);
+  ekle('http://host.docker.internal:' + WAHA_KANCA_PORT);
+  try {
+    const arayuzler = require('os').networkInterfaces();
+    const ipler = [];
+    for (const ad of Object.keys(arayuzler)) {
+      for (const a of (arayuzler[ad] || [])) {
+        if (a.family !== 'IPv4' && a.family !== 4) continue;
+        if (a.internal) continue;                       // 127.0.0.1 ise gec
+        ipler.push({ ip: a.address, docker: /^(docker|br-)/.test(ad) });
+      }
+    }
+    // docker koprusu (172.17.0.1) once — konteynerden en garanti yol odur
+    ipler.sort((x, y) => (y.docker ? 1 : 0) - (x.docker ? 1 : 0));
+    for (const x of ipler) ekle('http://' + x.ip + ':' + WAHA_KANCA_PORT);
+  } catch (_) { /* arayuzler okunamadi, host.docker.internal ile devam */ }
+  return adaylar.slice(0, 4);   // 4 aday yeter, fazlasi WAHA'yi yorar
+}
+
 // ───────────────────────── YARDIMCILAR ─────────────────────────
 const log = (...a) => console.log('[waha]', ...a);
 
@@ -1028,6 +1068,7 @@ const http = require('http');
 let _kancaSunucu = null;
 const _dinleyiciler = new Set();   // aktif soketler (olaylari dagitmak icin)
 let _olaySayaci = 0;               // WAHA'dan kac olay geldi
+let _oturumYenidenBaslatildi = false;   // onarim icin oturum bir kez yeniden baslatilir
 const _olayTipleri = new Map();
 
 // ═══ KANCA BEKCISI ══════════════════════════════════════════════════
@@ -1037,31 +1078,78 @@ const _olayTipleri = new Map();
 function kancaBekcisi(sock) {
   if (sock._kancaBekcisiKuruldu) return;
   sock._kancaBekcisiKuruldu = true;
+
+  // ── 1. ADIM (45sn): olay yoksa adresleri yeniden yaz ──
+  setTimeout(async () => {
+    if (sock._kapali || _olaySayaci > 0) return;
+    log('45 saniyedir olay yok — olay adresleri yeniden yaziliyor...');
+    try { await oturumHazirla(); } catch (e) { log('  yazilamadi: ' + e.message); }
+  }, 45000);
+
+  // ── 2. ADIM (75sn): oturumu bir kez yeniden baslat ──
+  // WAHA'da calisan bir oturumun ayari degistiginde YENIDEN BASLATILANA
+  // kadar eski ayarla calismaya devam edebiliyor. Yani adres dogru
+  // kaydedilmis olsa bile olay gelmiyor olabilir. Bir kez yeniden
+  // baslatiyoruz — oturum acik kalir, QR tekrar istenmez.
+  setTimeout(async () => {
+    if (sock._kapali || _olaySayaci > 0 || _oturumYenidenBaslatildi) return;
+    _oturumYenidenBaslatildi = true;
+    log('hala olay yok — WAHA oturumu bir kez yeniden baslatiliyor (ayarin islemesi icin)');
+    try {
+      await istek('/api/sessions/' + WAHA_OTURUM + '/restart', { method: 'POST', zamanAsimiMs: 30000 });
+      log('  oturum yeniden baslatildi, olaylar bekleniyor...');
+    } catch (e) { log('  yeniden baslatilamadi: ' + String(e.message).slice(0, 100)); }
+  }, 75000);
+
+  // ── 3. ADIM (150sn): hala yoksa teshis yaz ──
   setTimeout(() => {
     if (sock._kapali || _olaySayaci > 0) return;
+    const adaylar = kancaAdaylari();
     log('');
     log('╔═══════════════════════════════════════════════════════════');
-    log('║ ⚠️  WAHA BAGLI AMA 90 SANIYEDIR HIC OLAY GELMEDI');
+    log('║ ⚠️  WAHA BAGLI AMA 150 SANIYEDIR HIC OLAY GELMEDI');
     log('║');
     log('║ Panelde mesaj gorunmemesinin sebebi budur. Baglanti var,');
     log('║ gruplar geliyor, ama WAHA olaylari bize ULASAMIYOR.');
     log('║');
-    log('║ WAHA su adrese gondermeye calisiyor:');
-    log('║   ' + WAHA_KANCA_URL + '/olay');
+    log('║ Denenen adresler (hicbiri ulasmadi):');
+    for (const a of adaylar) log('║   ' + a + '/olay/...');
     log('║');
-    log('║ Sirayla kontrol et:');
-    log('║  1) Guvenlik duvari Docker\'dan gelen istegi engelliyor olabilir:');
+    log('║ Sirasiyla su ikisi:');
+    log('║  1) Guvenlik duvari Docker\'dan gelen istegi engelliyor:');
     log('║     ufw allow from 172.16.0.0/12 to any port ' + WAHA_KANCA_PORT);
-    log('║  2) docker-compose.yml icindeki WHATSAPP_HOOK_URL eski');
-    log('║     kopruyu (kopru:3002) gosteriyorsa sil ya da duzelt.');
-    log('║  3) .env icinde WAHA_KANCA_URL satiri OLMAMALI.');
-    log('║  4) WAHA kutusunda extra_hosts host.docker.internal tanimli mi?');
+    log('║  2) docker-compose.yml -> WHATSAPP_HOOK_URL hala eski');
+    log('║     kopruyu (kopru:3002) gosteriyor. Duzelt ve kutuyu');
+    log('║     yeniden olustur:  docker compose up -d --force-recreate');
     log('╚═══════════════════════════════════════════════════════════');
     log('');
-  }, 90000);
+  }, 150000);
 }
 
 // WAHA'dan gelen olaylari alan kucuk sunucu (tek kez acilir)
+// ═══ MESAJ GELDIKCE GRUBU TANI ══════════════════════════════════════
+// Listede olmayan (ya da adsiz duran) bir gruptan mesaj gelirse adini
+// ve aciklamasini o an cekip yayinlar. Grup basina bir kez calisir,
+// mesaj trafigi ne olursa olsun ek yuk yaratmaz.
+function grupAdiniTani(sock, jid) {
+  if (!jid || !jid.endsWith('@g.us')) return;
+  if (!sock._taninanGruplar) sock._taninanGruplar = new Set();
+  if (sock._taninanGruplar.has(jid)) return;
+  sock._taninanGruplar.add(jid);
+  if (sock._taninanGruplar.size > 5000) {
+    sock._taninanGruplar.delete(sock._taninanGruplar.values().next().value);
+  }
+  // Mesaj isleme yolunu bekletmeyelim — arka planda yapilsin
+  setTimeout(() => {
+    sock.groupMetadata(jid).then((b) => {
+      if (b && b.subject) {
+        sock.ev.emit('groups.update', [{ id: jid, subject: b.subject, desc: b.desc || '' }]);
+        log('mesaj geldi, grup taninadi: "' + String(b.subject).slice(0, 34) + '"');
+      }
+    }).catch(() => { /* adi alinamadi, sorun degil */ });
+  }, 300);
+}
+
 function kancaSunucusuAc() {
   if (_kancaSunucu) return;
   _kancaSunucu = http.createServer((req, res) => {
@@ -1080,8 +1168,12 @@ function kancaSunucusuAc() {
       _olaySayaci++;
       const tip = String(olay.event || olay.type || '?');
       _olayTipleri.set(tip, (_olayTipleri.get(tip) || 0) + 1);
-      if (_olaySayaci === 1) log('✅ WAHA\'dan ilk olay geldi: "' + tip + '" — koprü calisiyor');
-      else if (_olaySayaci % 200 === 0) {
+      if (_olaySayaci === 1) {
+        // Hangi adaydan geldi? Yol sonundaki numara onu soyluyor.
+        const no = String(req.url || '').match(/\/olay\/(\d+)/);
+        const adres = no ? (kancaAdaylari()[Number(no[1])] || '?') : '(eski yol)';
+        log('✅ WAHA\'dan ilk olay geldi: "' + tip + '" — calisan adres: ' + adres);
+      } else if (_olaySayaci % 200 === 0) {
         log('olay ozeti (' + _olaySayaci + ' toplam): '
           + [..._olayTipleri].map(([t, n]) => t + '=' + n).join(' '));
       }
@@ -1100,50 +1192,49 @@ const KANCA_OLAYLARI = ['message', 'message.any', 'message.ack', 'message.revoke
   'presence.update', 'chat.archive'];
 
 async function oturumHazirla() {
-  const kanca = { url: WAHA_KANCA_URL + '/olay', events: KANCA_OLAYLARI };
+  // Her adaya AYRI YOL: /olay/0, /olay/1 ... boylece olay gelince
+  // hangi adresin calistigini logdan gorurüz.
+  const adaylar = kancaAdaylari();
+  const kancalar = adaylar.map((taban, i) => ({ url: taban + '/olay/' + i, events: KANCA_OLAYLARI }));
+  const kanca = kancalar[0];
   try {
     const s = await istek('/api/sessions/' + WAHA_OTURUM);
     const kayitli = (s.config && s.config.webhooks) || [];
-    // Ne kayitli oldugunu HER ZAMAN yaz — bir daha koru koruna aramayalim
     log('WAHA kayitli olay adresi: ' + (kayitli.map((w) => w.url).join(' , ') || '(HIC YOK)'));
     for (const w of kayitli) {
       log('   ' + w.url + '  ->  olaylar: ' + ((w.events || []).join(',') || '(bos)'));
     }
 
-    // ═══ SADECE ADRESE BAKMAK YETMIYOR (2026-08) ════════════════════
+    // ═══ HEM ADRES HEM OLAY LISTESI KONTROL EDILIR ══════════════════
     // ESKI HATA: yalnizca url karsilastiriliyordu. Oturum daha once
-    // baska bir surumle (ya da eski kopruyle) kurulduysa adres AYNI
-    // kalir ama kayitli olay listesi eksik olabilir — ornegin sadece
-    // 'session.status'. O zaman baglanti kurulur, QR gelir, gruplar
-    // gelir AMA MESAJ HIC DUSMEZ. Kod da "adres dogru" deyip hicbir sey
-    // yapmazdi. Artik olay listesi de karsilastiriliyor.
+    // baska bir surumle kurulduysa adres AYNI kalir ama kayitli olay
+    // listesi eksik olabilir (ornegin sadece 'session.status'). O zaman
+    // baglanti kurulur, gruplar gelir AMA MESAJ HIC DUSMEZ.
+    const kayitliUrller = kayitli.map((w) => w.url);
+    const eksikAdres = kancalar.filter((k) => !kayitliUrller.includes(k.url)).length;
     const bizim = kayitli.find((w) => w.url === kanca.url);
-    const eksikOlaylar = bizim
-      ? KANCA_OLAYLARI.filter((e) => !((bizim.events || []).includes(e)))
-      : KANCA_OLAYLARI;
-    if (!bizim || eksikOlaylar.length) {
-      log(bizim
-        ? 'olay listesi eksik (' + eksikOlaylar.join(',') + ') — duzeltiliyor'
-        : 'olay adresimiz kayitli degil — ekleniyor');
+    const eksikOlaylar = bizim ? KANCA_OLAYLARI.filter((e) => !((bizim.events || []).includes(e))) : KANCA_OLAYLARI;
+    if (eksikAdres || eksikOlaylar.length) {
+      log('olay adresleri yazilıyor (' + kancalar.length + ' aday):');
+      for (const k of kancalar) log('   ' + k.url);
       try {
-        await istek('/api/sessions/' + WAHA_OTURUM, { method: 'PUT', body: { config: { webhooks: [kanca] } } });
-        log('olay adresi + olay listesi guncellendi');
-        // Dogrulama: WAHA gercekten kaydetti mi?
+        await istek('/api/sessions/' + WAHA_OTURUM, { method: 'PUT', body: { config: { webhooks: kancalar } } });
+        log('olay adresleri + olay listesi guncellendi');
         try {
           const k = await istek('/api/sessions/' + WAHA_OTURUM);
-          const y = ((k.config && k.config.webhooks) || []).find((w) => w.url === kanca.url);
-          if (y) log('   dogrulandi -> ' + (y.events || []).length + ' olay kayitli');
-          else log('   ⚠ WAHA kaydetmemis gorunuyor — WAHA arayuzunden elle bakman gerekebilir');
+          const y = ((k.config && k.config.webhooks) || []);
+          log('   dogrulandi -> ' + y.length + ' adres, ' + ((y[0] && y[0].events) || []).length + ' olay kayitli');
+          if (!y.length) log('   ⚠ WAHA kaydetmemis gorunuyor');
         } catch (_) {}
       } catch (e) { log('olay adresi guncellenemedi: ' + e.message); }
     } else {
-      log('olay adresi ve olay listesi zaten dogru');
+      log('olay adresleri ve olay listesi zaten dogru (' + kayitli.length + ' adres)');
     }
     return s;
   } catch (e) {
     if (e.status === 404) {
       log('oturum yok, olusturuluyor...');
-      await istek('/api/sessions', { method: 'POST', body: { name: WAHA_OTURUM, start: true, config: { webhooks: [kanca] } } });
+      await istek('/api/sessions', { method: 'POST', body: { name: WAHA_OTURUM, start: true, config: { webhooks: kancalar } } });
       return { status: 'STARTING' };
     }
     throw e;
@@ -1383,6 +1474,12 @@ async function wahaBaglan() {
       sock._sonMesajlar.add(m.key.id);
       if (sock._sonMesajlar.size > 800) sock._sonMesajlar.delete(sock._sonMesajlar.values().next().value);
       sock.ev.emit('messages.upsert', { type: 'notify', messages: [m] });
+      // ═══ MESAJ GELDIKCE GRUBU TANI (2026-08) ══════════════════════
+      // Listede olmayan bir gruptan mesaj gelirse server.js sohbeti
+      // acar ama adi ham kimlik olur ("120363..."). Adini HEMEN cekip
+      // yayiyoruz — kullanicinin istedigi "dustukce yenilensin" davranisi.
+      // Sadece daha once bakilmamis gruplar icin, grup basina TEK sefer.
+      grupAdiniTani(sock, m.key.remoteJid);
       return;
     }
 
