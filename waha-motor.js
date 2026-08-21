@@ -518,14 +518,46 @@ async function grupBilgiDoldur(sock) {
     if (sock._adliOrnekJid) {
       await ucDenemesi(sock, sock._adliOrnekJid, sock._adliOrnekAd);
     }
+
+    // ═══ ONCE DEPOYU TAZELE, SONRA TEKRAR OKU ═══════════════════════
+    // Baileys farki burada: o WhatsApp'a canli soruyor, WAHA depodan
+    // veriyor. Depo eksikse kac kez sorsak da bos gelir. Once WAHA'ya
+    // "depoyu WhatsApp'tan yenile" deyip grup listesini TEKRAR okuyoruz;
+    // adlarin buyuk kismi bu adimda geliyor olmali.
+    if (!sock._depoTazelendi) {
+      sock._depoTazelendi = true;
+      const oldu = await gruplariTazeleWaha(tumu.length + ' grubun adi bos');
+      if (oldu) {
+        try {
+          const taze = await _sayfaliCek('/api/' + WAHA_OTURUM + '/groups');
+          let kazanilan = 0;
+          const yayin = [];
+          for (const g of taze) {
+            const b = baileysGrup(g);
+            if (!b || !b.id || !b.subject) continue;
+            if (sock._bilinenAdlar && sock._bilinenAdlar.get(b.id) === b.subject) continue;
+            if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+            sock._bilinenAdlar.set(b.id, b.subject);
+            sock._adsizGruplar.delete(b.id);
+            yayin.push({ id: b.id, subject: b.subject, desc: b.desc || '' });
+            kazanilan++;
+          }
+          for (let i = 0; i < yayin.length; i += 200) sock.ev.emit('groups.update', yayin.slice(i, i + 200));
+          log('tazeleme sonrasi: ' + kazanilan + ' grup adina kavustu, kalan adsiz: ' + sock._adsizGruplar.size);
+          if (!sock._adsizGruplar.size) return;   // is bitti
+        } catch (e) { log('tazeleme sonrasi okunamadi: ' + String(e.message).slice(0, 80)); }
+      }
+    }
     // ═══ ONCE YOKLA, SONRA KARAR VER (2026-08) ══════════════════════
     // Adi bos gruplarin cogu ayrilinmis/erisilemez olabiliyor; onlarda
     // tek-grup sorgusu da bos donuyor ("metadata bos geldi"). 5799 grup
     // icin bosuna 5799 istek atmak sistemi kasiyor ve WhatsApp'i yoruyor.
     // Bu yuzden once kucuk bir ORNEK deniyoruz: tutmuyorsa hic girismiyoruz.
-    const ORNEK = Math.min(40, tumu.length);
+    const kalan = [...sock._adsizGruplar];
+    if (!kalan.length) return;
+    const ORNEK = Math.min(40, kalan.length);
     const ESIK = 0.25;   // ornekte %25 bile tutmuyorsa devam etmenin anlami yok
-    let kuyruk = tumu.slice(0, ORNEK);
+    let kuyruk = kalan.slice(0, ORNEK);
     let yoklamaBitti = false;
     const denemeSayisi = new Map();
     let aralik = BILGI_ARALIK_TABAN;
@@ -598,14 +630,14 @@ async function grupBilgiDoldur(sock) {
           } else {
             log('grup bilgisi DURDURULDU: yoklanan ' + denenen + ' gruptan sadece ' + dolan
               + ' tanesinin adi geldi. WAHA yanit veriyor ama bu gruplarin adi BOS'
-              + ' — ayrilinmis/erisilemez gruplar. ' + (tumu.length - denenen)
+              + ' — ayrilinmis/erisilemez gruplar. ' + (kalan.length - denenen)
               + ' grup icin bosuna sorgu atilmayacak.');
           }
           log('  Bu gruplar listede gorunmuyor; birinden mesaj gelirse otomatik eklenecek.');
           return;
         }
         // Yoklama tuttu -> gerisine devam
-        kuyruk = tumu.slice(ORNEK);
+        kuyruk = kalan.slice(ORNEK);
         log('grup bilgisi: yoklama tuttu (' + dolan + '/' + denenen + ') — kalan '
           + kuyruk.length + ' grup cekiliyor (~' + Math.ceil(kuyruk.length * aralik / 60000) + ' dk)');
       }
@@ -1265,18 +1297,82 @@ function wahaSoketYap(secenek = {}) {
 // ═══════════════════════════════════════════════════════════════════
 //  MEDYA INDIRME — WAHA'nin verdigi adresten
 // ═══════════════════════════════════════════════════════════════════
+// ═══ MEDYA ADRESI DUZELTMESI (2026-08) ═════════════════════════════
+// WAHA dosya adresini KENDI IC adresiyle veriyor:
+//     http://localhost:3000/api/files/...
+// 3000, Docker kutusunun ICINDEKI port. Biz disaridan 3001'e bakiyoruz,
+// dolayisiyla o adres bizde 404 doner — "Medya indirilemedi: HTTP 404"
+// satirlarinin sebebi buydu, dosya WAHA'da duruyor ama yanlis kapiya
+// gidiyorduk. Adresin sadece YOL kismini alip kendi WAHA adresimize
+// ekliyoruz.
+function medyaAdresiDuzelt(kaynak) {
+  const ham = String(kaynak || '');
+  if (!ham) return '';
+  if (!ham.startsWith('http')) return WAHA_URL + (ham.startsWith('/') ? ham : '/' + ham);
+  try {
+    const u = new URL(ham);
+    const bizim = new URL(WAHA_URL);
+    if (u.host === bizim.host) return ham;             // zaten dogru
+    return WAHA_URL.replace(/\/+$/, '') + u.pathname + u.search;
+  } catch (_) { return ham; }
+}
+
 async function wahaMedyaIndir(m) {
   const kaynak = m && m._wahaMedya;
   if (!kaynak) throw new Error('WAHA medya adresi yok (WHATSAPP_DOWNLOAD_MEDIA acik mi?)');
-  const url = String(kaynak).startsWith('http') ? kaynak : (WAHA_URL + kaynak);
+  const url = medyaAdresiDuzelt(kaynak);
   const bas = WAHA_API_KEY ? { 'X-Api-Key': WAHA_API_KEY } : {};
   const r = await fetch(url, { headers: bas });
-  if (!r.ok) throw new Error('medya indirilemedi: HTTP ' + r.status);
+  if (!r.ok) throw new Error('medya indirilemedi: HTTP ' + r.status + ' (' + url.slice(0, 90) + ')');
   const buf = Buffer.from(await r.arrayBuffer());
   if (!buf.length) throw new Error('medya bos geldi');
   return buf;
 }
 
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  WAHA'NIN GRUP DEPOSUNU TAZELE  ← BAILEYS FARKI
+//  -----------------------------------------------------------------
+//  BAILEYS NASIL YAPIYOR: groupFetchAllParticipating her cagrildiginda
+//  WhatsApp'a CANLI sorgu atiyor ve tum gruplarin adini taze aliyor.
+//  Bu yuzden Baileys'te 4494 grubun hepsinin adi var.
+//
+//  WAHA NASIL YAPIYOR: gruplari KENDI DEPOSUNDAN veriyor. Depo eksik
+//  doldurulmussa 'Name' bos gelir ve KAC KEZ SORARSAN SOR bos gelmeye
+//  devam eder — sorun sorguda degil, deponun kendisinde.
+//  Benim gozden kacirdigim buydu: hep OKUYORDUM, hic TAZELE demedim.
+//
+//  Cozum: WAHA'ya depoyu WhatsApp'tan yenilemesini soyluyoruz, sonra
+//  tekrar okuyoruz. Hangi ucun bu isi yaptigi surume gore degisebilir,
+//  bu yuzden bilinen adaylari sirayla deneyip SONUCU LOGA yaziyoruz.
+// ═══════════════════════════════════════════════════════════════════
+let _tazelemeUcu = null;      // calisani bulunca hatirla
+let _tazelemeYok = false;     // hicbiri calismiyorsa bir daha ugrasma
+
+async function gruplariTazeleWaha(sebep) {
+  if (_tazelemeYok) return false;
+  const adaylar = _tazelemeUcu ? [_tazelemeUcu] : [
+    ['POST', '/api/' + WAHA_OTURUM + '/groups/refresh'],
+    ['POST', '/api/' + WAHA_OTURUM + '/groups/refresh-metadata'],
+    ['POST', '/api/' + WAHA_OTURUM + '/groups/sync'],
+    ['GET', '/api/' + WAHA_OTURUM + '/groups?refresh=true&limit=1'],
+  ];
+  log('WAHA grup deposu tazeleniyor (' + sebep + ')...');
+  for (const [yontem, yol] of adaylar) {
+    try {
+      await istek(yol, { method: yontem, zamanAsimiMs: 120000 });
+      _tazelemeUcu = [yontem, yol];
+      log('  tazeleme TAMAM -> ' + yontem + ' ' + yol.split('?')[0]);
+      return true;
+    } catch (e) {
+      log('  ' + yol.split('?')[0] + ': ' + String(e.message).slice(0, 80));
+    }
+  }
+  _tazelemeYok = true;
+  log('  WAHA bu surumde grup tazeleme ucu sunmuyor');
+  return false;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  BAGLANTI + OLAY KOPRUSU
@@ -1976,5 +2072,5 @@ module.exports = {
   wahaBaglan, oturumHazirla,
   numaraTemizle, jidAl, zamanAl, lidNumara, benKur, ackCevir, baileysMesaji,
   ilkListeyiCek, ilkListeTuru, ilkListeBaslat, sohbetAdi, sohbetZamani,
-  yeniSohbetleriYayinla, isimleriTazele, adsizlariTamamla, tekSohbetAdi,
+  medyaAdresiDuzelt, yeniSohbetleriYayinla, isimleriTazele, adsizlariTamamla, tekSohbetAdi,
 };
