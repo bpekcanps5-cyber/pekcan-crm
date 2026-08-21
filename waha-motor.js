@@ -799,17 +799,32 @@ async function tazelemeYap(jid) {
 
 let _adAramaYazildi = 0;
 
+// ═══ HIZLI: sadece OKUR, beklemez ══════════════════════════════════
+// KRITIK: server.js groupMetadata cagrisini 20 saniyede iptal ediyor
+// (ve aciklama motoru 6 saniyede). Tazeleme + bekleme merdivenini bu
+// yolun icine koymak fonksiyonu 25 saniyeye cikardi ve HER CAGRI
+// "groupMetadata hata: timeout" ile dustu — ad gelmek uzereyken cagri
+// kesiliyordu. Bu yuzden okuma ve tazeleme AYRILDI:
+//   tekSohbetAdi        -> hizli, sadece okur (bu fonksiyon)
+//   adiTazeleyerekGetir -> yavas, arka planda tazeler ve yayinlar
 async function tekSohbetAdi(jid, sock) {
-  // 1) Belki zaten biliniyordur
   if (sock && sock._bilinenAdlar && sock._bilinenAdlar.get(jid)) return sock._bilinenAdlar.get(jid);
+  const ad = await grupAdiOku(jid);
+  if (ad && sock) {
+    if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+    sock._bilinenAdlar.set(jid, ad);
+  }
+  return ad;
+}
 
-  // 2) Dogrudan oku
-  let ad = await grupAdiOku(jid);
+// ═══ YAVAS: tazeler, bekler, bulunca YAYINLAR ══════════════════════
+// Hicbir cagriyi bekletmez — arka planda calisir, sonucu 'groups.update'
+// olarak panele duser. Grup basina tek sefer.
+async function adiTazeleyerekGetir(sock, jid) {
+  if (!sock || sock._kapali) return '';
+  let ad = await tekSohbetAdi(jid, sock);
   if (ad) return ad;
 
-  // 3) Adi yok -> TAZELE, sonra tekrar oku.
-  //    Tazeleme WhatsApp'tan veri cekiyor, aninda bitmiyor; bu yuzden
-  //    artan araliklarla birkac kez bakiyoruz.
   const tazelendi = await tazelemeYap(jid);
   if (!tazelendi) {
     if (_adAramaYazildi < 3) {
@@ -818,10 +833,16 @@ async function tekSohbetAdi(jid, sock) {
     }
     return '';
   }
-  for (const bekle of [800, 2500, 6000, 15000]) {
+  // Tazeleme WhatsApp'tan veri cekiyor, aninda bitmiyor — artan araliklarla bak
+  for (const bekle of [800, 2500, 6000, 15000, 30000]) {
+    if (sock._kapali) return '';
     await uyu(bekle);
     ad = await grupAdiOku(jid);
-    if (ad) return ad;
+    if (ad) {
+      if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+      sock._bilinenAdlar.set(jid, ad);
+      return ad;
+    }
   }
   if (_adAramaYazildi < 3) {
     _adAramaYazildi++;
@@ -842,7 +863,7 @@ async function adsizlariTamamla(sock, liste) {
     for (const jid of liste) {
       if (sock._kapali) break;
       denenen++;
-      const ad = await tekSohbetAdi(jid, sock);
+      const ad = await adiTazeleyerekGetir(sock, jid);
       if (ad) {
         bulunan++;
         sock._bilinenAdlar.set(jid, ad);
@@ -1179,29 +1200,24 @@ function wahaSoketYap(secenek = {}) {
         if (!b.subject && sock._bilinenAdlar && sock._bilinenAdlar.get(jid)) {
           b.subject = sock._bilinenAdlar.get(jid);
         }
-        // ── 3) TEK-SOHBET UCU ──
-        if (!b.subject) {
-          const ad = await tekSohbetAdi(jid, sock);
-          if (ad) {
-            b.subject = ad;
-            if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
-            sock._bilinenAdlar.set(jid, ad);
-          }
-        }
-        // ── 4) SON CARE: sohbet listesinin ilk sayfasi ──
-        if (!b.subject) {
-          try {
-            await sonSohbetleriTara(sock);
-            const ad = sock._bilinenAdlar && sock._bilinenAdlar.get(jid);
-            if (ad) b.subject = ad;
-          } catch (_) {}
-        }
+        // ── 3) ADI YOKSA: BEKLEMEDEN DON, TAZELEMEYI ARKA PLANA AT ──
+        // ═══ NEDEN BEKLEMIYORUZ (2026-08) ═══════════════════════════
+        // server.js bu cagriyi 20 saniyede (aciklama motoru 6 saniyede)
+        // iptal ediyor. Tazeleme + bekleme buraya konunca her cagri
+        // "groupMetadata hata: timeout" ile dusuyordu — ad tam gelmek
+        // uzereyken cagri kesiliyordu. Artik burada BEKLEMIYORUZ:
+        // hemen doneriz, tazeleme arka planda surer ve ad bulununca
+        // 'groups.update' olarak panele kendisi duser.
+        if (!b.subject) grupAdiniTani(sock, jid);
 
         if (b.subject) {
           if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
           sock._bilinenAdlar.set(jid, b.subject);
           // Uyeler bos ise ayri uctan tamamla (panelde "0 uye" gorunmesin)
-          if (!b.participants || !b.participants.length) b = await uyeleriTamamla(jid, b);
+          // Uye cekimi de bekletmesin: 8 saniyede gelmezse bosver
+          if (!b.participants || !b.participants.length) {
+            b = await Promise.race([uyeleriTamamla(jid, b), uyu(8000).then(() => b)]);
+          }
           _grupOnbellek.set(jid, { veri: b, ts: Date.now(), sure: GRUP_ONBELLEK_MS });
         } else {
           if (_grupHataYazildi < 3) {
@@ -1631,7 +1647,7 @@ function anlikKuyrukIsle(sock) {
   while (sock._anlikCalisan < ANLIK_ES_ZAMAN && sock._anlikKuyruk.length) {
     const jid = sock._anlikKuyruk.shift();
     sock._anlikCalisan++;
-    tekSohbetAdi(jid, sock).then((ad) => {
+    adiTazeleyerekGetir(sock, jid).then((ad) => {
       if (ad) {
         if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
         sock._bilinenAdlar.set(jid, ad);
