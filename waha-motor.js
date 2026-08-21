@@ -370,6 +370,18 @@ function baileysGrup(g) {
 
 // auto = once sohbet listesi, olmazsa grup listesi
 // sohbetler / gruplar / kapali ile elle secilebilir (.env: WAHA_ILK_LISTE)
+// ═══════════════════════════════════════════════════════════════════
+//  TOPLU CEKIM KAPALI (2026-08) — kullanicinin karari, ve dogrusu bu
+//  -------------------------------------------------------------------
+//  Baglanti aninda 7500 grubu birden cekmek her seferinde felakete yol
+//  acti: 23.500 olaylik sel, kilitlenen sistem, uretilemeyen QR.
+//  YENI DAVRANIS: hicbir grup onceden cekilmez. Liste BOS baslar.
+//  Mesaj dustukce sohbet eklenir (1, 2, 3...) ve o an SADECE O GRUBUN
+//  adi/aciklamasi cekilir. Tek grup = tek istek = anlik.
+//  Bir sure sonra liste zaten dogal olarak oturur.
+//  Geri acmak icin: .env -> WAHA_TOPLU_CEKIM=acik
+// ═══════════════════════════════════════════════════════════════════
+const TOPLU_CEKIM = (process.env.WAHA_TOPLU_CEKIM || 'kapali').toLowerCase() === 'acik';
 const ILK_LISTE_MOD = (process.env.WAHA_ILK_LISTE || 'auto').toLowerCase();
 // Deneme takvimi (ms) — senkron gec biterse yakalayalim
 const ILK_LISTE_TAKVIM = [5000, 20000, 45000, 90000, 180000, 300000, 600000, 1200000];
@@ -545,6 +557,7 @@ const BILGI_ARALIK_TABAN = Number(process.env.WAHA_GRUP_BILGI_ARALIK_MS) || 200;
 const BILGI_YAYIN_ESIGI = 40;    // kac grupta bir panele yayin
 
 async function grupBilgiDoldur(sock) {
+  if (!TOPLU_CEKIM) return;         // toplu ad doldurma yok
   if (BILGI_MOD === 'kapali') { log('grup bilgisi doldurma kapali (WAHA_GRUP_BILGI=kapali)'); return; }
   if (sock._bilgiCalisiyor || sock._kapali) return;
   // Yoklama tutmadiysa bir daha girisme (yoksa her tazelemede bastan baslar)
@@ -1067,6 +1080,7 @@ async function isimleriTazele(sock) {
 }
 
 function isimTazelemeBaslat(sock) {
+  if (!TOPLU_CEKIM) return;         // toplu tarama yok
   if (sock._isimTimer) return;
   // Ilk tur 60 saniye sonra: grup listesi otursun, sonra adlari tamamla
   setTimeout(() => { isimleriTazele(sock).catch(() => {}); }, 60000);
@@ -1140,6 +1154,7 @@ async function ilkListeTuru(sock, sira) {
 
 // Baglanti acildiginda takvimi kur (soket basina bir kez)
 function ilkListeBaslat(sock) {
+  if (!TOPLU_CEKIM) { log('toplu sohbet cekimi KAPALI — liste bos baslar, mesaj geldikce dolar'); return; }
   if (sock._ilkListeBasladi) return;
   if (ILK_LISTE_MOD === 'kapali') { log('liste cekimi kapali (WAHA_ILK_LISTE=kapali)'); return; }
   sock._ilkListeBasladi = true;
@@ -1421,7 +1436,9 @@ function wahaSoketYap(secenek = {}) {
     if (!sock._tumGruplar) sock._tumGruplar = new Set();
     for (const k of Object.keys(sonuc)) if (k.endsWith('@g.us')) sock._tumGruplar.add(k);
     const kayitlar = Object.values(sonuc);
-    if (kayitlar.length) {
+    // Toplu yayin KAPALI: server.js bu cagriyi kendi ad tazelemesi icin
+    // kullaniyor, o kalsin — ama biz listeye 7500 grup DOKMEYECEGIZ.
+    if (TOPLU_CEKIM && kayitlar.length) {
       setTimeout(() => {
         try {
           // Bu cagri server.js icinde birkac yerden geliyor (periyodik
@@ -1803,10 +1820,46 @@ async function sonSohbetleriTara(sock) {
 //    - Ayni anda en fazla 4 istek isler (ani mesaj yagmurunda bile).
 //    Ilk dolum bittikten sonra bu yol neredeyse hic calismaz.
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+//  MESAJ DUSTU -> O GRUBUN ADINI VE ACIKLAMASINI ANINDA CEK
+//  -------------------------------------------------------------------
+//  Toplu cekim kapali oldugu icin burasi artik cok hafif: ayni anda
+//  sadece birkac yeni grup olur, her biri TEK istek. Karmasik kuyruga
+//  gerek yok — ad da aciklama da tek cagriyla geliyor.
+//  Grup basina bir kez sorulur; gelmezse tazeleyip bir kez daha dener.
+// ═══════════════════════════════════════════════════════════════════
 function grupAdiniTani(sock, jid) {
   if (!jid || !jid.endsWith('@g.us') || sock._kapali) return;
   if (sock._bilinenAdlar && sock._bilinenAdlar.get(jid)) return;   // adini zaten biliyoruz
-  adKuyrugunaEkle(sock, jid);
+  if (!sock._sorulanGruplar) sock._sorulanGruplar = new Set();
+  if (sock._sorulanGruplar.has(jid)) return;
+  sock._sorulanGruplar.add(jid);
+  if (sock._sorulanGruplar.size > 20000) {
+    sock._sorulanGruplar.delete(sock._sorulanGruplar.values().next().value);
+  }
+  grupBilgisiniGetir(sock, jid).catch(() => {});
+}
+
+async function grupBilgisiniGetir(sock, jid) {
+  const oku = async () => {
+    try {
+      const r = await istek('/api/' + WAHA_OTURUM + '/groups/' + jid, { zamanAsimiMs: 12000 });
+      const b = baileysGrup(r);
+      return (b && b.subject) ? b : null;
+    } catch (_) { return null; }
+  };
+  let b = await oku();
+  if (!b) {                       // gelmediyse bir kez tazeleyip tekrar dene
+    await grupBasinaTazele(jid);
+    await uyu(1500);
+    b = await oku();
+  }
+  if (!b) return;
+  if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+  sock._bilinenAdlar.set(jid, b.subject);
+  sock.ev.emit('groups.update', [{ id: jid, subject: b.subject, desc: b.desc || '' }]);
+  log('mesaj dustu -> "' + b.subject.slice(0, 32) + '"'
+    + (b.desc ? ' (aciklama var)' : '') + (b.participants.length ? ' | ' + b.participants.length + ' uye' : ''));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2029,6 +2082,7 @@ function qrTakibiBaslat(sock) {
         sock._sonDurum = durum;
       }
       if (/WORKING|CONNECTED/.test(durum)) {
+        sock._failedSayisi = 0;
         qrTakibiDurdur(sock);
         const ben = s.me || s.user || {};
         sock.user = benKur(ben);
@@ -2052,6 +2106,27 @@ function qrTakibiBaslat(sock) {
           } catch (e) { log('  ' + ad + ': ' + String(e.message).slice(0, 70)); return false; }
         };
         try {
+          // ═══ INATCI FAILED -> OTURUMU SIFIRLA (2026-08) ═══════════
+          // Motor degistirilince (GOWS -> NOWEB) eski oturum dosyalari
+          // yeni motorla UYUMSUZ oluyor. WAHA acilista cokuyor, durum
+          // FAILED'e dusuyor, yeniden baslatmak da ise yaramiyor ve
+          // QR HIC uretilmiyor. Panel sonsuza kadar "baglaniyor" diyor.
+          // 3 basarisiz kurtarmadan sonra oturumu silip yeniden kuruyoruz:
+          // kimlik zaten calismiyor, kaybedecek bir sey yok, QR gelir.
+          sock._failedSayisi = (sock._failedSayisi || 0) + 1;
+          if (durum === 'FAILED' && sock._failedSayisi >= 3 && !sock._oturumSifirlandi) {
+            sock._oturumSifirlandi = true;
+            log('oturum ' + sock._failedSayisi + ' kez FAILED — sifirdan kuruluyor (QR istenecek)');
+            await dene('durdur', '/api/sessions/' + WAHA_OTURUM + '/stop');
+            await dene('cikis', '/api/sessions/' + WAHA_OTURUM + '/logout');
+            try {
+              await istek('/api/sessions/' + WAHA_OTURUM, { method: 'DELETE', zamanAsimiMs: 30000 });
+              log('  eski oturum silindi');
+            } catch (e) { log('  silinemedi: ' + String(e.message).slice(0, 60)); }
+            try { await oturumHazirla(); log('  yeni oturum kuruldu — QR birazdan gelecek'); }
+            catch (e) { log('  kurulamadi: ' + String(e.message).slice(0, 60)); }
+            return;
+          }
           if (durum === 'FAILED') {
             // 1) yeniden baslat
             let ok = await dene('yeniden baslat', '/api/sessions/' + WAHA_OTURUM + '/restart');
