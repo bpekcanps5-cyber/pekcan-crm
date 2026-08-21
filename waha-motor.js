@@ -669,6 +669,69 @@ async function ucDenemesi(sock, ornekJid, ornekAd) {
 // ═══════════════════════════════════════════════════════════════════
 const ISIM_TAZELEME_MS = Number(process.env.WAHA_ISIM_TAZELEME_MS) || 10 * 60 * 1000;
 
+
+// ═══════════════════════════════════════════════════════════════════
+//  ADSIZ KALANLARI TAMAMLA — ikinci kaynak
+//  -----------------------------------------------------------------
+//  Sohbet LISTESI ucu ('/chats') sadece konusulmus sohbetleri veriyor
+//  olabilir; hic mesaj gelmemis gruplar orada cikmaz ve adsiz kalir.
+//  Bu yuzden kalanlari TEK-SOHBET ucundan ('/chats/{jid}') deniyoruz.
+//  Grup ucu ('/groups/{jid}') bu gruplarda bos donuyor — kanitlandi —
+//  ama sohbet ucu adi veriyor, dolayisiyla tek-sohbet ucu da verebilir.
+//
+//  ONCE YOKLA: 30 grupla deniyoruz. Tutmuyorsa binlerce bosuna istek
+//  atmiyoruz; loga sebebini yazip birakiyoruz.
+// ═══════════════════════════════════════════════════════════════════
+async function tekSohbetAdi(jid) {
+  const yollar = [
+    '/api/' + WAHA_OTURUM + '/chats/' + jid,
+    '/api/' + WAHA_OTURUM + '/chats/' + jid + '/picture',   // bazi surumlerde ad da doner
+  ];
+  for (const yol of yollar) {
+    try {
+      const r = await istek(yol, { zamanAsimiMs: 12000 });
+      const ad = r && (r.name || r.Name || r.subject || r.Subject);
+      if (ad && String(ad).trim()) return String(ad).trim();
+    } catch (_) { /* sonrakini dene */ }
+  }
+  return '';
+}
+
+async function adsizlariTamamla(sock, liste) {
+  if (sock._kapali || sock._tamamlamaCalisiyor || sock._tamamlamaVazgecildi) return;
+  sock._tamamlamaCalisiyor = true;
+  try {
+    const ORNEK = Math.min(30, liste.length);
+    let bulunan = 0, denenen = 0;
+    const bulunanlar = [];
+    log('adsiz kalan ' + liste.length + ' grup — ikinci kaynak yoklaniyor (' + ORNEK + ' deneme)');
+    for (const jid of liste) {
+      if (sock._kapali) break;
+      denenen++;
+      const ad = await tekSohbetAdi(jid);
+      if (ad) {
+        bulunan++;
+        sock._bilinenAdlar.set(jid, ad);
+        bulunanlar.push({ id: jid, subject: ad });
+      }
+      if (bulunanlar.length >= 100) { sock.ev.emit('groups.update', bulunanlar.splice(0)); }
+      // Yoklama sonucu
+      if (denenen === ORNEK && bulunan / ORNEK < 0.2) {
+        sock._tamamlamaVazgecildi = true;
+        if (bulunanlar.length) sock.ev.emit('groups.update', bulunanlar.splice(0));
+        log('ikinci kaynak da vermiyor (' + bulunan + '/' + ORNEK + ') — bu gruplarin adi'
+          + ' WhatsApp tarafinda yok. Mesaj geldiginde otomatik gelecek.');
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    if (bulunanlar.length) sock.ev.emit('groups.update', bulunanlar);
+    log('ikinci kaynak: ' + bulunan + '/' + denenen + ' grup adina kavustu');
+  } finally {
+    sock._tamamlamaCalisiyor = false;
+  }
+}
+
 async function isimleriTazele(sock) {
   if (sock._kapali || sock._isimTazeleniyor) return;
   sock._isimTazeleniyor = true;
@@ -701,9 +764,25 @@ async function isimleriTazele(sock) {
       for (let i = 0; i < guncellenecek.length; i += 200) {
         sock.ev.emit('groups.update', guncellenecek.slice(i, i + 200));
       }
-      log('isim tazeleme: ' + kayitlar.length + ' sohbet okundu, '
-        + guncellenecek.length + ' grup adi guncellendi');
     }
+    // ═══ HESABI ACIKCA YAZ (2026-08) ════════════════════════════════
+    // "Bazilari geliyor, cogu gelmiyor" durumunu tahminle degil SAYIYLA
+    // gorelim: elimizde kac grup var, kacinin adi biliniyor, kac tanesi
+    // hala adsiz. Bu satir sorunun kaynak mi kapsam mi oldugunu soyler.
+    const tumGrup = sock._tumGruplar ? sock._tumGruplar.size : 0;
+    let adsizKalan = 0;
+    const adsizListe = [];
+    if (sock._tumGruplar) {
+      for (const j of sock._tumGruplar) {
+        if (!sock._bilinenAdlar.has(j)) { adsizKalan++; adsizListe.push(j); }
+      }
+    }
+    log('isim tazeleme: sohbet ucundan ' + kayitlar.length + ' kayit okundu, '
+      + guncellenecek.length + ' grup adi guncellendi'
+      + (tumGrup ? ' | toplam grup: ' + tumGrup + ', adi bilinen: ' + (tumGrup - adsizKalan)
+        + ', HALA ADSIZ: ' + adsizKalan : ''));
+    // Kalanlari ikinci kaynaktan tamamlamayi dene
+    if (adsizListe.length) adsizlariTamamla(sock, adsizListe).catch(() => {});
   } catch (e) {
     log('isim tazeleme hatasi: ' + String(e.message).slice(0, 90));
   } finally {
@@ -713,6 +792,8 @@ async function isimleriTazele(sock) {
 
 function isimTazelemeBaslat(sock) {
   if (sock._isimTimer) return;
+  // Ilk tur 60 saniye sonra: grup listesi otursun, sonra adlari tamamla
+  setTimeout(() => { isimleriTazele(sock).catch(() => {}); }, 60000);
   sock._isimTimer = setInterval(() => { isimleriTazele(sock).catch(() => {}); }, ISIM_TAZELEME_MS);
   log('isim tazeleme kuruldu (' + Math.round(ISIM_TAZELEME_MS / 60000) + ' dakikada bir)');
 }
@@ -1001,6 +1082,9 @@ function wahaSoketYap(secenek = {}) {
     // karari). Yeni bir hatta liste bos oldugu icin hicbiri gorunmuyordu.
     // Cozum: elimize gecen gruplari ayni anda gecmis paketi olarak da
     // yayinla — liste, ZATEN CALISAN cagriyla doluyor.
+    // Adsiz kalanlari sayabilmek icin TUM grup kimliklerini sakla
+    if (!sock._tumGruplar) sock._tumGruplar = new Set();
+    for (const k of Object.keys(sonuc)) if (k.endsWith('@g.us')) sock._tumGruplar.add(k);
     const kayitlar = Object.values(sonuc);
     if (kayitlar.length) {
       setTimeout(() => {
@@ -1827,5 +1911,5 @@ module.exports = {
   wahaBaglan, oturumHazirla,
   numaraTemizle, jidAl, zamanAl, lidNumara, benKur, ackCevir, baileysMesaji,
   ilkListeyiCek, ilkListeTuru, ilkListeBaslat, sohbetAdi, sohbetZamani,
-  yeniSohbetleriYayinla,
+  yeniSohbetleriYayinla, isimleriTazele, adsizlariTamamla, tekSohbetAdi,
 };
