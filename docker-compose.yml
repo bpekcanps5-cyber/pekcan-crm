@@ -51,26 +51,17 @@ services:
     networks: [waha-ag]
 
   # ═══════════════════════════════════════════════════════════════════
-  # KOPRU — WAHA ile bizim panel arasinda cevirmen
-  # Panel hic degismeden calisir; kopru WAHA'yi bizim protokole cevirir.
+  # KOPRU SERVISI KALDIRILDI (2026-08)
+  # -------------------------------------------------------------------
+  # Eskiden burada ayri bir "kopru" kutusu vardi (kopru:3002) ve WAHA'yi
+  # bizim protokole cevirirdi. O yaklasim TERK EDILDI: cevirmen artik
+  # CRM'in icinde, 'waha-motor.js' olarak calisiyor. Ayri kutu gerekmiyor.
+  #
+  # Tanim burada kalinca 'docker compose up' her seferinde onu insa etmeye
+  # calisiyor ve Dockerfile olmadigi icin su hatayi veriyordu:
+  #     failed to read dockerfile: open Dockerfile: no such file or directory
+  # Bu yuzden WAHA kutusu da yeniden olusturulamiyordu.
   # ═══════════════════════════════════════════════════════════════════
-  kopru:
-    build: .
-    container_name: waha-kopru
-    restart: unless-stopped
-    ports:
-      - "3002:3002"                 # TEST PANELI: http://SUNUCU:3002
-    environment:
-      TZ: Europe/Istanbul
-      WAHA_URL: http://waha:3000
-      WAHA_API_KEY: ${WAHA_API_KEY:-test-anahtari-degistir}
-      WAHA_OTURUM: test
-      PANEL_KULLANICI: ${PANEL_KULLANICI:-demo}
-      PANEL_SIFRE: ${PANEL_SIFRE:-demo}
-    volumes:
-      - ./medya:/app/medya
-    depends_on: [waha]
-    networks: [waha-ag]
 
 networks:
   waha-ag:
