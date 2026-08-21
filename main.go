@@ -40,22 +40,30 @@ func cizgi() { fmt.Println(strings.Repeat("=", 64)) }
 func main() {
 	kayit := waLog.Stdout("wm", "ERROR", true) // gurultu olmasin
 
-	depo, err := sqlstore.New("sqlite3", "file:sonda.db?_foreign_keys=on", kayit)
+	// YENI API: her cagri context istiyor (go doc ciktisiyla dogrulandi)
+	ctx := context.Background()
+
+	depo, err := sqlstore.New(ctx, "sqlite3", "file:sonda.db?_foreign_keys=on", kayit)
 	if err != nil {
 		fmt.Println("veritabani acilamadi:", err)
 		return
 	}
-	cihaz, err := depo.GetFirstDevice()
+	cihaz, err := depo.GetFirstDevice(ctx)
 	if err != nil {
 		fmt.Println("cihaz okunamadi:", err)
 		return
+	}
+
+	if cihaz == nil {
+		// Hic cihaz kayitli degilse yenisini olustur (ilk kurulum)
+		cihaz = depo.NewDevice()
 	}
 
 	istemci := whatsmeow.NewClient(cihaz, kayit)
 
 	if istemci.Store.ID == nil {
 		// Ilk kurulum: QR okut
-		qrKanal, _ := istemci.GetQRChannel(context.Background())
+		qrKanal, _ := istemci.GetQRChannel(ctx)
 		if err := istemci.Connect(); err != nil {
 			fmt.Println("baglanilamadi:", err)
 			return
@@ -80,7 +88,7 @@ func main() {
 	time.Sleep(20 * time.Second)
 
 	// ═══ ASIL SORU ═══════════════════════════════════════════════════
-	gruplar, err := istemci.GetJoinedGroups()
+	gruplar, err := istemci.GetJoinedGroups(ctx)
 	if err != nil {
 		fmt.Println("\nGRUP LISTESI ALINAMADI:", err)
 		istemci.Disconnect()
