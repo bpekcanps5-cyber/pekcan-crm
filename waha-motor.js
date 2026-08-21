@@ -369,23 +369,31 @@ function sohbetAdi(c) {
 async function _sayfaliCek(temelYol, zamanAsimiMs) {
   const hepsi = [];
   const gorulen = new Set();
-  const ADIM = 500;
-  const TAVAN = 60;                    // 60 x 500 = 30.000 kayit tavani
+  const ISTENEN = 500;                 // istedigimiz sayfa boyu
+  const TAVAN = 500;                   // en fazla sayfa (50'lik sayfalarda 25.000 kayit)
+  let konum = 0;
   for (let sayfa = 0; sayfa < TAVAN; sayfa++) {
     const ayrac = temelYol.includes('?') ? '&' : '?';
-    const veri = await istek(temelYol + ayrac + 'limit=' + ADIM + '&offset=' + (sayfa * ADIM), { zamanAsimiMs });
+    const veri = await istek(temelYol + ayrac + 'limit=' + ISTENEN + '&offset=' + konum, { zamanAsimiMs });
     const dizi = Array.isArray(veri) ? veri
       : (veri && Array.isArray(veri.data)) ? veri.data
       : (veri && Array.isArray(veri.chats)) ? veri.chats : [];
-    if (!dizi.length) break;
+    if (!dizi.length) break;           // gercek son: bos sayfa
     let yeni = 0;
     for (const x of dizi) {
       const j = jidAl(x);
       if (!j || gorulen.has(j)) continue;
       gorulen.add(j); hepsi.push(x); yeni++;
     }
-    if (!yeni) break;                  // uc offset'i yok sayiyor
-    if (dizi.length < ADIM) break;     // son sayfa
+    // ═══ SAYFA BOYU BIZIM DEGIL, UCUN VERDIGI KADAR (2026-08) ══════
+    // ESKI HATA: "dondu sayi < istedigim sayi ise son sayfadir" varsayimi.
+    // WAHA'nin sohbet ucu limit=500 istesek de 50 veriyor. Kod 50<500
+    // gorup "bitti" sanip duruyordu — 3500 grubun sadece 50'si geliyordu,
+    // gerisi ADSIZ kaliyordu. Panelde ham kimlik gorunmesinin sebebi buydu.
+    // ARTIK: imleci UCUN VERDIGI kadar ilerletiyoruz ve ancak BOS sayfa
+    // ya da hic yeni kayit gelmemesi durumunda duruyoruz.
+    konum += dizi.length;
+    if (!yeni) break;                  // uc offset'i yok sayiyor -> ayni sayfa geliyor
   }
   return hepsi;
 }
@@ -646,6 +654,65 @@ async function ucDenemesi(sock, ornekJid, ornekAd) {
   log('uc denemesi bitti — bu satirlar sorunun UCTA mi GRUPLARDA mi oldugunu soyler');
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  ISIM TAZELEME — sohbet ucundan periyodik ad cekimi
+//  -----------------------------------------------------------------
+//  Sohbet ucu ('/chats') grup ADLARINI veriyor, grup ucu ('/groups')
+//  cogunda vermiyor. Ustelik WhatsApp senkronu saatler icinde ilerliyor:
+//  ilk acilista adsiz olan grubun adi bir sure sonra gelebiliyor.
+//  Bu yuzden sohbet listesini araliklarla yeniden okuyup DEGISEN/YENI
+//  adlari 'groups.update' olarak yayiyoruz.
+// ═══════════════════════════════════════════════════════════════════
+const ISIM_TAZELEME_MS = Number(process.env.WAHA_ISIM_TAZELEME_MS) || 10 * 60 * 1000;
+
+async function isimleriTazele(sock) {
+  if (sock._kapali || sock._isimTazeleniyor) return;
+  sock._isimTazeleniyor = true;
+  try {
+    let kayitlar = [];
+    for (const yol of ['/api/' + WAHA_OTURUM + '/chats', '/api/' + WAHA_OTURUM + '/chats/overview']) {
+      if (_olukUclar.has(yol)) continue;
+      try { kayitlar = await _sayfaliCek(yol, 40000); if (kayitlar.length) break; }
+      catch (e) { if (e.zamanAsimi) _olukUclar.add(yol); }
+    }
+    if (!kayitlar.length) return;
+
+    if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+    const guncellenecek = [];
+    let yeniSohbet = 0;
+    for (const k of kayitlar) {
+      let jid = jidAl(k);
+      if (!jid || !jid.includes('@')) continue;
+      if (jid.endsWith('@c.us')) jid = jid.split('@')[0] + '@s.whatsapp.net';
+      if (jid === 'status@broadcast' || jid.endsWith('@newsletter')) continue;
+      const ad = sohbetAdi(k);
+      if (!ad) continue;
+      if (sock._bilinenAdlar.get(jid) === ad) continue;   // degismemis
+      sock._bilinenAdlar.set(jid, ad);
+      if (!sock._gorulenSohbetler || !sock._gorulenSohbetler.has(jid)) yeniSohbet++;
+      if (jid.endsWith('@g.us')) guncellenecek.push({ id: jid, subject: ad });
+    }
+    if (yeniSohbet) yeniSohbetleriYayinla(sock, kayitlar, 'sohbetler/tazeleme');
+    if (guncellenecek.length) {
+      for (let i = 0; i < guncellenecek.length; i += 200) {
+        sock.ev.emit('groups.update', guncellenecek.slice(i, i + 200));
+      }
+      log('isim tazeleme: ' + kayitlar.length + ' sohbet okundu, '
+        + guncellenecek.length + ' grup adi guncellendi');
+    }
+  } catch (e) {
+    log('isim tazeleme hatasi: ' + String(e.message).slice(0, 90));
+  } finally {
+    sock._isimTazeleniyor = false;
+  }
+}
+
+function isimTazelemeBaslat(sock) {
+  if (sock._isimTimer) return;
+  sock._isimTimer = setInterval(() => { isimleriTazele(sock).catch(() => {}); }, ISIM_TAZELEME_MS);
+  log('isim tazeleme kuruldu (' + Math.round(ISIM_TAZELEME_MS / 60000) + ' dakikada bir)');
+}
+
 async function ilkListeyiCek(sock) {
   const denenecek = [];
   if (ILK_LISTE_MOD !== 'gruplar') {
@@ -733,6 +800,7 @@ function ilkListeTimerlariTemizle(sock) {
 }
 function ilkListeDurdur(sock) {
   ilkListeTimerlariTemizle(sock);
+  if (sock._isimTimer) { clearInterval(sock._isimTimer); sock._isimTimer = null; }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1504,7 +1572,7 @@ async function wahaBaglan() {
   // kendisini dinliyoruz — hangi yoldan acilirsa acilsin yakalanir.
   // ilkListeBaslat kendi icinde tek sefer korumali.
   sock.ev.on('connection.update', (u) => {
-    if (u && u.connection === 'open') { ilkListeBaslat(sock); kancaBekcisi(sock); }
+    if (u && u.connection === 'open') { ilkListeBaslat(sock); kancaBekcisi(sock); isimTazelemeBaslat(sock); }
   });
 
   // ── WAHA olayi -> Baileys olayi ──
