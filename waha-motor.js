@@ -760,28 +760,45 @@ async function grupAdiOku(jid) {
 }
 
 // Tazele: once grup basina uc, olmazsa global (kisitli ve paylasimli)
-async function tazelemeYap(jid) {
-  // 1) Grup basina tazeleme — en ucuzu. Bir kez deneyip sonucu hatirliyoruz.
-  if (_grupBasinaTazeleme !== false) {
-    try {
-      await istek('/api/' + WAHA_OTURUM + '/groups/' + jid + '/refresh',
-        { method: 'POST', zamanAsimiMs: 30000 });
-      if (_grupBasinaTazeleme === null) {
-        _grupBasinaTazeleme = true;
-        log('grup basina tazeleme ucu CALISIYOR — sadece mesaj dusen grup tazelenecek');
-      }
-      return true;
-    } catch (e) {
-      if (_grupBasinaTazeleme === null) {
-        _grupBasinaTazeleme = false;
-        log('grup basina tazeleme ucu yok (' + String(e.message).slice(0, 40)
-          + ') — genel tazeleme kullanilacak, ' + Math.round(TAZELEME_ARALIK_MS / 1000) + 'sn araliklarla');
-      }
+// ═══════════════════════════════════════════════════════════════════
+//  AD BEKLEME KUYRUGU  —  "mesaj dustu, adi gelecek" garantisi
+//  -------------------------------------------------------------------
+//  ESKI HATA: grup basina tazeleme ucu yoksa ve genel tazeleme kisitli
+//  aralikta ise fonksiyon 'false' donup PES EDIYORDU. O grup bir daha
+//  denenmedigi icin panelde sonsuza kadar sayi olarak kaliyordu.
+//
+//  ARTIK: adi bulunamayan grup KUYRUKTA KALIR. Kuyruk surekli doner:
+//    - grup basina tazeleme varsa: her grubu tek tek tazeler
+//    - yoksa: BIR genel tazeleme yapar, ardindan TUM grup listesini
+//      yeniden okur ve kuyruktaki herkesin adini bir kerede cozer
+//  Ad gelene kadar birakmaz (grup basina en fazla 6 tur).
+// ═══════════════════════════════════════════════════════════════════
+async function grupBasinaTazele(jid) {
+  if (_grupBasinaTazeleme === false) return false;
+  try {
+    await istek('/api/' + WAHA_OTURUM + '/groups/' + jid + '/refresh',
+      { method: 'POST', zamanAsimiMs: 30000 });
+    if (_grupBasinaTazeleme === null) {
+      _grupBasinaTazeleme = true;
+      log('✓ grup basina tazeleme ucu CALISIYOR — sadece mesaj dusen grup tazelenecek');
     }
+    return true;
+  } catch (e) {
+    if (_grupBasinaTazeleme === null) {
+      _grupBasinaTazeleme = false;
+      log('grup basina tazeleme ucu yok (' + String(e.message).slice(0, 45)
+        + ') — genel tazeleme + toplu okuma kullanilacak');
+    }
+    return false;
   }
-  // 2) Genel tazeleme — pahali, bu yuzden kisitli ve PAYLASIMLI
-  if (_tazelemeUcusta) return _tazelemeUcusta;          // zaten biri tazeliyor, ona katil
-  if (Date.now() - _sonTazeleme < TAZELEME_ARALIK_MS) return false;
+}
+
+// Genel tazeleme: pahali, bu yuzden PAYLASIMLI (ayni anda tek tane)
+async function genelTazele() {
+  if (_tazelemeUcusta) return _tazelemeUcusta;
+  const bekle = TAZELEME_ARALIK_MS - (Date.now() - _sonTazeleme);
+  if (bekle > 0) await uyu(bekle);        // pes etme, SIRASINI BEKLE
+  if (_tazelemeUcusta) return _tazelemeUcusta;
   _sonTazeleme = Date.now();
   _tazelemeUcusta = (async () => {
     try {
@@ -790,14 +807,97 @@ async function tazelemeYap(jid) {
     } catch (e) {
       log('genel tazeleme olmadi: ' + String(e.message).slice(0, 70));
       return false;
-    } finally {
-      setTimeout(() => { _tazelemeUcusta = null; }, 1000);
-    }
+    } finally { setTimeout(() => { _tazelemeUcusta = null; }, 2000); }
   })();
   return _tazelemeUcusta;
 }
 
-let _adAramaYazildi = 0;
+// Tum grup listesini oku, kuyruktakilerin adini coz, panele yay
+async function topluOkuVeCoz(sock) {
+  let liste = [];
+  try { liste = await _sayfaliCek('/api/' + WAHA_OTURUM + '/groups', 60000); }
+  catch (e) { log('toplu okuma olmadi: ' + String(e.message).slice(0, 60)); return 0; }
+  if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+  const yayin = [];
+  for (const g of liste) {
+    const b = baileysGrup(g);
+    if (!b || !b.id || !b.subject) continue;
+    if (sock._bilinenAdlar.get(b.id) === b.subject) continue;
+    sock._bilinenAdlar.set(b.id, b.subject);
+    yayin.push({ id: b.id, subject: b.subject, desc: b.desc || '' });
+  }
+  for (let i = 0; i < yayin.length; i += 200) sock.ev.emit('groups.update', yayin.slice(i, i + 200));
+  return yayin.length;
+}
+
+const AD_KUYRUK_TUR_MS = 4000;      // kuyruk turu araligi
+const AD_EN_FAZLA_TUR = 6;          // grup basina en fazla kac tur denenir
+
+function adKuyrugunaEkle(sock, jid) {
+  if (!sock._adKuyruk) { sock._adKuyruk = new Map(); }
+  if (sock._adKuyruk.has(jid)) return;
+  sock._adKuyruk.set(jid, 0);
+  adKuyrugunuCalistir(sock);
+}
+
+async function adKuyrugunuCalistir(sock) {
+  if (sock._adKuyrukCalisiyor || sock._kapali) return;
+  sock._adKuyrukCalisiyor = true;
+  try {
+    while (sock._adKuyruk && sock._adKuyruk.size && !sock._kapali) {
+      const bekleyen = [...sock._adKuyruk.keys()];
+
+      // 1) Once dogrudan okumayi dene (tazeleme sonrasi ad gelmis olabilir)
+      for (const jid of bekleyen.slice(0, 8)) {
+        const ad = await grupAdiOku(jid);
+        if (ad) {
+          if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+          sock._bilinenAdlar.set(jid, ad);
+          sock.ev.emit('groups.update', [{ id: jid, subject: ad }]);
+          sock._adKuyruk.delete(jid);
+          log('mesaj dustu -> grup adi geldi: "' + ad.slice(0, 34) + '"');
+        }
+      }
+      if (!sock._adKuyruk.size) break;
+
+      // 2) Tazele
+      const kalan = [...sock._adKuyruk.keys()];
+      if (_grupBasinaTazeleme !== false) {
+        let biriCalisti = false;
+        for (const jid of kalan.slice(0, 8)) {
+          if (await grupBasinaTazele(jid)) biriCalisti = true;
+          else break;                       // uc yokmus, genel yola gec
+        }
+        if (biriCalisti) { await uyu(2500); }
+      }
+      if (_grupBasinaTazeleme === false) {
+        log('ad bekleyen ' + kalan.length + ' grup — genel tazeleme yapiliyor');
+        const oldu = await genelTazele();
+        if (oldu) {
+          await uyu(3000);
+          const kazanc = await topluOkuVeCoz(sock);
+          log('tazeleme sonrasi ' + kazanc + ' grup adina kavustu');
+          for (const jid of [...sock._adKuyruk.keys()]) {
+            if (sock._bilinenAdlar && sock._bilinenAdlar.get(jid)) sock._adKuyruk.delete(jid);
+          }
+        }
+      }
+
+      // 3) Tur sayaci — sonsuza kadar denemeyelim
+      for (const [jid, tur] of [...sock._adKuyruk]) {
+        if (tur + 1 >= AD_EN_FAZLA_TUR) {
+          sock._adKuyruk.delete(jid);
+          if (_adAramaYazildi < 3) {
+            _adAramaYazildi++;
+            log('ad bulunamadi (' + String(jid).slice(0, 22) + ') — ' + AD_EN_FAZLA_TUR
+              + ' tur denendi, WhatsApp bu grubun adini vermiyor');
+          }
+        } else sock._adKuyruk.set(jid, tur + 1);
+      }
+      if (sock._adKuyruk.size) await uyu(AD_KUYRUK_TUR_MS);
+    }
+  } finally { sock._adKuyrukCalisiyor = false; }
+}
 
 // ═══ HIZLI: sadece OKUR, beklemez ══════════════════════════════════
 // KRITIK: server.js groupMetadata cagrisini 20 saniyede iptal ediyor
@@ -817,41 +917,6 @@ async function tekSohbetAdi(jid, sock) {
   return ad;
 }
 
-// ═══ YAVAS: tazeler, bekler, bulunca YAYINLAR ══════════════════════
-// Hicbir cagriyi bekletmez — arka planda calisir, sonucu 'groups.update'
-// olarak panele duser. Grup basina tek sefer.
-async function adiTazeleyerekGetir(sock, jid) {
-  if (!sock || sock._kapali) return '';
-  let ad = await tekSohbetAdi(jid, sock);
-  if (ad) return ad;
-
-  const tazelendi = await tazelemeYap(jid);
-  if (!tazelendi) {
-    if (_adAramaYazildi < 3) {
-      _adAramaYazildi++;
-      log('ad bulunamadi (' + String(jid).slice(0, 22) + ') — tazeleme yapilamadi');
-    }
-    return '';
-  }
-  // Tazeleme WhatsApp'tan veri cekiyor, aninda bitmiyor — artan araliklarla bak
-  for (const bekle of [800, 2500, 6000, 15000, 30000]) {
-    if (sock._kapali) return '';
-    await uyu(bekle);
-    ad = await grupAdiOku(jid);
-    if (ad) {
-      if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
-      sock._bilinenAdlar.set(jid, ad);
-      return ad;
-    }
-  }
-  if (_adAramaYazildi < 3) {
-    _adAramaYazildi++;
-    log('ad bulunamadi (' + String(jid).slice(0, 22) + ') — tazeleme sonrasi da BOS'
-      + (_adAramaYazildi === 3 ? '   [bu uyari artik yazilmayacak]' : ''));
-  }
-  return '';
-}
-
 async function adsizlariTamamla(sock, liste) {
   if (sock._kapali || sock._tamamlamaCalisiyor || sock._tamamlamaVazgecildi) return;
   sock._tamamlamaCalisiyor = true;
@@ -863,7 +928,7 @@ async function adsizlariTamamla(sock, liste) {
     for (const jid of liste) {
       if (sock._kapali) break;
       denenen++;
-      const ad = await adiTazeleyerekGetir(sock, jid);
+      const ad = await tekSohbetAdi(jid, sock);
       if (ad) {
         bulunan++;
         sock._bilinenAdlar.set(jid, ad);
@@ -1641,39 +1706,10 @@ async function sonSohbetleriTara(sock) {
 //    - Ayni anda en fazla 4 istek isler (ani mesaj yagmurunda bile).
 //    Ilk dolum bittikten sonra bu yol neredeyse hic calismaz.
 // ═══════════════════════════════════════════════════════════════════
-const ANLIK_ES_ZAMAN = 4;
-
-function anlikKuyrukIsle(sock) {
-  while (sock._anlikCalisan < ANLIK_ES_ZAMAN && sock._anlikKuyruk.length) {
-    const jid = sock._anlikKuyruk.shift();
-    sock._anlikCalisan++;
-    adiTazeleyerekGetir(sock, jid).then((ad) => {
-      if (ad) {
-        if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
-        sock._bilinenAdlar.set(jid, ad);
-        // Tek grup, tek yayin -> panelde ANINDA duzelir
-        sock.ev.emit('groups.update', [{ id: jid, subject: ad }]);
-        log('mesaj dustu -> grup adi geldi: "' + ad.slice(0, 34) + '"');
-      } else {
-        // Hedefli uc vermedi: liste ucunun ilk sayfasini yedek olarak dene
-        sonSohbetleriTara(sock).catch(() => {});
-      }
-    }).catch(() => {}).finally(() => {
-      sock._anlikCalisan--;
-      if (sock._anlikKuyruk.length) anlikKuyrukIsle(sock);
-    });
-  }
-}
-
 function grupAdiniTani(sock, jid) {
   if (!jid || !jid.endsWith('@g.us') || sock._kapali) return;
-  if (sock._bilinenAdlar && sock._bilinenAdlar.has(jid)) return;   // adini zaten biliyoruz
-  if (!sock._anlikSorulan) { sock._anlikSorulan = new Set(); sock._anlikKuyruk = []; sock._anlikCalisan = 0; }
-  if (sock._anlikSorulan.has(jid)) return;                          // bu gruba bir kez sorulur
-  sock._anlikSorulan.add(jid);
-  if (sock._anlikSorulan.size > 20000) sock._anlikSorulan.delete(sock._anlikSorulan.values().next().value);
-  sock._anlikKuyruk.push(jid);
-  anlikKuyrukIsle(sock);
+  if (sock._bilinenAdlar && sock._bilinenAdlar.get(jid)) return;   // adini zaten biliyoruz
+  adKuyrugunaEkle(sock, jid);
 }
 
 // ═══════════════════════════════════════════════════════════════════
