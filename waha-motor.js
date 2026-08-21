@@ -2255,23 +2255,74 @@ async function wahaBaglan() {
     }
 
     // 6) GRUP GUNCELLENDI (ad/aciklama)
+    // ═══ SISTEMI BOGAN HATA (2026-08) ══════════════════════════════
+    // WhatsApp baglaninca TUM gruplar icin guncelleme olayi yolluyor:
+    // logda 23.500 adet 'group.v2.update'. Eski kod, ad bulamadiginda
+    // server.js'e {id} yolluyordu; server.js de her biri icin WhatsApp'a
+    // CANLI sorgu atiyordu. 23.500 sorgu = sistem kilitleniyor, QR bile
+    // uretilemiyor. Panelin acilmamasinin sebebi buydu.
+    //
+    // ARTIK:
+    //   - Adi OLAN guncellemeler biriktirilip TOPLU yayinlanir (ucuz,
+    //     server.js ek sorgu atmaz cunku subject zaten var).
+    //   - Adi OLMAYAN guncelleme HIC yayinlanmaz (bilgi tasimiyor,
+    //     sadece maliyet). Sadece sayilir.
+    // Bu olaylar aslinda bir HAZINE: icinde binlerce grubun adi var.
     if (/group\.v2\.update|group\.update/.test(tip)) {
       const jid = veri.id || veri.chatId || jidAl(veri);
       if (!jid) return;
-      const g = veri.group || veri;
-      const guncel = { id: jid };
-      const ad = g.Name || g.name || g.subject;
-      const acik = (g.TopicDeleted === true) ? '' : (g.Topic || g.topic || g.description);
-      if (ad) guncel.subject = ad;
-      if (acik !== undefined) guncel.desc = acik;
-      sock.ev.emit('groups.update', [guncel]);
+      const g = veri.group || veri.groupMetadata || veri;
+      const ad = String(g.Name || g.name || g.subject || g.Subject || '').trim();
+      const acikHam = (g.TopicDeleted === true) ? ''
+        : (g.Topic !== undefined ? g.Topic : (g.topic !== undefined ? g.topic
+          : (g.desc !== undefined ? g.desc : g.description)));
+
+      // Ilk olayin yapisini BIR KEZ yaz — icinde ne var, gorelim
+      if (!sock._grupOlayYazildi) {
+        sock._grupOlayYazildi = true;
+        log('grup olayi ornek alanlar: ' + Object.keys(g).slice(0, 14).join(',')
+          + (ad ? '  | ad VAR: "' + ad.slice(0, 26) + '"' : '  | ad YOK'));
+      }
+
+      if (!ad && acikHam === undefined) { sock._bosGrupOlayi = (sock._bosGrupOlayi || 0) + 1; return; }
+
+      if (!sock._grupYigin) sock._grupYigin = new Map();
+      const kayit = sock._grupYigin.get(jid) || { id: jid };
+      if (ad) kayit.subject = ad;
+      if (acikHam !== undefined) kayit.desc = acikHam || '';
+      sock._grupYigin.set(jid, kayit);
+      if (ad) { if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map(); sock._bilinenAdlar.set(jid, ad); }
+
+      // 2 saniyede bir, toplu halde yayinla
+      if (!sock._grupYiginTimer) {
+        sock._grupYiginTimer = setTimeout(() => {
+          sock._grupYiginTimer = null;
+          const paket = [...sock._grupYigin.values()];
+          sock._grupYigin.clear();
+          if (!paket.length) return;
+          const adli = paket.filter((x) => x.subject).length;
+          for (let i = 0; i < paket.length; i += 200) sock.ev.emit('groups.update', paket.slice(i, i + 200));
+          log('grup guncellemesi: ' + paket.length + ' grup yayinlandi (' + adli + ' adiyla)'
+            + (sock._bosGrupOlayi ? ' | bilgisiz atlanan: ' + sock._bosGrupOlayi : ''));
+          sock._bosGrupOlayi = 0;
+        }, 2000);
+      }
       return;
     }
 
     // 7) GRUP UYELERI DEGISTI
     if (/group\.v2\.participants|group\.participants/.test(tip)) {
       const jid = veri.id || veri.chatId || jidAl(veri);
-      if (jid) sock.ev.emit('groups.update', [{ id: jid }]);
+      // {id} yollamak server.js'te CANLI sorgu tetikliyor. Baglanti
+      // aninda binlerce uye olayi gelebildigi icin bunu da kisitliyoruz:
+      // ayni grup icin 60 saniyede en fazla bir kez.
+      if (!jid) return;
+      if (!sock._uyeOlaySon) sock._uyeOlaySon = new Map();
+      const son = sock._uyeOlaySon.get(jid) || 0;
+      if (Date.now() - son < 60000) return;
+      sock._uyeOlaySon.set(jid, Date.now());
+      if (sock._uyeOlaySon.size > 5000) sock._uyeOlaySon.delete(sock._uyeOlaySon.keys().next().value);
+      sock.ev.emit('group-participants.update', { id: jid, participants: [], action: 'update' });
       return;
     }
 
