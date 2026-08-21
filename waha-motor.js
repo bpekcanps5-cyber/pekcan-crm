@@ -1357,7 +1357,7 @@ function wahaSoketYap(secenek = {}) {
           if (Date.now() - sonZor > 10 * 60 * 1000) {
             _zorDeneme.set(jid, Date.now());
             if (_zorDeneme.size > 8000) _zorDeneme.delete(_zorDeneme.keys().next().value);
-            const bitis = Date.now() + 14000;
+            const bitis = Date.now() + 9000;   // 20sn sinirina rahat sigsin
             await grupBasinaTazele(jid);
             while (Date.now() < bitis) {
               await uyu(1500);
@@ -2048,7 +2048,12 @@ async function oturumHazirla() {
     const depoOku = (x) => (x && x.config && x.config.noweb && x.config.noweb.store) || null;
     let depo = depoOku(s);
     if (!depo || !depo.enabled) {
-      log('⚠ NOWEB deposu KAPALI — grup adlari/gecmis bu yuzden gelmiyor');
+      log('');
+      log('╔══════════════════════════════════════════════════════════');
+      log('║ ⚠ NOWEB DEPOSU KAPALI');
+      log('║   Grup adlari, aciklamalar ve gecmis BU YUZDEN gelmiyor.');
+      log('║   WAHA bu veriyi depo kapaliyken vermiyor. Aciliyor...');
+      log('╚══════════════════════════════════════════════════════════');
       log('   WAHA\'da kayitli ayar: ' + JSON.stringify((s.config && s.config.noweb) || null));
 
       // 1) DURDUR -> YAZ -> BASLAT
@@ -2087,7 +2092,12 @@ async function oturumHazirla() {
         return { status: 'STARTING' };
       }
     } else {
-      log('NOWEB deposu acik (fullSync: ' + !!(depo.fullSync || depo.full_sync) + ')');
+      log('');
+      log('╔══════════════════════════════════════════════════════════');
+      log('║ ✓ NOWEB DEPOSU ACIK   (fullSync: ' + !!(depo.fullSync || depo.full_sync) + ')');
+      log('║   Grup adlari, aciklamalar ve gecmis artik gelebilir.');
+      log('╚══════════════════════════════════════════════════════════');
+      log('');
     }
     return s;
   } catch (e) {

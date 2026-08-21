@@ -76,6 +76,21 @@ const adAl = (x) => String((x && (x.name || x.Name || x.subject || x.Subject)) |
   if (o.kod !== 200) { yaz('    HATA ' + o.kod + ' ' + (o.hata || JSON.stringify(o.veri).slice(0, 120)));
     yaz('    Anahtar yanlissa .env icindeki WAHA_API_KEY degerini kontrol et.'); return; }
   yaz('    durum: ' + o.veri.status + ' | numara: ' + ((o.veri.me && o.veri.me.id) || '?'));
+  yaz('    motor: ' + (o.veri.engine && (o.veri.engine.engine || o.veri.engine.name) || '?'));
+  // ═══ EN KRITIK SATIR: NOWEB deposu acik mi? ═══════════════════════
+  // Depo kapaliyken WAHA sohbet listesi, grup adi/aciklamasi ve gecmis
+  // VERMIYOR. Grup adlarinin gelmemesinin bir numarali sebebi budur.
+  const nw = o.veri.config && o.veri.config.noweb;
+  const st = nw && nw.store;
+  yaz('');
+  if (st && st.enabled) {
+    yaz('    ✓ NOWEB DEPOSU ACIK   (fullSync: ' + !!(st.fullSync || st.full_sync) + ')');
+  } else {
+    yaz('    ✗ NOWEB DEPOSU KAPALI   <-- GRUP ADLARININ GELMEME SEBEBI');
+    yaz('      kayitli ayar: ' + JSON.stringify(nw || null));
+    yaz('      Cozum: docker-compose.yml -> WAHA_NOWEB_STORE_ENABLED: \"True\"');
+    yaz('             sonra: docker compose up -d --force-recreate');
+  }
 
   // ── 1) SOHBET UCU + SAYFALAMA ──
   yaz('\n[1] SOHBET UCU  /chats   ← grup ADLARI burada');
