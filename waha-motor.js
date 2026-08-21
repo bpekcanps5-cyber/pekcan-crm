@@ -440,6 +440,10 @@ function yeniSohbetleriYayinla(sock, kayitlar, kaynak) {
       conversationTimestamp: zaman || undefined,
       unreadCount: Number(k.unreadCount || k.UnreadCount || k.unread || 0) || 0,
     });
+    if (ad) {
+      if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+      sock._bilinenAdlar.set(jid, ad);
+    }
     // Uc denemesi icin adi BILINEN bir grup ornegi sakla
     if (ad && jid.endsWith('@g.us') && !sock._adliOrnekJid) {
       sock._adliOrnekJid = jid; sock._adliOrnekAd = ad;
@@ -1070,10 +1074,37 @@ function wahaSoketYap(secenek = {}) {
       if (!m.key.remoteJid) m.key.remoteJid = jid;   // uc sohbet kimligini vermediyse
       // Baslangic noktasindan ESKI olanlar isteniyor (Baileys boyle davranir)
       if (zamanDamgasi && m.messageTimestamp && m.messageTimestamp > Number(zamanDamgasi)) continue;
+      // ═══ ZATEN BILDIGIMIZI TEKRAR YAYINLAMA (2026-08) ════════════
+      // KRITIK: server.js her gelen mesajdan sonra bu fonksiyonu cagiriyor
+      // (mesajiAktifCek). Eskiden gelen HER mesaji yayinliyorduk — cogu
+      // zaten canli akistan dusmustu. Ve server.js'te her gecmis yayini
+      // BELLEKTEKI TUM SOHBETLERI veritabanina yazdiran bir dongu
+      // tetikliyor: 3957 sohbet x her mesaj = on binlerce yazma.
+      // Sonuc: "DB sorgu hatasi: timeout exceeded ... 7808 benzer hata".
+      // Supabase'i bogan sey buydu. Artik sadece GERCEKTEN YENI olanlar.
+      if (sock._sonMesajlar.has(m.key.id)) continue;
+      sock._sonMesajlar.add(m.key.id);
+      if (sock._sonMesajlar.size > 3000) sock._sonMesajlar.delete(sock._sonMesajlar.values().next().value);
       mesajlar.push(m);
     }
+    // Yeni bir sey yoksa HIC yayinlama — bos yayin bile o donguyu tetikliyor
     if (!mesajlar.length) return '';
-    sock.ev.emit('messaging-history.set', { chats: [], contacts: [], messages: mesajlar, isLatest: false });
+    // ═══ YAYINLARI BIRIKTIR (2026-08) ═══════════════════════════════
+    // Her gecmis yayini server.js'te 3957 sohbetin tamamini veritabanina
+    // yazdiriyor. Gercekten kacmis mesaj bulsak bile pes pese yayin
+    // yapmak Supabase'i bogar. Bu yuzden 20 saniyelik pencerede biriktirip
+    // TEK yayin yapiyoruz. Bu bir telafi yolu; 20 saniye gecikme sorun degil.
+    sock._gecmisBirikim = (sock._gecmisBirikim || []).concat(mesajlar);
+    if (!sock._gecmisYayinTimer) {
+      sock._gecmisYayinTimer = setTimeout(() => {
+        sock._gecmisYayinTimer = null;
+        const paket = sock._gecmisBirikim || [];
+        sock._gecmisBirikim = [];
+        if (!paket.length || sock._kapali) return;
+        log('kacan mesaj telafisi: ' + paket.length + ' mesaj panele gonderiliyor');
+        sock.ev.emit('messaging-history.set', { chats: [], contacts: [], messages: paket, isLatest: false });
+      }, 20000);
+    }
     return '';
   };
 
@@ -1216,23 +1247,70 @@ function kancaBekcisi(sock) {
 // Listede olmayan (ya da adsiz duran) bir gruptan mesaj gelirse adini
 // ve aciklamasini o an cekip yayinlar. Grup basina bir kez calisir,
 // mesaj trafigi ne olursa olsun ek yuk yaratmaz.
+// ═══════════════════════════════════════════════════════════════════
+//  MESAJ GELDIKCE GRUBU TANI
+//  -----------------------------------------------------------------
+//  NEDEN groupMetadata KULLANMIYORUZ ARTIK:
+//    Tek-grup ucu bu gruplar icin BOS donuyor (Name alani bos) —
+//    "Grup adi cekilemedi" uyarisinin sebebi tam olarak o. Ama SOHBET
+//    ucu ('/chats') ayni grubun adini VERIYOR. Dogru yer orasi.
+//
+//  NASIL UCUZ OLUYOR:
+//    Sohbet ucu en son konusulani basa koyuyor; az once mesaj gelen grup
+//    zaten ILK SAYFADADIR. Bu yuzden tum listeyi degil sadece ilk 50
+//    kaydi okuyoruz. Ustelik cagrilar birlestiriliyor: pes pese 100 mesaj
+//    gelse bile 8 saniyede en fazla BIR istek atiliyor.
+// ═══════════════════════════════════════════════════════════════════
+const SON_SOHBET_ARALIK_MS = 8000;
+
+async function sonSohbetleriTara(sock) {
+  if (sock._kapali) return;
+  const simdi = Date.now();
+  // Birlestirme: yakin zamanda tarandiysa simdi atma, sona bir tane planla
+  if (sock._sonTaramaZamani && simdi - sock._sonTaramaZamani < SON_SOHBET_ARALIK_MS) {
+    if (!sock._taramaBekliyor) {
+      sock._taramaBekliyor = setTimeout(() => {
+        sock._taramaBekliyor = null;
+        sonSohbetleriTara(sock).catch(() => {});
+      }, SON_SOHBET_ARALIK_MS);
+    }
+    return;
+  }
+  sock._sonTaramaZamani = simdi;
+  if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+
+  let dizi = [];
+  try {
+    const veri = await istek('/api/' + WAHA_OTURUM + '/chats?limit=50&offset=0', { zamanAsimiMs: 20000 });
+    dizi = Array.isArray(veri) ? veri : (veri && Array.isArray(veri.data) ? veri.data : []);
+  } catch (e) {
+    if (!sock._taramaHatasi) {
+      sock._taramaHatasi = true;
+      log('son sohbetler okunamadi: ' + String(e.message).slice(0, 90));
+    }
+    return;
+  }
+  const guncel = [];
+  for (const k of dizi) {
+    const jid = jidAl(k);
+    if (!jid || !jid.endsWith('@g.us')) continue;
+    const ad = sohbetAdi(k);
+    if (!ad) continue;
+    if (sock._bilinenAdlar.get(jid) === ad) continue;
+    sock._bilinenAdlar.set(jid, ad);
+    guncel.push({ id: jid, subject: ad });
+  }
+  if (guncel.length) {
+    sock.ev.emit('groups.update', guncel);
+    log('mesaj geldi -> ' + guncel.length + ' grup adina kavustu: "'
+      + String(guncel[0].subject).slice(0, 30) + '"');
+  }
+}
+
 function grupAdiniTani(sock, jid) {
   if (!jid || !jid.endsWith('@g.us')) return;
-  if (!sock._taninanGruplar) sock._taninanGruplar = new Set();
-  if (sock._taninanGruplar.has(jid)) return;
-  sock._taninanGruplar.add(jid);
-  if (sock._taninanGruplar.size > 5000) {
-    sock._taninanGruplar.delete(sock._taninanGruplar.values().next().value);
-  }
-  // Mesaj isleme yolunu bekletmeyelim — arka planda yapilsin
-  setTimeout(() => {
-    sock.groupMetadata(jid).then((b) => {
-      if (b && b.subject) {
-        sock.ev.emit('groups.update', [{ id: jid, subject: b.subject, desc: b.desc || '' }]);
-        log('mesaj geldi, grup taninadi: "' + String(b.subject).slice(0, 34) + '"');
-      }
-    }).catch(() => { /* adi alinamadi, sorun degil */ });
-  }, 300);
+  if (sock._bilinenAdlar && sock._bilinenAdlar.has(jid)) return;   // adini zaten biliyoruz
+  sonSohbetleriTara(sock).catch(() => {});
 }
 
 // ═══════════════════════════════════════════════════════════════════
