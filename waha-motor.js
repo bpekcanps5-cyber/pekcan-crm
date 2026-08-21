@@ -1391,10 +1391,52 @@ async function sonSohbetleriTara(sock) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  MESAJ DUSTUGU AN GRUBUN ADINI GETIR — ANINDA
+//  -----------------------------------------------------------------
+//  Once liste ucunun ilk sayfasi taraniyordu ve 8 saniye bekliyordu.
+//  Mesaj gelen grubun adi ANINDA gorunmeli: artik SADECE O GRUBUN
+//  adini hedefli tek istekle cekiyoruz ve gelir gelmez panele yayiyoruz.
+//
+//  Yuk neden buyumez:
+//    - Grup basina SADECE BIR KEZ sorulur (cevap gelsin ya da gelmesin).
+//    - Adi bilinen gruba hic sorulmaz.
+//    - Ayni anda en fazla 4 istek isler (ani mesaj yagmurunda bile).
+//    Ilk dolum bittikten sonra bu yol neredeyse hic calismaz.
+// ═══════════════════════════════════════════════════════════════════
+const ANLIK_ES_ZAMAN = 4;
+
+function anlikKuyrukIsle(sock) {
+  while (sock._anlikCalisan < ANLIK_ES_ZAMAN && sock._anlikKuyruk.length) {
+    const jid = sock._anlikKuyruk.shift();
+    sock._anlikCalisan++;
+    tekSohbetAdi(jid).then((ad) => {
+      if (ad) {
+        if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+        sock._bilinenAdlar.set(jid, ad);
+        // Tek grup, tek yayin -> panelde ANINDA duzelir
+        sock.ev.emit('groups.update', [{ id: jid, subject: ad }]);
+        log('mesaj dustu -> grup adi geldi: "' + ad.slice(0, 34) + '"');
+      } else {
+        // Hedefli uc vermedi: liste ucunun ilk sayfasini yedek olarak dene
+        sonSohbetleriTara(sock).catch(() => {});
+      }
+    }).catch(() => {}).finally(() => {
+      sock._anlikCalisan--;
+      if (sock._anlikKuyruk.length) anlikKuyrukIsle(sock);
+    });
+  }
+}
+
 function grupAdiniTani(sock, jid) {
-  if (!jid || !jid.endsWith('@g.us')) return;
+  if (!jid || !jid.endsWith('@g.us') || sock._kapali) return;
   if (sock._bilinenAdlar && sock._bilinenAdlar.has(jid)) return;   // adini zaten biliyoruz
-  sonSohbetleriTara(sock).catch(() => {});
+  if (!sock._anlikSorulan) { sock._anlikSorulan = new Set(); sock._anlikKuyruk = []; sock._anlikCalisan = 0; }
+  if (sock._anlikSorulan.has(jid)) return;                          // bu gruba bir kez sorulur
+  sock._anlikSorulan.add(jid);
+  if (sock._anlikSorulan.size > 20000) sock._anlikSorulan.delete(sock._anlikSorulan.values().next().value);
+  sock._anlikKuyruk.push(jid);
+  anlikKuyrukIsle(sock);
 }
 
 // ═══════════════════════════════════════════════════════════════════
