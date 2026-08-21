@@ -138,12 +138,55 @@ function benKur(ben) {
 // ═══ WAHA MESAJINI BAILEYS BICIMINE CEVIR ═══════════════════════════
 // GOWS ham WhatsApp mesajini _data.Message altinda veriyor ve bu bicim
 // Baileys ile AYNI. Bu yuzden server.js'in cozucusu degismeden calisiyor.
+// ═══ TIK CEVIRISI: WAHA -> Baileys ══════════════════════════════════
+// ESKI HATA: WAHA'nin 'ack' degeri Baileys'in 'status' degeri sanilip
+// oldugu gibi aktariliyordu. AMA IKI OLCEK BIR KAYIK:
+//   WAHA:    -1 hata | 0 bekliyor | 1 sunucu | 2 iletildi | 3 okundu | 4 dinlendi
+//   Baileys:  0 hata | 1 bekliyor | 2 sunucu | 3 iletildi | 4 okundu | 5 dinlendi
+// Sonuc: tek tik saat, cift tik tek tik, mavi tik gri cift tik
+// gorunuyordu — "tek tik cift tik muhabbeti" tam olarak buydu.
+function ackCevir(ack) {
+  const n = Number(ack);
+  if (!isFinite(n)) return 0;
+  const s = n + 1;                     // olcegi hizala
+  return Math.max(0, Math.min(5, s));  // Baileys araligina sikistir
+}
+
 function baileysMesaji(w) {
   if (!w) return null;
   const bilgi = (w._data && w._data.Info) || {};
-  const sohbet = w.from || w.chatId || bilgi.Chat || jidAl(w);
-  const grupMu = String(sohbet).includes('@g.us');
+  let sohbet = String(w.from || w.chatId || bilgi.Chat || jidAl(w) || '');
+  const grupMu = sohbet.includes('@g.us');
   const benimMi = !!(w.fromMe || bilgi.IsFromMe);
+
+  // ═══ SOHBET KIMLIGINI TEKLESTIR (2026-08) ═══════════════════════
+  // ESKI HATA: sohbet kimligi WAHA'dan geldigi gibi kullaniliyordu.
+  // Ayni kisi olaya gore uc farkli kimlikle gelebiliyor:
+  //   905551112233@c.us / 905551112233@s.whatsapp.net / 8873...@lid
+  // Sonuc: AYNI KISI panelde 2-3 kez cikiyor ve mesaji her birine
+  // ayri dusuyor — "kisiler mukerrer" ve "mesaj 3-4 kere gidiyor"
+  // sikayetlerinin sebebi buydu.
+  // server.js'in cozucusu (normalizeChatJid) LID'i ancak key.remoteJidAlt
+  // varsa cozebiliyor, biz o alani HIC doldurmuyorduk.
+  // ARTIK: gercek numarayi WAHA'nin verdigi 'Alt' alanlarindan bulup
+  // hem kimligi duzeltiyor hem de alt alanlari dolduruyoruz.
+  let sohbetAlt = '';
+  if (!grupMu) {
+    const adaylar = [bilgi.ChatAlt, w.chatIdAlt, w.fromAlt, w.toAlt];
+    // gelen mesajda karsi taraf = gonderen; giden mesajda = alici
+    if (benimMi) adaylar.push(bilgi.RecipientAlt, bilgi.ReceiverAlt, w.to);
+    else adaylar.push(bilgi.SenderAlt, w.participantAlt);
+    for (const a of adaylar) {
+      const t = numaraTemizle(a || '');
+      if (t && t.endsWith('@s.whatsapp.net')) { sohbetAlt = t; break; }
+    }
+    if (sohbet.endsWith('@lid')) {
+      if (sohbetAlt) { lidNumara.set(sohbet, sohbetAlt); sohbet = sohbetAlt; }
+      else { const bilinen = lidNumara.get(sohbet); if (bilinen) sohbet = bilinen; }
+    } else {
+      sohbet = numaraTemizle(sohbet);       // @c.us -> @s.whatsapp.net, cihaz ekini at
+    }
+  }
 
   // katilimci (grupta kimin yazdigi) — gercek numarayi tercih et
   let katilimci = '';
@@ -168,11 +211,14 @@ function baileysMesaji(w) {
       fromMe: benimMi,
       id: (w.id && w.id._serialized) || w.id || bilgi.ID || '',
       participant: katilimci || undefined,
+      // server.js'in LID cozucusu bu alanlara bakiyor — bos birakmayalim
+      remoteJidAlt: sohbetAlt || undefined,
+      remoteJidPn: sohbetAlt || undefined,
     },
     message: icerik,
     messageTimestamp: zamanAl(w),
     pushName: bilgi.PushName || w.notifyName || w.pushName || '',
-    status: Number(w.ack || 0),
+    status: ackCevir(w.ack),
     // WAHA'nin indirdigi dosyanin adresi — medya indirmede kullanilir
     _wahaMedya: (w.media && (w.media.url || w.media.URL)) || w.mediaUrl || null,
     _wahaDosyaAdi: (w.media && (w.media.filename || w.media.fileName)) || '',
@@ -320,9 +366,16 @@ function yeniSohbetleriYayinla(sock, kayitlar, kaynak) {
     if (jid.endsWith('@c.us')) jid = jid.split('@')[0] + '@s.whatsapp.net';
     if (jid === 'status@broadcast' || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
     if (!sock._gorulenSohbetler.has(jid)) { sock._gorulenSohbetler.add(jid); yeniSayisi++; }
+    const ad = sohbetAdi(k);
+    // ADI BOS GELEN GRUPLARI ISARETLE — sonra tek tek bilgisi cekilecek.
+    // Toplu liste cogu grupta adi vermiyor; panelde ham kimlik gorunmesin.
+    if (!ad && jid.endsWith('@g.us')) {
+      if (!sock._adsizGruplar) sock._adsizGruplar = new Set();
+      sock._adsizGruplar.add(jid);
+    }
     liste.push({
       id: jid,
-      name: sohbetAdi(k) || undefined,                  // bos ise server.js jid'den turetir
+      name: ad || undefined,                            // bos ise server.js jid'den turetir
       conversationTimestamp: sohbetZamani(k) || undefined,
       unreadCount: Number(k.unreadCount || k.UnreadCount || k.unread || 0) || 0,
     });
@@ -337,9 +390,11 @@ function yeniSohbetleriYayinla(sock, kayitlar, kaynak) {
   // Maliyeti yok: server.js zaten 'if (!chats.has(jid))' ile bakiyor,
   // mevcut olani atliyor. Sadece EKSIK olanlar geri ekleniyor.
   const grup = liste.filter((x) => x.id.endsWith('@g.us')).length;
+  const adsiz = (sock._adsizGruplar && sock._adsizGruplar.size) || 0;
   log('liste (' + kaynak + '): ' + liste.length + ' sohbet gonderildi ('
     + grup + ' grup, ' + (liste.length - grup) + ' kisi'
-    + (yeniSayisi ? ', ' + yeniSayisi + ' yeni' : '') + ')');
+    + (yeniSayisi ? ', ' + yeniSayisi + ' yeni' : '')
+    + (adsiz ? ' — ' + adsiz + ' grubun adi bos, bilgisi cekilecek' : '') + ')');
 
   // ═══ 'messages' ALANI BILEREK GONDERILMIYOR ══════════════════════
   // server.js'te o alan bir dizi ise, SADECE mesaj islemek icin degil,
@@ -348,12 +403,111 @@ function yeniSohbetleriYayinla(sock, kayitlar, kaynak) {
   // her yayinda 7000 yazma demek — Supabase'i bogar. Alani hic
   // gondermeyince o dongu atlaniyor; sohbetleri zaten fetchAllGroups
   // kendi olculu kuyruguyla (siraliKaydet) yaziyor.
+  sock._sonListeYayin = Date.now();
   sock.ev.emit('messaging-history.set', { chats: liste, contacts: [], isLatest: true });
   return liste.length;
 }
 
-// Sohbet listesi uclarini SIRAYLA dene. Her adim loga yazilir —
-// bir daha "sessizce hicbir sey olmadi" durumu yasanmasin.
+// ═══════════════════════════════════════════════════════════════════
+//  GRUP BILGISI DOLDURMA — "adi yok, aciklamasi yok" duzeltmesi
+//  -----------------------------------------------------------------
+//  SORUN:
+//    WAHA'nin TOPLU grup listesi cogu grup icin 'Name' alanini BOS
+//    donduruyor (WhatsApp grup bilgisini ayri senkronluyor). Panelde
+//    grup adi yerine ham kimlik goruluyor: "120363046524430062".
+//    Aciklama da bos, dolayisiyla poliçe/etiket akisi calismiyor.
+//
+//  NEDEN server.js'e BIRAKMIYORUZ:
+//    server.js'in aciklama motoru bunu duzeltir AMA turda 8 grup,
+//    20 saniyede bir. 8500 grupta ~6 saat eder. Kullanilamaz.
+//
+//  NASIL:
+//    Adi bos gelen gruplar icin TEK-GRUP bilgisini cekiyoruz (o cagri
+//    ad + aciklama + uyeleri guvenilir donduruyor) ve Baileys'in
+//    'groups.update' olayi olarak yayiyoruz. server.js o olayi zaten
+//    isliyor (8123. satir) — orada tek satir degismiyor.
+//
+//  HIZ KENDINI AYARLIYOR:
+//    WhatsApp "yavasla" derse bekleme ikiye katlanir ve 30 sn durulur;
+//    duzgun giderse kademeli hizlanir. Gelen mesaji etkilemez.
+// ═══════════════════════════════════════════════════════════════════
+const BILGI_MOD = (process.env.WAHA_GRUP_BILGI || 'acik').toLowerCase();
+const BILGI_ARALIK_TABAN = Number(process.env.WAHA_GRUP_BILGI_ARALIK_MS) || 200;
+const BILGI_YAYIN_ESIGI = 40;    // kac grupta bir panele yayin
+
+async function grupBilgiDoldur(sock) {
+  if (BILGI_MOD === 'kapali') { log('grup bilgisi doldurma kapali (WAHA_GRUP_BILGI=kapali)'); return; }
+  if (sock._bilgiCalisiyor || sock._kapali) return;
+  sock._bilgiCalisiyor = true;
+  try {
+    const sira = [...(sock._adsizGruplar || [])];
+    if (!sira.length) return;
+    const kuyruk = [...sira];
+    const denemeSayisi = new Map();
+    let aralik = BILGI_ARALIK_TABAN;
+    log('grup bilgisi dolduruluyor: ' + sira.length + ' grubun adi bos (~'
+      + Math.ceil(sira.length * aralik / 60000) + ' dk surer, panel bu sirada normal calisir)');
+
+    let biriken = [];
+    let dolan = 0, adsiz = 0, hata = 0, islenen = 0, ertelenen = 0;
+    const yay = () => {
+      if (!biriken.length) return;
+      sock.ev.emit('groups.update', biriken);
+      biriken = [];
+    };
+
+    while (kuyruk.length && !sock._kapali) {
+      const jid = kuyruk.shift();
+      islenen++;
+      try {
+        // DIKKAT: '@' KODLANMAMALI (encodeURIComponent kullanma)
+        const g = await istek('/api/' + WAHA_OTURUM + '/groups/' + jid, { zamanAsimiMs: 15000 });
+        const b = baileysGrup(g);
+        if (b && b.subject && b.subject.trim()) {
+          biriken.push({ id: b.id || jid, subject: b.subject.trim(), desc: b.desc || '' });
+          sock._adsizGruplar.delete(jid);
+          dolan++;
+          aralik = Math.max(BILGI_ARALIK_TABAN, Math.round(aralik * 0.9));   // iyi gidiyor -> hizlan
+        } else {
+          adsiz++;   // WhatsApp gercekten ad vermiyor (terk edilmis/silinmis grup)
+          sock._adsizGruplar.delete(jid);
+        }
+      } catch (e) {
+        const m = String(e.message || '');
+        if (/rate.?overlimit|429|too many/i.test(m)) {
+          // ═══ HIZ SINIRI: DURMA, YAVASLA ════════════════════════════
+          // Eskiden burada 30 saniye komple duruluyordu. 8500 grupta bu
+          // saatlere mal oluyor. Artik yalnizca yavasliyoruz ve o grubu
+          // kuyrugun SONUNA atiyoruz — sirasi gelince tekrar denenir.
+          aralik = Math.min(3000, Math.max(300, aralik * 2));
+          const deneme = (denemeSayisi.get(jid) || 0) + 1;
+          denemeSayisi.set(jid, deneme);
+          if (deneme <= 2) { kuyruk.push(jid); ertelenen++; }
+          else { hata++; sock._adsizGruplar.delete(jid); }
+          await new Promise((r) => setTimeout(r, Math.min(8000, aralik * 3)));
+        } else {
+          hata++;
+          sock._adsizGruplar.delete(jid);
+          if (hata <= 3) {
+            log('  grup bilgisi alinamadi (' + jid.slice(0, 22) + '): ' + m.slice(0, 80));
+            if (hata === 3) log('  (benzer hatalar artik yazilmayacak)');
+          }
+        }
+      }
+      if (biriken.length >= BILGI_YAYIN_ESIGI) {
+        yay();
+        log('grup bilgisi: ' + dolan + '/' + sira.length + ' grup adina kavustu'
+          + (ertelenen ? ' (' + ertelenen + ' erteleme)' : ''));
+      }
+      await new Promise((r) => setTimeout(r, aralik));
+    }
+    yay();
+    log('grup bilgisi bitti: ' + dolan + ' dolduruldu, ' + adsiz
+      + ' gercekten adsiz, ' + hata + ' hata, son bekleme ' + aralik + 'ms');
+  } finally {
+    sock._bilgiCalisiyor = false;
+  }
+}
 async function ilkListeyiCek(sock) {
   const denenecek = [];
   if (ILK_LISTE_MOD !== 'gruplar') {
@@ -398,6 +552,9 @@ async function ilkListeTuru(sock, sira) {
     // (groupFetchAllParticipating) yakalaniyor — o yol da artik listeye ekliyor.
     if (sonuc.kayitlar.length) {
       ilkListeTimerlariTemizle(sock);
+      if (sock._adsizGruplar && sock._adsizGruplar.size && !sock._bilgiCalisiyor) {
+        grupBilgiDoldur(sock).catch((e) => log('grup bilgisi hatasi: ' + e.message));
+      }
       if (!eklenen) log('liste: hepsi zaten listedeydi, tekrar denemeler iptal');
     }
   } catch (e) {
@@ -540,19 +697,27 @@ function wahaSoketYap(secenek = {}) {
       if (b && b.id) sonuc[b.id] = b;
     }
     // ═══ GARANTI YOL (2026-08) ═══════════════════════════════════════
-    // server.js bunu zaten cagiriyor (fetchAllGroups) ve CALISTIGI
-    // kanitlandi — 607 grup dondu. Ama fetchAllGroups gruplari listeye
-    // EKLEMEZ, sadece adlarini tazeler ("bos gruplar gorunmesin" karari).
-    // Yeni bir hatta liste bos oldugu icin hicbiri gorunmuyordu.
+    // server.js bunu zaten cagiriyor (fetchAllGroups) ama gruplari
+    // listeye EKLEMEZ, sadece adlarini tazeler ("bos gruplar gorunmesin"
+    // karari). Yeni bir hatta liste bos oldugu icin hicbiri gorunmuyordu.
     // Cozum: elimize gecen gruplari ayni anda gecmis paketi olarak da
-    // yayinla. Boylece liste, ZATEN CALISAN cagriyla doluyor —
-    // sohbet ucunun destekleniyor olmasina bagli kalmiyoruz.
-    // Tekrar eleme yeniSohbetleriYayinla icinde: ayni grup iki kez dusmez.
+    // yayinla — liste, ZATEN CALISAN cagriyla doluyor.
     const kayitlar = Object.values(sonuc);
     if (kayitlar.length) {
       setTimeout(() => {
         try {
-          yeniSohbetleriYayinla(sock, kayitlar, 'gruplar/toplu');
+          // Bu cagri server.js icinde birkac yerden geliyor (periyodik
+          // tazeleme, aciklama tamamlama). Her seferinde tam listeyi
+          // yayinlamaya gerek yok — dakikada bir yeter.
+          const simdi = Date.now();
+          if (!sock._sonListeYayin || simdi - sock._sonListeYayin > 60000) {
+            sock._sonListeYayin = simdi;
+            yeniSohbetleriYayinla(sock, kayitlar, 'gruplar/toplu');
+          }
+          // Adi bos gelen gruplarin bilgisini tek tek doldurmaya basla
+          if (sock._adsizGruplar && sock._adsizGruplar.size && !sock._bilgiCalisiyor) {
+            grupBilgiDoldur(sock).catch((e) => log('grup bilgisi hatasi: ' + e.message));
+          }
         } catch (_) {}
       }, 0);
     }
@@ -629,10 +794,22 @@ function wahaSoketYap(secenek = {}) {
     try { return await istek('/api/' + WAHA_OTURUM + '/contacts/' + jid + '/profile'); } catch (_) { return null; }
   };
   sock.profilePictureUrl = async (jid) => {
-    try {
-      const r = await istek('/api/contacts/profile-picture?contactId=' + jid + '&session=' + WAHA_OTURUM);
-      return (r && (r.profilePictureURL || r.url)) || null;
-    } catch (_) { return null; }
+    // ═══ GRUP VE KISI AYRI UCLAR (2026-08) ══════════════════════════
+    // ESKIDEN: her sey kisi ucundan (contacts/profile-picture) isteniyordu.
+    // Gruplar icin o uc calismiyor -> grup fotograflari HIC gelmiyordu.
+    const j = String(jid || '');
+    const yollar = j.includes('@g.us')
+      ? ['/api/' + WAHA_OTURUM + '/groups/' + j + '/picture']
+      : ['/api/contacts/profile-picture?contactId=' + j + '&session=' + WAHA_OTURUM,
+         '/api/' + WAHA_OTURUM + '/contacts/' + j + '/picture'];
+    for (const yol of yollar) {
+      try {
+        const r = await istek(yol, { zamanAsimiMs: 12000 });
+        const u = (r && (r.profilePictureURL || r.url || r.URL || r.picture)) || (typeof r === 'string' ? r : null);
+        if (u) return u;
+      } catch (_) { /* sonrakini dene */ }
+    }
+    return null;
   };
   sock.resyncAppState = async () => { /* WAHA'da karsiligi yok, sessizce gec */ };
   sock.query = async () => ({ ok: true });          // kalp atisi yedegi
@@ -973,10 +1150,22 @@ async function wahaBaglan() {
     // 2) MESAJ DURUMU (tik)
     if (/message\.ack/.test(tip)) {
       const id = (veri.id && veri.id._serialized) || veri.id;
-      const jid = veri.chatId || veri.from || veri.to;
+      // ═══ DOGRU SOHBETI SEC (2026-08) ════════════════════════════
+      // ESKIDEN: 'chatId || from || to' deniyordu. Giden mesajlarda
+      // 'from' BIZIM numaramiz oluyor -> tik guncellemesi olmayan bir
+      // sohbete gidiyor ve panelde tik HIC degismiyordu.
+      const benim = !!(veri.fromMe != null ? veri.fromMe : true);
+      let jid = veri.chatId || veri.chatID
+        || (benim ? (veri.to || veri.from) : (veri.from || veri.to));
       if (!id || !jid) return;
-      const ack = Number(veri.ack != null ? veri.ack : 1);
-      sock.ev.emit('messages.update', [{ key: { id, remoteJid: jid, fromMe: true }, update: { status: ack } }]);
+      jid = String(jid);
+      if (!jid.includes('@g.us')) {
+        jid = jid.endsWith('@lid') ? (lidNumara.get(jid) || jid) : numaraTemizle(jid);
+      }
+      sock.ev.emit('messages.update', [{
+        key: { id, remoteJid: jid, fromMe: benim },
+        update: { status: ackCevir(veri.ack != null ? veri.ack : 1) },
+      }]);
       return;
     }
 
@@ -1083,7 +1272,7 @@ module.exports = {
   WAHA_URL, WAHA_API_KEY, WAHA_OTURUM, WAHA_KANCA_PORT, WAHA_KANCA_URL,
   istek, wahaSoketYap, baileysMesaji, baileysGrup, wahaMedyaIndir, qrAl,
   wahaBaglan, oturumHazirla,
-  numaraTemizle, jidAl, zamanAl, lidNumara, benKur,
+  numaraTemizle, jidAl, zamanAl, lidNumara, benKur, ackCevir, baileysMesaji,
   ilkListeyiCek, ilkListeTuru, ilkListeBaslat, sohbetAdi, sohbetZamani,
   yeniSohbetleriYayinla,
 };
