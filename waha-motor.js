@@ -1259,7 +1259,14 @@ function wahaSoketYap(secenek = {}) {
   // ═══════════════════════════════════════════════════════════════
   sock.groupMetadata = async (jid) => {
     const onb = _grupOnbellek.get(jid);
-    if (onb && Date.now() - onb.ts < (onb.sure || GRUP_ONBELLEK_MS)) return onb.veri;
+    if (onb && Date.now() - onb.ts < (onb.sure || GRUP_ONBELLEK_MS)) {
+      // Onbellekteki kayit BOS ise de hata firlatmaliyiz — yoksa dongu
+      // onbellek uzerinden devam eder.
+      if (!onb.veri || !onb.veri.subject) {
+        const h = new Error('grup bilgisi alinamadi'); h.bosGrup = true; throw h;
+      }
+      return onb.veri;
+    }
     if (_grupUcus.has(jid)) return _grupUcus.get(jid);
 
     const soz = (async () => {
@@ -1329,9 +1336,20 @@ function wahaSoketYap(secenek = {}) {
             log('grup adi HICBIR kaynaktan gelmedi (' + String(jid).slice(0, 24) + ')'
               + (_grupHataYazildi === 3 ? '  [bu uyari artik yazilmayacak]' : ''));
           }
-          // Bos sonucu KISA sure sakla: ayni anda gelen 20 istegi tek cagriya
-          // indirir ama kullanici birazdan tekrar denerse yeniden sorulur.
+          // ═══ BOS SONUC DONDURMEK YERINE HATA FIRLAT (2026-08) ══════
+          // KRITIK DONGU HATASI: server.js 'if (meta && meta.participants)'
+          // diye bakiyor. Bos dizi ([]) de DOGRU sayildigi icin panele
+          // guncelleme yolluyor; panel guncellemeyi alinca uyeleri TEKRAR
+          // istiyor -> sonsuz dongu. Logda ayni grup icin yuzlerce
+          // "grup uyeleri cekildi (0 uye)" satirinin sebebi buydu.
+          // BAILEYS bu durumda HATA FIRLATIYOR ve dongu olusmuyor.
+          // Ayni davranisi kuruyoruz. Arka plandaki ad kuyrugu bagimsiz
+          // calismaya devam eder; ad bulununca 'groups.update' ile duser.
+          adKuyrugunaEkle(sock, jid);
           _grupOnbellek.set(jid, { veri: b, ts: Date.now(), sure: GRUP_BOS_ONBELLEK_MS });
+          const h = new Error('grup bilgisi alinamadi');
+          h.bosGrup = true;
+          throw h;
         }
         if (_grupOnbellek.size > 12000) _grupOnbellek.delete(_grupOnbellek.keys().next().value);
         return b;
