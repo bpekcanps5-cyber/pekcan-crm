@@ -830,7 +830,8 @@ function wahaSoketYap(secenek = {}) {
   // istekler de tek cagriya biniyor. Kasmanin bir kismi buydu.
   const _grupOnbellek = new Map();   // jid -> { veri, ts }
   const _grupUcus = new Map();       // jid -> ucus halindeki soz
-  const GRUP_ONBELLEK_MS = 20000;
+  const GRUP_ONBELLEK_MS = 60000;        // adi olan grup: 1 dk
+  const GRUP_BOS_ONBELLEK_MS = 600000;   // adi BOS grup: 10 dk (bosuna sormayalim)
   let _grupHataYazildi = 0;
 
   // Uyeleri ayri uctan tamamla — toplu liste 'Participants' vermiyor,
@@ -850,7 +851,7 @@ function wahaSoketYap(secenek = {}) {
 
   sock.groupMetadata = async (jid) => {
     const onb = _grupOnbellek.get(jid);
-    if (onb && Date.now() - onb.ts < GRUP_ONBELLEK_MS) return onb.veri;
+    if (onb && Date.now() - onb.ts < (onb.sure || GRUP_ONBELLEK_MS)) return onb.veri;
     if (_grupUcus.has(jid)) return _grupUcus.get(jid);
     const soz = (async () => {
       try {
@@ -881,16 +882,28 @@ function wahaSoketYap(secenek = {}) {
         }
         let b = baileysGrup(g);
         if (!b) throw new Error('grup bulunamadi');
-        if (!b.subject && _grupHataYazildi < 5) {
+        if (!b.subject && _grupHataYazildi < 3) {
           _grupHataYazildi++;
-          log('grup ADSIZ dondu (' + String(jid).slice(0, 24) + ') — WAHA yaniti geldi ama Name bos. Alanlar: '
-            + Object.keys(g).join(','));
+          log('grup ADSIZ dondu (' + String(jid).slice(0, 24) + ') — WAHA yaniti geldi ama Name bos'
+            + (_grupHataYazildi === 3 ? '  [bu uyari artik yazilmayacak]' : ''));
         }
-        b = await uyeleriTamamla(jid, b);
+        // ═══ BOS SONUCU DA ONBELLEGE AL (2026-08) ══════════════════
+        // ESKI HATA: sadece adi olan sonuc saklaniyordu. Adsiz gruplar
+        // her istekte YENIDEN WAHA'ya gidiyordu — logda ayni grup icin
+        // ust uste 20 kez "grup uyeleri cekildi (0 uye)" gorulmesinin
+        // sebebi buydu. Her biri 2 istek demek (grup + uyeler) = 40 istek.
+        // Kasmanin buyuk kismi buradaydi.
+        // Bos sonucu DAHA UZUN sakliyoruz: nasilsa yakin zamanda
+        // degismeyecek, ama sonsuza kadar da saklamiyoruz ki WhatsApp
+        // senkronu ilerleyince ad gelebilsin.
         if (b.subject) {
-          _grupOnbellek.set(jid, { veri: b, ts: Date.now() });
-          if (_grupOnbellek.size > 3000) _grupOnbellek.delete(_grupOnbellek.keys().next().value);
+          b = await uyeleriTamamla(jid, b);
+          _grupOnbellek.set(jid, { veri: b, ts: Date.now(), sure: GRUP_ONBELLEK_MS });
+        } else {
+          // adi yoksa uyeleri sormanin da anlami yok — ikinci istegi hic atma
+          _grupOnbellek.set(jid, { veri: b, ts: Date.now(), sure: GRUP_BOS_ONBELLEK_MS });
         }
+        if (_grupOnbellek.size > 12000) _grupOnbellek.delete(_grupOnbellek.keys().next().value);
         return b;
       } finally { _grupUcus.delete(jid); }
     })();
@@ -1079,18 +1092,27 @@ function kancaBekcisi(sock) {
   if (sock._kancaBekcisiKuruldu) return;
   sock._kancaBekcisiKuruldu = true;
 
-  // ── 1. ADIM (45sn): olay yoksa adresleri yeniden yaz ──
+  // 'acik' modda beklemeden ac
+  if (WS_MOD === 'acik') websoketBaslat('ayar acik');
+
+  // ── 1. ADIM (30sn): olay yoksa WEBSOKET yolunu ac ──
+  // Bu, kanca yolunun tersi: baglantiyi BIZ kuruyoruz, yani guvenlik
+  // duvarinin gelen istegi engellemesi onemsiz hale geliyor.
+  setTimeout(() => {
+    if (sock._kapali || _olaySayaci > 0) return;
+    websoketBaslat('30sn olay yok');
+  }, 30000);
+
+  // ── 2. ADIM (60sn): olay adreslerini yeniden yaz ──
   setTimeout(async () => {
     if (sock._kapali || _olaySayaci > 0) return;
-    log('45 saniyedir olay yok — olay adresleri yeniden yaziliyor...');
+    log('60 saniyedir olay yok — olay adresleri yeniden yaziliyor...');
     try { await oturumHazirla(); } catch (e) { log('  yazilamadi: ' + e.message); }
-  }, 45000);
+  }, 60000);
 
-  // ── 2. ADIM (75sn): oturumu bir kez yeniden baslat ──
-  // WAHA'da calisan bir oturumun ayari degistiginde YENIDEN BASLATILANA
-  // kadar eski ayarla calismaya devam edebiliyor. Yani adres dogru
-  // kaydedilmis olsa bile olay gelmiyor olabilir. Bir kez yeniden
-  // baslatiyoruz — oturum acik kalir, QR tekrar istenmez.
+  // ── 3. ADIM (90sn): oturumu bir kez yeniden baslat ──
+  // WAHA'da calisan bir oturum, ayari degistiginde YENIDEN BASLATILANA
+  // kadar eski ayarla calismaya devam edebiliyor.
   setTimeout(async () => {
     if (sock._kapali || _olaySayaci > 0 || _oturumYenidenBaslatildi) return;
     _oturumYenidenBaslatildi = true;
@@ -1099,31 +1121,26 @@ function kancaBekcisi(sock) {
       await istek('/api/sessions/' + WAHA_OTURUM + '/restart', { method: 'POST', zamanAsimiMs: 30000 });
       log('  oturum yeniden baslatildi, olaylar bekleniyor...');
     } catch (e) { log('  yeniden baslatilamadi: ' + String(e.message).slice(0, 100)); }
-  }, 75000);
+  }, 90000);
 
-  // ── 3. ADIM (150sn): hala yoksa teshis yaz ──
+  // ── 4. ADIM (170sn): hala yoksa teshis yaz ──
   setTimeout(() => {
     if (sock._kapali || _olaySayaci > 0) return;
     const adaylar = kancaAdaylari();
     log('');
     log('╔═══════════════════════════════════════════════════════════');
-    log('║ ⚠️  WAHA BAGLI AMA 150 SANIYEDIR HIC OLAY GELMEDI');
+    log('║ ⚠️  170 SANIYEDIR HIC OLAY GELMEDI (iki yol da calismadi)');
     log('║');
-    log('║ Panelde mesaj gorunmemesinin sebebi budur. Baglanti var,');
-    log('║ gruplar geliyor, ama WAHA olaylari bize ULASAMIYOR.');
+    log('║ 1) WAHA -> bize (kanca): denenen adresler, hicbiri ulasmadi:');
+    for (const a of adaylar) log('║      ' + a + '/olay/...');
+    log('║    Sebep neredeyse kesin GUVENLIK DUVARI. Tek komut:');
+    log('║      ufw allow from 172.16.0.0/12 to any port ' + WAHA_KANCA_PORT + ' proto tcp');
     log('║');
-    log('║ Denenen adresler (hicbiri ulasmadi):');
-    for (const a of adaylar) log('║   ' + a + '/olay/...');
-    log('║');
-    log('║ Sirasiyla su ikisi:');
-    log('║  1) Guvenlik duvari Docker\'dan gelen istegi engelliyor:');
-    log('║     ufw allow from 172.16.0.0/12 to any port ' + WAHA_KANCA_PORT);
-    log('║  2) docker-compose.yml -> WHATSAPP_HOOK_URL hala eski');
-    log('║     kopruyu (kopru:3002) gosteriyor. Duzelt ve kutuyu');
-    log('║     yeniden olustur:  docker compose up -d --force-recreate');
+    log('║ 2) bizden -> WAHA (websoket): bu surumde uc olmayabilir.');
+    log('║    Yukarida "websoket ACILDI" satiri yoksa desteklenmiyor.');
     log('╚═══════════════════════════════════════════════════════════');
     log('');
-  }, 150000);
+  }, 170000);
 }
 
 // WAHA'dan gelen olaylari alan kucuk sunucu (tek kez acilir)
@@ -1148,6 +1165,95 @@ function grupAdiniTani(sock, jid) {
       }
     }).catch(() => { /* adi alinamadi, sorun degil */ });
   }, 300);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  YEDEK OLAY YOLU: WEBSOKET (2026-08)
+//  -----------------------------------------------------------------
+//  SORUN: WAHA olaylari bize HTTP ile GONDERIYOR (kanca/webhook). Yani
+//  baglanti Docker kutusundan sunucuya DOGRU geliyor. Guvenlik duvari
+//  ya da ag ayari bu yonu kapatirsa olaylar HIC gelmez ve panel sessizce
+//  bos kalir. Dort ayri adres denedik, hicbiri ulasamadi.
+//
+//  COZUM: YONU TERS CEVIR. Biz zaten WAHA'ya istek atabiliyoruz (grup
+//  listesi geliyor), yani DISARI dogru yol acik. O halde olaylari da biz
+//  cekelim: WAHA'nin websoket ucuna BIZ baglaniyoruz. Boylece guvenlik
+//  duvarindan, host.docker.internal'dan, Docker agindan tamamen
+//  bagimsiz hale geliyoruz.
+//
+//  Gelen paketler kanca ile AYNI bicimde ({event, session, payload}),
+//  bu yuzden ayni isleyiciye veriyoruz — tekrar eden mesaj kimlige gore
+//  zaten eleniyor, iki yol ayni anda calissa bile sorun olmaz.
+// ═══════════════════════════════════════════════════════════════════
+const WS_MOD = (process.env.WAHA_WEBSOKET || 'yedek').toLowerCase();  // yedek | acik | kapali
+let _wsBaglanti = null;
+let _wsDenemeSayisi = 0;
+let _wsKapandi = false;
+
+function websoketAdresi() {
+  // http://x:3001  ->  ws://x:3001/ws
+  const taban = WAHA_URL.replace(/^http/i, 'ws').replace(/\/+$/, '');
+  const olaylar = KANCA_OLAYLARI.join(',');
+  return taban + '/ws?session=' + encodeURIComponent(WAHA_OTURUM) + '&events=' + encodeURIComponent(olaylar);
+}
+
+function websoketBaslat(sebep) {
+  if (WS_MOD === 'kapali' || _wsBaglanti || _wsKapandi) return;
+  if (typeof WebSocket !== 'function') {
+    log('websoket yolu kullanilamiyor (Node surumu eski) — Node 20+ gerekiyor');
+    return;
+  }
+  const adres = websoketAdresi();
+  _wsDenemeSayisi++;
+  log('websoket yolu aciliyor (' + sebep + '): ' + adres.replace(/\?.*$/, '?...'));
+  let ws;
+  try {
+    ws = new WebSocket(adres, { headers: WAHA_API_KEY ? { 'X-Api-Key': WAHA_API_KEY } : {} });
+  } catch (e) {
+    log('  websoket kurulamadi: ' + String(e.message).slice(0, 100));
+    return;
+  }
+  _wsBaglanti = ws;
+
+  ws.onopen = () => {
+    _wsDenemeSayisi = 0;
+    log('✅ websoket ACILDI — olaylar artik BIZ cekiyoruz (guvenlik duvarina takilmaz)');
+  };
+  ws.onmessage = (olayPaketi) => {
+    let olay;
+    try { olay = JSON.parse(String(olayPaketi.data)); } catch (_) { return; }
+    if (!olay) return;
+    // WAHA bazen paketi sarmalayabiliyor — icindeki gercek olayi bul
+    if (!olay.event && olay.data && olay.data.event) olay = olay.data;
+    _olaySayaci++;
+    const tip = String(olay.event || olay.type || '?');
+    _olayTipleri.set(tip, (_olayTipleri.get(tip) || 0) + 1);
+    if (_olaySayaci === 1) log('✅ ilk olay geldi (websoket): "' + tip + '"');
+    else if (_olaySayaci % 200 === 0) {
+      log('olay ozeti (' + _olaySayaci + ' toplam): ' + [..._olayTipleri].map(([t, n]) => t + '=' + n).join(' '));
+    }
+    for (const s of _dinleyiciler) { try { s._olayIsle(olay); } catch (e) { log('olay hatasi: ' + e.message); } }
+  };
+  ws.onerror = () => { /* onclose zaten calisacak */ };
+  ws.onclose = (k) => {
+    _wsBaglanti = null;
+    if (_wsKapandi) return;
+    const kod = (k && k.code) || 0;
+    // 1006/1002 gibi kodlar "uc yok" olabilir — birkac denemeden sonra vazgec
+    if (_wsDenemeSayisi >= 5) {
+      log('websoket yolu kurulamadi (' + _wsDenemeSayisi + ' deneme, son kod ' + kod
+        + ') — bu WAHA surumunde websoket ucu olmayabilir');
+      return;
+    }
+    const bekle = Math.min(30000, 3000 * _wsDenemeSayisi);
+    log('websoket kapandi (kod ' + kod + ') — ' + Math.round(bekle / 1000) + 'sn sonra tekrar denenecek');
+    setTimeout(() => websoketBaslat('yeniden'), bekle);
+  };
+}
+
+function websoketDurdur() {
+  _wsKapandi = true;
+  if (_wsBaglanti) { try { _wsBaglanti.close(); } catch (_) {} _wsBaglanti = null; }
 }
 
 function kancaSunucusuAc() {
@@ -1349,7 +1455,30 @@ function qrTakibiBaslat(sock) {
       // Beklenmeyen durum: gorelim
       if (sayac % 6 === 1) log('QR bekleniyor ama durum: ' + durum);
     } catch (e) {
-      if (sayac % 4 === 1) log('QR takibi: WAHA\'ya ulasilamadi — ' + e.message);
+      // ═══ OTURUM YOKSA YENIDEN KUR (2026-08) ═══════════════════════
+      // Docker kutusu yeniden olusturulunca WAHA'da oturum TANIMI kaybolur
+      // (kimlik dosyalari waha-veri klasorunde DURUR ama oturum kayitli
+      // degildir). Ustelik o an WAHA henuz ayakta olmadigi icin acilistaki
+      // 'oturumHazirla' cagrisi da 'fetch failed' ile dusmus oluyor.
+      // ESKIDEN: burada sadece hata yazilip sonsuza kadar sorulmaya devam
+      // ediliyordu -> panel "QR hazirlaniyor" ekraninda asili kaliyordu.
+      // ARTIK: oturum yoksa kendimiz kuruyoruz. Kimlik dosyalari yerinde
+      // oldugu icin WAHA eski oturumu geri yukler — QR ISTEMEZ.
+      const oturumYok = e.status === 404 || /session not found/i.test(String(e.message));
+      if (oturumYok && !sock._oturumKuruluyor) {
+        sock._oturumKuruluyor = true;
+        log("WAHA'da oturum yok — yeniden kuruluyor (kimlik dosyalari duruyorsa QR istemez)");
+        try {
+          await oturumHazirla();
+          log('  oturum kuruldu, durum bekleniyor...');
+        } catch (h) {
+          log('  kurulamadi: ' + String(h.message).slice(0, 90));
+        } finally {
+          setTimeout(() => { sock._oturumKuruluyor = false; }, 10000);
+        }
+        return;
+      }
+      if (sayac % 4 === 1) log("QR takibi: WAHA'ya ulasilamadi — " + e.message);
     }
   };
   sock._qrTimer = setInterval(tur, 5000);
@@ -1533,9 +1662,14 @@ async function wahaBaglan() {
       qrTakibiBaslat(sock);   // QR'i panele akitmaya basla
     }
   } catch (e) {
-    log('oturum hazirlanamadi: ' + e.message + ' — yine de QR takibi basliyor');
+    // ═══ WAHA HENUZ AYAKTA DEGIL ════════════════════════════════════
+    // 'docker compose up' ile ayni komutta pm2 restart yapilinca WAHA
+    // birkac saniye gec aciliyor ve buraya 'fetch failed' ile duşuyoruz.
+    // Bu bir hata degil, sadece erken davranmisiz. QR takibi zaten
+    // oturumu bulamayinca kendisi kuracak (yukaridaki 404 dali).
+    log('oturum hazirlanamadi: ' + e.message + ' — WAHA henuz acilmamis olabilir, takip basliyor');
     setImmediate(() => sock.ev.emit('connection.update', { connection: 'connecting' }));
-    qrTakibiBaslat(sock);   // WAHA gec acilmis olabilir; pes etme
+    qrTakibiBaslat(sock);
   }
 
   return sock;
