@@ -984,7 +984,7 @@ function wahaSoketYap(secenek = {}) {
   const _grupOnbellek = new Map();   // jid -> { veri, ts }
   const _grupUcus = new Map();       // jid -> ucus halindeki soz
   const GRUP_ONBELLEK_MS = 60000;        // adi olan grup: 1 dk
-  const GRUP_BOS_ONBELLEK_MS = 600000;   // adi BOS grup: 10 dk (bosuna sormayalim)
+  const GRUP_BOS_ONBELLEK_MS = 60000;    // adi BOS grup: 1 dk (tekrar denenince yeniden sorulsun)
   let _grupHataYazildi = 0;
 
   // Uyeleri ayri uctan tamamla — toplu liste 'Participants' vermiyor,
@@ -1002,58 +1002,81 @@ function wahaSoketYap(secenek = {}) {
     return b;
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  GRUP BILGISI — server.js'in HER YERDE kullandigi fonksiyon
+  //  -------------------------------------------------------------
+  //  Panelde gruba girince, "adi yenile" tusuna basinca, aciklama
+  //  motoru calisirken... hepsi BURAYI cagiriyor. Dolayisiyla adin
+  //  bulunmasi gereken tek yer burasi.
+  //
+  //  ESKI HATA: sadece GRUP ucuna ('/groups/{jid}') soruluyordu. O uc
+  //  bu gruplarda Name'i BOS donuyor (kanitlandi) ve panel "Grup adi
+  //  cekilemedi" diyordu. Oysa SOHBET ucu ('/chats/{jid}') ayni grubun
+  //  adini VERIYOR — ama o yolu sadece mesaj gelince kullaniyordum.
+  //
+  //  ARTIK SIRAYLA HEPSI DENENIYOR, ilk bulan kazanir:
+  //    1) grup ucu            -> ad + aciklama + uyeler (en zengin)
+  //    2) bellekteki ad       -> sohbet listesinden ogrendiklerimiz
+  //    3) tek-sohbet ucu      -> '/chats/{jid}'
+  //    4) sohbet listesi      -> ilk sayfa taramasi (son care)
+  //  Ad nereden gelirse gelsin uyeler ayrica tamamlanmaya calisilir.
+  // ═══════════════════════════════════════════════════════════════
   sock.groupMetadata = async (jid) => {
     const onb = _grupOnbellek.get(jid);
     if (onb && Date.now() - onb.ts < (onb.sure || GRUP_ONBELLEK_MS)) return onb.veri;
     if (_grupUcus.has(jid)) return _grupUcus.get(jid);
+
     const soz = (async () => {
       try {
-        // ═══ NEDEN BIRDEN FAZLA DENEME (2026-08) ══════════════════
-        // "metadata bos geldi" mesaji iki AYRI durumu ayni gosteriyordu:
-        // (a) WAHA hata dondu, (b) grup gercekten adsiz. Hangisi oldugunu
-        // bilmeden cozum aranamaz. Artik gercek hata loga yaziliyor ve
-        // kimlik bicimi farkli olabilir diye ikinci bir yol deneniyor.
-        const yollar = [
-          '/api/' + WAHA_OTURUM + '/groups/' + jid,
-          '/api/' + WAHA_OTURUM + '/groups/' + String(jid).split('@')[0],
-        ];
-        let g = null, sonHata = null;
-        for (const yol of yollar) {
+        let b = null;
+        // ── 1) GRUP UCU ──
+        for (const yol of ['/api/' + WAHA_OTURUM + '/groups/' + jid,
+                           '/api/' + WAHA_OTURUM + '/groups/' + String(jid).split('@')[0]]) {
           try {
-            g = await istek(yol, { zamanAsimiMs: 15000 });
-            if (g) break;
-          } catch (e) { sonHata = e; }
+            const g = await istek(yol, { zamanAsimiMs: 15000 });
+            if (g) { b = baileysGrup(g); if (b) break; }
+          } catch (_) { /* sonrakini dene */ }
         }
-        if (!g) {
-          if (_grupHataYazildi < 5) {
-            _grupHataYazildi++;
-            log('grup bilgisi CEKILEMEDI (' + String(jid).slice(0, 24) + '): '
-              + (sonHata ? String(sonHata.message).slice(0, 140) : 'bos yanit')
-              + (_grupHataYazildi === 5 ? '  [bu uyari artik yazilmayacak]' : ''));
+        // Grup ucu hic cevap vermediyse bile bos bir iskelet kurup devam et —
+        // adi baska kaynaktan bulabiliriz, burada pes etmek yanlis olur.
+        if (!b) b = { id: jid, subject: '', desc: '', participants: [], size: 0, owner: null, creation: 0 };
+
+        // ── 2) BELLEKTEKI AD (sohbet listesinden ogrenilmis) ──
+        if (!b.subject && sock._bilinenAdlar && sock._bilinenAdlar.get(jid)) {
+          b.subject = sock._bilinenAdlar.get(jid);
+        }
+        // ── 3) TEK-SOHBET UCU ──
+        if (!b.subject) {
+          const ad = await tekSohbetAdi(jid);
+          if (ad) {
+            b.subject = ad;
+            if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+            sock._bilinenAdlar.set(jid, ad);
           }
-          throw new Error('grup bulunamadi');
         }
-        let b = baileysGrup(g);
-        if (!b) throw new Error('grup bulunamadi');
-        if (!b.subject && _grupHataYazildi < 3) {
-          _grupHataYazildi++;
-          log('grup ADSIZ dondu (' + String(jid).slice(0, 24) + ') — WAHA yaniti geldi ama Name bos'
-            + (_grupHataYazildi === 3 ? '  [bu uyari artik yazilmayacak]' : ''));
+        // ── 4) SON CARE: sohbet listesinin ilk sayfasi ──
+        if (!b.subject) {
+          try {
+            await sonSohbetleriTara(sock);
+            const ad = sock._bilinenAdlar && sock._bilinenAdlar.get(jid);
+            if (ad) b.subject = ad;
+          } catch (_) {}
         }
-        // ═══ BOS SONUCU DA ONBELLEGE AL (2026-08) ══════════════════
-        // ESKI HATA: sadece adi olan sonuc saklaniyordu. Adsiz gruplar
-        // her istekte YENIDEN WAHA'ya gidiyordu — logda ayni grup icin
-        // ust uste 20 kez "grup uyeleri cekildi (0 uye)" gorulmesinin
-        // sebebi buydu. Her biri 2 istek demek (grup + uyeler) = 40 istek.
-        // Kasmanin buyuk kismi buradaydi.
-        // Bos sonucu DAHA UZUN sakliyoruz: nasilsa yakin zamanda
-        // degismeyecek, ama sonsuza kadar da saklamiyoruz ki WhatsApp
-        // senkronu ilerleyince ad gelebilsin.
+
         if (b.subject) {
-          b = await uyeleriTamamla(jid, b);
+          if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+          sock._bilinenAdlar.set(jid, b.subject);
+          // Uyeler bos ise ayri uctan tamamla (panelde "0 uye" gorunmesin)
+          if (!b.participants || !b.participants.length) b = await uyeleriTamamla(jid, b);
           _grupOnbellek.set(jid, { veri: b, ts: Date.now(), sure: GRUP_ONBELLEK_MS });
         } else {
-          // adi yoksa uyeleri sormanin da anlami yok — ikinci istegi hic atma
+          if (_grupHataYazildi < 3) {
+            _grupHataYazildi++;
+            log('grup adi HICBIR kaynaktan gelmedi (' + String(jid).slice(0, 24) + ')'
+              + (_grupHataYazildi === 3 ? '  [bu uyari artik yazilmayacak]' : ''));
+          }
+          // Bos sonucu KISA sure sakla: ayni anda gelen 20 istegi tek cagriya
+          // indirir ama kullanici birazdan tekrar denerse yeniden sorulur.
           _grupOnbellek.set(jid, { veri: b, ts: Date.now(), sure: GRUP_BOS_ONBELLEK_MS });
         }
         if (_grupOnbellek.size > 12000) _grupOnbellek.delete(_grupOnbellek.keys().next().value);
