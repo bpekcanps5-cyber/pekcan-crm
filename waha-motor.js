@@ -367,16 +367,29 @@ function yeniSohbetleriYayinla(sock, kayitlar, kaynak) {
     if (jid === 'status@broadcast' || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) continue;
     if (!sock._gorulenSohbetler.has(jid)) { sock._gorulenSohbetler.add(jid); yeniSayisi++; }
     const ad = sohbetAdi(k);
-    // ADI BOS GELEN GRUPLARI ISARETLE — sonra tek tek bilgisi cekilecek.
-    // Toplu liste cogu grupta adi vermiyor; panelde ham kimlik gorunmesin.
-    if (!ad && jid.endsWith('@g.us')) {
+    const zaman = sohbetZamani(k);
+
+    // ═══ ADSIZ GRUBU LISTEYE KOYMA (2026-08) ════════════════════════
+    // WAHA 8522 grup donuyor ama bunlarin 5799'unun adi YOK — ne toplu
+    // listede ne de tek tek sorunca ("metadata bos geldi"). Bunlar
+    // ayrilinmis/erisilemez gruplar; WhatsApp bilgilerini vermiyor.
+    // Hepsini listeye atmak:
+    //   - paneli 8928 satira sisirip yavaslatiyor,
+    //   - ham kimlik ("120363423564585092") olarak gorunuyor,
+    //   - 5799 bosuna sorgu demek (kasma sebebi buydu).
+    // Canlidaki Baileys de bunlari GOSTERMIYOR (orada 4494 grup var).
+    // Kullanicinin kurali da bu: "bos/olu gruplar gorunmesin, mesaj
+    // geldikce eklensin". Mesaj gelirse server.js zaten sohbeti acar.
+    // Konusma zamani olan grup ise ADSIZ OLSA DA alinir — o gercek.
+    if (!ad && jid.endsWith('@g.us') && !zaman) {
       if (!sock._adsizGruplar) sock._adsizGruplar = new Set();
       sock._adsizGruplar.add(jid);
+      continue;
     }
     liste.push({
       id: jid,
       name: ad || undefined,                            // bos ise server.js jid'den turetir
-      conversationTimestamp: sohbetZamani(k) || undefined,
+      conversationTimestamp: zaman || undefined,
       unreadCount: Number(k.unreadCount || k.UnreadCount || k.unread || 0) || 0,
     });
   }
@@ -442,14 +455,22 @@ async function grupBilgiDoldur(sock) {
   try {
     const sira = [...(sock._adsizGruplar || [])];
     if (!sira.length) return;
-    const kuyruk = [...sira];
+    const tumu = [...sira];
+    // ═══ ONCE YOKLA, SONRA KARAR VER (2026-08) ══════════════════════
+    // Adi bos gruplarin cogu ayrilinmis/erisilemez olabiliyor; onlarda
+    // tek-grup sorgusu da bos donuyor ("metadata bos geldi"). 5799 grup
+    // icin bosuna 5799 istek atmak sistemi kasiyor ve WhatsApp'i yoruyor.
+    // Bu yuzden once kucuk bir ORNEK deniyoruz: tutmuyorsa hic girismiyoruz.
+    const ORNEK = Math.min(40, tumu.length);
+    const ESIK = 0.25;   // ornekte %25 bile tutmuyorsa devam etmenin anlami yok
+    let kuyruk = tumu.slice(0, ORNEK);
+    let yoklamaBitti = false;
     const denemeSayisi = new Map();
     let aralik = BILGI_ARALIK_TABAN;
-    log('grup bilgisi dolduruluyor: ' + sira.length + ' grubun adi bos (~'
-      + Math.ceil(sira.length * aralik / 60000) + ' dk surer, panel bu sirada normal calisir)');
+    log('grup bilgisi: ' + tumu.length + ' grubun adi bos — once ' + ORNEK + ' tanesi yoklaniyor');
 
     let biriken = [];
-    let dolan = 0, adsiz = 0, hata = 0, islenen = 0, ertelenen = 0;
+    let dolan = 0, adsiz = 0, hata = 0, ertelenen = 0;
     const yay = () => {
       if (!biriken.length) return;
       sock.ev.emit('groups.update', biriken);
@@ -458,7 +479,6 @@ async function grupBilgiDoldur(sock) {
 
     while (kuyruk.length && !sock._kapali) {
       const jid = kuyruk.shift();
-      islenen++;
       try {
         // DIKKAT: '@' KODLANMAMALI (encodeURIComponent kullanma)
         const g = await istek('/api/' + WAHA_OTURUM + '/groups/' + jid, { zamanAsimiMs: 15000 });
@@ -469,16 +489,13 @@ async function grupBilgiDoldur(sock) {
           dolan++;
           aralik = Math.max(BILGI_ARALIK_TABAN, Math.round(aralik * 0.9));   // iyi gidiyor -> hizlan
         } else {
-          adsiz++;   // WhatsApp gercekten ad vermiyor (terk edilmis/silinmis grup)
+          adsiz++;   // WhatsApp bu grubun bilgisini vermiyor (ayrilinmis/erisilemez)
           sock._adsizGruplar.delete(jid);
         }
       } catch (e) {
         const m = String(e.message || '');
         if (/rate.?overlimit|429|too many/i.test(m)) {
-          // ═══ HIZ SINIRI: DURMA, YAVASLA ════════════════════════════
-          // Eskiden burada 30 saniye komple duruluyordu. 8500 grupta bu
-          // saatlere mal oluyor. Artik yalnizca yavasliyoruz ve o grubu
-          // kuyrugun SONUNA atiyoruz — sirasi gelince tekrar denenir.
+          // Hiz sinirinda DURMA, yavasla ve o grubu kuyrugun sonuna at
           aralik = Math.min(3000, Math.max(300, aralik * 2));
           const deneme = (denemeSayisi.get(jid) || 0) + 1;
           denemeSayisi.set(jid, deneme);
@@ -496,18 +513,40 @@ async function grupBilgiDoldur(sock) {
       }
       if (biriken.length >= BILGI_YAYIN_ESIGI) {
         yay();
-        log('grup bilgisi: ' + dolan + '/' + sira.length + ' grup adina kavustu'
+        log('grup bilgisi: ' + dolan + ' grup adina kavustu'
           + (ertelenen ? ' (' + ertelenen + ' erteleme)' : ''));
+      }
+
+      // ── YOKLAMA SONUCU ──
+      if (!yoklamaBitti && !kuyruk.length) {
+        yoklamaBitti = true;
+        const denenen = dolan + adsiz + hata;
+        const oran = denenen ? dolan / denenen : 0;
+        if (oran < ESIK) {
+          yay();
+          log('grup bilgisi DURDURULDU: yoklanan ' + denenen + ' gruptan sadece ' + dolan
+            + ' tanesinin adi geldi. WhatsApp bunlarin bilgisini vermiyor'
+            + ' (ayrilinmis/erisilemez gruplar). ' + (tumu.length - denenen)
+            + ' grup icin bosuna sorgu atilmayacak — kasma sebebi buydu.');
+          log('  Bu gruplar listede gorunmuyor; birinden mesaj gelirse otomatik eklenecek.');
+          return;
+        }
+        // Yoklama tuttu -> gerisine devam
+        kuyruk = tumu.slice(ORNEK);
+        log('grup bilgisi: yoklama tuttu (' + dolan + '/' + denenen + ') — kalan '
+          + kuyruk.length + ' grup cekiliyor (~' + Math.ceil(kuyruk.length * aralik / 60000) + ' dk)');
       }
       await new Promise((r) => setTimeout(r, aralik));
     }
     yay();
     log('grup bilgisi bitti: ' + dolan + ' dolduruldu, ' + adsiz
-      + ' gercekten adsiz, ' + hata + ' hata, son bekleme ' + aralik + 'ms');
+      + ' bilgisi alinamadi, ' + hata + ' hata');
   } finally {
     sock._bilgiCalisiyor = false;
   }
 }
+const _olukUclar = new Set();   // yanit vermeyen uclar — bir daha denenmez
+
 async function ilkListeyiCek(sock) {
   const denenecek = [];
   if (ILK_LISTE_MOD !== 'gruplar') {
@@ -520,12 +559,20 @@ async function ilkListeyiCek(sock) {
     denenecek.push(['gruplar', '/api/' + WAHA_OTURUM + '/groups', 60000]);
   }
   for (const [ad, yol, sure] of denenecek) {
+    // Daha once yanit vermemis bir uca tekrar tekrar 25-45 saniye
+    // harcamayalim; her denemede tum sistem bekliyor.
+    if (_olukUclar.has(yol)) continue;
     log('liste deneniyor: ' + ad + ' ...');
     let kayitlar;
     try {
       kayitlar = await _sayfaliCek(yol, sure);
     } catch (e) {
-      log('  ' + ad + ' olmadi: ' + String(e.message).slice(0, 110));
+      if (e.zamanAsimi) {
+        _olukUclar.add(yol);
+        log('  ' + ad + ' yanit vermedi — bu uc bir daha denenmeyecek');
+      } else {
+        log('  ' + ad + ' olmadi: ' + String(e.message).slice(0, 110));
+      }
       continue;
     }
     if (!kayitlar.length) { log('  ' + ad + ': bos geldi'); continue; }
@@ -677,11 +724,35 @@ function wahaSoketYap(secenek = {}) {
   };
 
   // ── 4) GRUP BILGISI ──
+  // ═══ KISA ONBELLEK (2026-08) ════════════════════════════════════
+  // Logda ayni grup icin ust uste UCER kez sorgu goruldu (panel acilisi,
+  // avatar cekimi, ad tazeleme ayri ayri istiyor). Ayni grubu 20 saniye
+  // icinde tekrar sormak yerine ilk sonucu paylasiyoruz. Ayni anda gelen
+  // istekler de tek cagriya biniyor. Kasmanin bir kismi buydu.
+  const _grupOnbellek = new Map();   // jid -> { veri, ts }
+  const _grupUcus = new Map();       // jid -> ucus halindeki soz
+  const GRUP_ONBELLEK_MS = 20000;
+
   sock.groupMetadata = async (jid) => {
-    const g = await istek('/api/' + WAHA_OTURUM + '/groups/' + jid);
-    const b = baileysGrup(g);
-    if (!b) throw new Error('grup bulunamadi');
-    return b;
+    const onb = _grupOnbellek.get(jid);
+    if (onb && Date.now() - onb.ts < GRUP_ONBELLEK_MS) return onb.veri;
+    if (_grupUcus.has(jid)) return _grupUcus.get(jid);
+    const soz = (async () => {
+      try {
+        const g = await istek('/api/' + WAHA_OTURUM + '/groups/' + jid);
+        const b = baileysGrup(g);
+        if (!b) throw new Error('grup bulunamadi');
+        // Sadece ISE YARAR sonucu sakla — bos sonucu onbelleklersek
+        // 20 saniye boyunca dogru bilgiyi de goremeyiz.
+        if (b.subject) {
+          _grupOnbellek.set(jid, { veri: b, ts: Date.now() });
+          if (_grupOnbellek.size > 3000) _grupOnbellek.delete(_grupOnbellek.keys().next().value);
+        }
+        return b;
+      } finally { _grupUcus.delete(jid); }
+    })();
+    _grupUcus.set(jid, soz);
+    return soz;
   };
 
   // ── 5) TUM GRUPLAR ──
@@ -713,6 +784,8 @@ function wahaSoketYap(secenek = {}) {
           if (!sock._sonListeYayin || simdi - sock._sonListeYayin > 60000) {
             sock._sonListeYayin = simdi;
             yeniSohbetleriYayinla(sock, kayitlar, 'gruplar/toplu');
+            // Liste bu yoldan geldi -> sohbet uclarini yoklamayi birak
+            ilkListeTimerlariTemizle(sock);
           }
           // Adi bos gelen gruplarin bilgisini tek tek doldurmaya basla
           if (sock._adsizGruplar && sock._adsizGruplar.size && !sock._bilgiCalisiyor) {
