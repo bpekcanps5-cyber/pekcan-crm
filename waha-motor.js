@@ -714,19 +714,60 @@ const ISIM_TAZELEME_MS = Number(process.env.WAHA_ISIM_TAZELEME_MS) || 10 * 60 * 
 //  ONCE YOKLA: 30 grupla deniyoruz. Tutmuyorsa binlerce bosuna istek
 //  atmiyoruz; loga sebebini yazip birakiyoruz.
 // ═══════════════════════════════════════════════════════════════════
-async function tekSohbetAdi(jid) {
-  const yollar = [
-    '/api/' + WAHA_OTURUM + '/chats/' + jid,
-    '/api/' + WAHA_OTURUM + '/chats/' + jid + '/picture',   // bazi surumlerde ad da doner
-  ];
-  for (const yol of yollar) {
+// ═══ TEK GRUBUN ADINI BUL — HER KAYNAGI DENE VE SONUCU YAZ ═════════
+// Uc kaynak var ve hangisinin ne dondugunu BILMIYORUZ. Bu yuzden ilk
+// birkac denemede her adimin sonucunu (HTTP kodu dahil) loga yaziyoruz.
+// Boylece bir sonraki logda "hangi kaynak ne diyor" acikca gorunur ve
+// tahmin yurutmeyi birakiriz.
+let _adAramaYazildi = 0;
+
+async function tekSohbetAdi(jid, sock) {
+  const yaz = _adAramaYazildi < 3;
+  const rapor = [];
+  const dene = async (etiket, yol, ayikla) => {
     try {
       const r = await istek(yol, { zamanAsimiMs: 12000 });
-      const ad = r && (r.name || r.Name || r.subject || r.Subject);
-      if (ad && String(ad).trim()) return String(ad).trim();
-    } catch (_) { /* sonrakini dene */ }
+      const ad = ayikla(r);
+      rapor.push(etiket + '=' + (ad ? 'AD VAR' : (r ? 'bos' : 'yanit yok')));
+      return ad || '';
+    } catch (e) {
+      rapor.push(etiket + '=' + String(e.message).replace(/\s+/g, ' ').slice(0, 40));
+      return '';
+    }
+  };
+
+  // 1) SOHBET LISTESI ilk sayfasi — mesaj yeni geldiyse grup burada olur
+  let ad = await dene('sohbetListesi', '/api/' + WAHA_OTURUM + '/chats?limit=50&offset=0', (r) => {
+    const d = Array.isArray(r) ? r : (r && Array.isArray(r.data) ? r.data : []);
+    // Yol acikken listedeki TUM adlari ogren — sonrakiler icin bedava
+    if (sock && d.length) {
+      if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+      for (const k of d) {
+        const j = jidAl(k); const a = sohbetAdi(k);
+        if (j && a) sock._bilinenAdlar.set(j, a);
+      }
+    }
+    for (const k of d) if (jidAl(k) === jid) return sohbetAdi(k);
+    return '';
+  });
+
+  // 2) TEK SOHBET ucu
+  if (!ad) ad = await dene('tekSohbet', '/api/' + WAHA_OTURUM + '/chats/' + jid,
+    (r) => String((r && (r.name || r.Name || r.subject || r.Subject)) || '').trim());
+
+  // 3) GRUP ucu
+  if (!ad) ad = await dene('grupUcu', '/api/' + WAHA_OTURUM + '/groups/' + jid,
+    (r) => String((r && (r.Name || r.name || r.subject)) || '').trim());
+
+  if (yaz && !ad) {
+    _adAramaYazildi++;
+    log('ad aranidi (' + String(jid).slice(0, 22) + ') BULUNAMADI -> ' + rapor.join(' | ')
+      + (_adAramaYazildi === 3 ? '   [bu rapor artik yazilmayacak]' : ''));
+  } else if (yaz && ad) {
+    _adAramaYazildi++;
+    log('ad bulundu (' + String(jid).slice(0, 22) + ') -> ' + rapor.join(' | '));
   }
-  return '';
+  return ad;
 }
 
 async function adsizlariTamamla(sock, liste) {
@@ -740,7 +781,7 @@ async function adsizlariTamamla(sock, liste) {
     for (const jid of liste) {
       if (sock._kapali) break;
       denenen++;
-      const ad = await tekSohbetAdi(jid);
+      const ad = await tekSohbetAdi(jid, sock);
       if (ad) {
         bulunan++;
         sock._bilinenAdlar.set(jid, ad);
@@ -1079,7 +1120,7 @@ function wahaSoketYap(secenek = {}) {
         }
         // ── 3) TEK-SOHBET UCU ──
         if (!b.subject) {
-          const ad = await tekSohbetAdi(jid);
+          const ad = await tekSohbetAdi(jid, sock);
           if (ad) {
             b.subject = ad;
             if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
@@ -1529,7 +1570,7 @@ function anlikKuyrukIsle(sock) {
   while (sock._anlikCalisan < ANLIK_ES_ZAMAN && sock._anlikKuyruk.length) {
     const jid = sock._anlikKuyruk.shift();
     sock._anlikCalisan++;
-    tekSohbetAdi(jid).then((ad) => {
+    tekSohbetAdi(jid, sock).then((ad) => {
       if (ad) {
         if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
         sock._bilinenAdlar.set(jid, ad);
