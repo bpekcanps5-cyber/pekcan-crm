@@ -2005,7 +2005,10 @@ async function oturumHazirla() {
   // Depo kapaliyken sohbet listesi, grup bilgisi ve gecmis GELMIYOR.
   // Ortam degiskeni yeni oturumlarda gecerli; mevcut oturum icin ayrica
   // OTURUM AYARINA da yaziyoruz ki eski oturumda da acilsin.
-  const oturumAyari = { webhooks: kancalar, noweb: { store: { enabled: true, fullSync: true } } };
+  // Alan adi surume gore degisiyor: WAHA'nin hata mesaji 'full_sync'
+  // diyor, API dokumani 'fullSync'. Ikisini birden yolluyoruz.
+  const depoAyari = { enabled: true, fullSync: true, full_sync: true };
+  const oturumAyari = { webhooks: kancalar, noweb: { store: depoAyari } };
   try {
     const s = await istek('/api/sessions/' + WAHA_OTURUM);
     const kayitli = (s.config && s.config.webhooks) || [];
@@ -2039,17 +2042,52 @@ async function oturumHazirla() {
     } else {
       log('olay adresleri ve olay listesi zaten dogru (' + kayitli.length + ' adres)');
     }
-    // Depo acik mi? Kapaliysa ac — grup adlari ve gecmis buna bagli.
-    const depo = s.config && s.config.noweb && s.config.noweb.store;
+    // ═══ NOWEB DEPOSU ACIK MI? ══════════════════════════════════════
+    // Depo kapaliyken WAHA sohbet listesi, grup adi, aciklama ve gecmis
+    // VERMIYOR. Bugun yasadigimiz her seyin tek sebebi buydu.
+    const depoOku = (x) => (x && x.config && x.config.noweb && x.config.noweb.store) || null;
+    let depo = depoOku(s);
     if (!depo || !depo.enabled) {
-      log('⚠ NOWEB deposu KAPALI — grup adlari/gecmis bu yuzden gelmiyor. Aciliyor...');
+      log('⚠ NOWEB deposu KAPALI — grup adlari/gecmis bu yuzden gelmiyor');
+      log('   WAHA\'da kayitli ayar: ' + JSON.stringify((s.config && s.config.noweb) || null));
+
+      // 1) DURDUR -> YAZ -> BASLAT
+      // WAHA calisan bir oturumun ayarini kabul etmiyor olabilir; bu
+      // yuzden once durduruyoruz. (Sadece PUT atmak ise yaramamisti.)
+      const dene2 = async (ad, yol, yontem, govde) => {
+        try { await istek(yol, { method: yontem, body: govde, zamanAsimiMs: 60000 }); log('   ' + ad + ': tamam'); return true; }
+        catch (e) { log('   ' + ad + ': ' + String(e.message).slice(0, 70)); return false; }
+      };
+      await dene2('durdur', '/api/sessions/' + WAHA_OTURUM + '/stop', 'POST');
+      await uyu(2000);
+      await dene2('ayar yaz', '/api/sessions/' + WAHA_OTURUM, 'PUT', { config: oturumAyari });
+      await dene2('baslat', '/api/sessions/' + WAHA_OTURUM + '/start', 'POST');
+      await uyu(3000);
+
+      // 2) Kontrol
       try {
-        await istek('/api/sessions/' + WAHA_OTURUM, { method: 'PUT', body: { config: oturumAyari } });
-        log('  depo acildi — oturum yeniden baslatiliyor (ayarin islemesi icin)');
-        await istek('/api/sessions/' + WAHA_OTURUM + '/restart', { method: 'POST', zamanAsimiMs: 60000 });
-      } catch (e) { log('  acilamadi: ' + String(e.message).slice(0, 90)); }
+        const k = await istek('/api/sessions/' + WAHA_OTURUM);
+        depo = depoOku(k);
+      } catch (_) {}
+
+      if (depo && depo.enabled) {
+        log('✓ NOWEB deposu ACILDI');
+      } else {
+        // 3) Son care: oturumu SIL ve ayarla birlikte yeniden kur.
+        // Ortam degiskenleri (WAHA_NOWEB_STORE_*) yeni oturumlarda
+        // gecerli oldugu icin sifirdan kurulan oturum depoyla acilir.
+        log('   ayar yazilamadi — oturum sifirdan kuruluyor (QR istenecek)');
+        await dene2('cikis', '/api/sessions/' + WAHA_OTURUM + '/logout', 'POST');
+        await dene2('sil', '/api/sessions/' + WAHA_OTURUM, 'DELETE');
+        await uyu(2000);
+        const kuruldu = await dene2('yeni oturum', '/api/sessions', 'POST',
+          { name: WAHA_OTURUM, start: true, config: oturumAyari });
+        if (kuruldu) log('✓ yeni oturum kuruldu — QR birazdan gelecek, depo acik');
+        else log('✗ kurulamadi — docker-compose\'ta WAHA_NOWEB_STORE_ENABLED=True olmali');
+        return { status: 'STARTING' };
+      }
     } else {
-      log('NOWEB deposu acik (fullSync: ' + !!depo.fullSync + ')');
+      log('NOWEB deposu acik (fullSync: ' + !!(depo.fullSync || depo.full_sync) + ')');
     }
     return s;
   } catch (e) {
