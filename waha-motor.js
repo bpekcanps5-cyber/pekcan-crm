@@ -194,6 +194,45 @@ function ackCevir(ack) {
 
 function baileysMesaji(w) {
   if (!w) return null;
+
+  // ═══ IKI MOTOR, IKI FARKLI BICIM (2026-08) ══════════════════════
+  // GOWS  (whatsmeow) -> _data.Info / _data.Message, BUYUK harfli alanlar
+  // NOWEB (Baileys)   -> _data ZATEN Baileys mesaji: key/message/pushName
+  // Motor degisince cevirmen bozuluyordu: gonderen cozulemiyor, panelde
+  // "Bilinmeyen kisi" yaziyordu. Artik ikisi de taniniyor.
+  const nb = w._data && w._data.key ? w._data : null;   // NOWEB mi?
+  if (nb) {
+    const anahtar = nb.key || {};
+    let sohbetN = String(anahtar.remoteJid || w.from || w.chatId || '');
+    const grupN = sohbetN.includes('@g.us');
+    if (!grupN) sohbetN = sohbetN.endsWith('@lid')
+      ? (lidNumara.get(sohbetN) || sohbetN) : numaraTemizle(sohbetN);
+    let katilimciN = anahtar.participant || w.participant || '';
+    if (katilimciN) {
+      const alt = anahtar.participantPn || anahtar.participantAlt || '';
+      if (alt) { lidNumara.set(katilimciN, numaraTemizle(alt)); katilimciN = numaraTemizle(alt); }
+      else katilimciN = lidNumara.get(katilimciN) || numaraTemizle(katilimciN);
+    }
+    const govdeN = nb.message || (w.body ? { conversation: w.body } : { conversation: '' });
+    return {
+      key: {
+        remoteJid: sohbetN,
+        fromMe: !!anahtar.fromMe,
+        id: anahtar.id || w.id || '',
+        participant: katilimciN || undefined,
+        remoteJidAlt: anahtar.remoteJidAlt || anahtar.remoteJidPn || undefined,
+        remoteJidPn: anahtar.remoteJidPn || anahtar.remoteJidAlt || undefined,
+      },
+      message: govdeN,
+      messageTimestamp: Number(nb.messageTimestamp || w.timestamp || zamanAl(w)) || 0,
+      pushName: nb.pushName || w.notifyName || w.pushName || '',
+      status: ackCevir(w.ack),
+      _wahaMedya: (w.media && (w.media.url || w.media.URL)) || w.mediaUrl || null,
+      _wahaDosyaAdi: (w.media && (w.media.filename || w.media.fileName)) || '',
+      _wahaMime: (w.media && w.media.mimetype) || '',
+    };
+  }
+
   const bilgi = (w._data && w._data.Info) || {};
   let sohbet = String(w.from || w.chatId || bilgi.Chat || jidAl(w) || '');
   const grupMu = sohbet.includes('@g.us');
@@ -272,14 +311,15 @@ function baileysGrup(g) {
   if (!g) return null;
   const jid = jidAl(g);
   const uyeler = (g.Participants || g.participants || []).map((p) => {
-    const lid = p.LID || p.lid || p.JID || p.jid || '';
+    // GOWS: JID/LID/PhoneNumber (BUYUK harf) | NOWEB: id/jid (kucuk harf)
+    const lid = p.LID || p.lid || p.JID || p.jid || p.id || '';
     let num = String(p.PhoneNumber || p.phoneNumber || '').replace(/[^0-9]/g, '');
     if (!num) {
-      const ogr = lidNumara.get(lid) || lidNumara.get(p.JID || '');
+      const ogr = lidNumara.get(lid) || lidNumara.get(p.JID || p.id || '');
       if (ogr) num = String(ogr).split('@')[0].split(':')[0];
     }
     if (!num) {
-      const j = String(p.JID || p.jid || '');
+      const j = String(p.JID || p.jid || p.id || '');
       if (j && !j.includes('@lid')) num = j.split('@')[0].split(':')[0];
     }
     return {
