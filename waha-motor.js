@@ -726,60 +726,109 @@ const ISIM_TAZELEME_MS = Number(process.env.WAHA_ISIM_TAZELEME_MS) || 10 * 60 * 
 //  ONCE YOKLA: 30 grupla deniyoruz. Tutmuyorsa binlerce bosuna istek
 //  atmiyoruz; loga sebebini yazip birakiyoruz.
 // ═══════════════════════════════════════════════════════════════════
-// ═══ TEK GRUBUN ADINI BUL — HER KAYNAGI DENE VE SONUCU YAZ ═════════
-// Uc kaynak var ve hangisinin ne dondugunu BILMIYORUZ. Bu yuzden ilk
-// birkac denemede her adimin sonucunu (HTTP kodu dahil) loga yaziyoruz.
-// Boylece bir sonraki logda "hangi kaynak ne diyor" acikca gorunur ve
-// tahmin yurutmeyi birakiriz.
+// ═══════════════════════════════════════════════════════════════════
+//  BIR GRUBUN ADINI GETIR  —  GEREKIRSE TAZELEYEREK
+//  -------------------------------------------------------------------
+//  TESHIS ARACININ SOYLEDIKLERI (gercek veri, tahmin degil):
+//    /groups            -> 7487 grup, 2720'sinin adi var, 4767'si BOS
+//    /chats             -> sadece 960 sohbet biliyor, 88'inin adi var
+//    /chats/{jid}       -> 404, boyle bir uc YOK
+//    /groups/{jid}      -> adi olan grupta ad + 22 uye, olmayanda BOS
+//    /groups/refresh    -> KOD 200, CALISIYOR   ← anahtar bulgu
+//
+//  DEMEK KI: WAHA deposu eksik. Okumak yetmiyor, TAZELEMEK gerekiyor.
+//  Ama 7487 grubun hepsini tazelemek WhatsApp'i da sistemi de yorar.
+//
+//  BU YUZDEN: sadece MESAJ DUSEN grup icin tazeliyoruz. Zaten panelde
+//  gordugun, ilgilendigin gruplar onlar. Tazeleme cagrisi paylasimli:
+//  ayni anda 20 grup istese bile 2 dakikada BIR tazeleme atiliyor ve
+//  hepsi o tazelemenin sonucunu bekliyor.
+// ═══════════════════════════════════════════════════════════════════
+const TAZELEME_ARALIK_MS = Number(process.env.WAHA_TAZELEME_ARALIK_MS) || 120000;
+let _sonTazeleme = 0;
+let _tazelemeUcusta = null;      // ucus halindeki tazeleme sozu (paylasimli)
+let _grupBasinaTazeleme = null;  // grup basina uc calisiyor mu? (null=bilinmiyor)
+
+const uyu = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Grubun adini DOGRUDAN oku (tazelemeden)
+async function grupAdiOku(jid) {
+  try {
+    const r = await istek('/api/' + WAHA_OTURUM + '/groups/' + jid, { zamanAsimiMs: 12000 });
+    return String((r && (r.Name || r.name || r.subject)) || '').trim();
+  } catch (_) { return ''; }
+}
+
+// Tazele: once grup basina uc, olmazsa global (kisitli ve paylasimli)
+async function tazelemeYap(jid) {
+  // 1) Grup basina tazeleme — en ucuzu. Bir kez deneyip sonucu hatirliyoruz.
+  if (_grupBasinaTazeleme !== false) {
+    try {
+      await istek('/api/' + WAHA_OTURUM + '/groups/' + jid + '/refresh',
+        { method: 'POST', zamanAsimiMs: 30000 });
+      if (_grupBasinaTazeleme === null) {
+        _grupBasinaTazeleme = true;
+        log('grup basina tazeleme ucu CALISIYOR — sadece mesaj dusen grup tazelenecek');
+      }
+      return true;
+    } catch (e) {
+      if (_grupBasinaTazeleme === null) {
+        _grupBasinaTazeleme = false;
+        log('grup basina tazeleme ucu yok (' + String(e.message).slice(0, 40)
+          + ') — genel tazeleme kullanilacak, ' + Math.round(TAZELEME_ARALIK_MS / 1000) + 'sn araliklarla');
+      }
+    }
+  }
+  // 2) Genel tazeleme — pahali, bu yuzden kisitli ve PAYLASIMLI
+  if (_tazelemeUcusta) return _tazelemeUcusta;          // zaten biri tazeliyor, ona katil
+  if (Date.now() - _sonTazeleme < TAZELEME_ARALIK_MS) return false;
+  _sonTazeleme = Date.now();
+  _tazelemeUcusta = (async () => {
+    try {
+      await istek('/api/' + WAHA_OTURUM + '/groups/refresh', { method: 'POST', zamanAsimiMs: 180000 });
+      return true;
+    } catch (e) {
+      log('genel tazeleme olmadi: ' + String(e.message).slice(0, 70));
+      return false;
+    } finally {
+      setTimeout(() => { _tazelemeUcusta = null; }, 1000);
+    }
+  })();
+  return _tazelemeUcusta;
+}
+
 let _adAramaYazildi = 0;
 
 async function tekSohbetAdi(jid, sock) {
-  const yaz = _adAramaYazildi < 3;
-  const rapor = [];
-  const dene = async (etiket, yol, ayikla) => {
-    try {
-      const r = await istek(yol, { zamanAsimiMs: 12000 });
-      const ad = ayikla(r);
-      rapor.push(etiket + '=' + (ad ? 'AD VAR' : (r ? 'bos' : 'yanit yok')));
-      return ad || '';
-    } catch (e) {
-      rapor.push(etiket + '=' + String(e.message).replace(/\s+/g, ' ').slice(0, 40));
-      return '';
-    }
-  };
+  // 1) Belki zaten biliniyordur
+  if (sock && sock._bilinenAdlar && sock._bilinenAdlar.get(jid)) return sock._bilinenAdlar.get(jid);
 
-  // 1) SOHBET LISTESI ilk sayfasi — mesaj yeni geldiyse grup burada olur
-  let ad = await dene('sohbetListesi', '/api/' + WAHA_OTURUM + '/chats?limit=50&offset=0', (r) => {
-    const d = Array.isArray(r) ? r : (r && Array.isArray(r.data) ? r.data : []);
-    // Yol acikken listedeki TUM adlari ogren — sonrakiler icin bedava
-    if (sock && d.length) {
-      if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
-      for (const k of d) {
-        const j = jidAl(k); const a = sohbetAdi(k);
-        if (j && a) sock._bilinenAdlar.set(j, a);
-      }
+  // 2) Dogrudan oku
+  let ad = await grupAdiOku(jid);
+  if (ad) return ad;
+
+  // 3) Adi yok -> TAZELE, sonra tekrar oku.
+  //    Tazeleme WhatsApp'tan veri cekiyor, aninda bitmiyor; bu yuzden
+  //    artan araliklarla birkac kez bakiyoruz.
+  const tazelendi = await tazelemeYap(jid);
+  if (!tazelendi) {
+    if (_adAramaYazildi < 3) {
+      _adAramaYazildi++;
+      log('ad bulunamadi (' + String(jid).slice(0, 22) + ') — tazeleme yapilamadi');
     }
-    for (const k of d) if (jidAl(k) === jid) return sohbetAdi(k);
     return '';
-  });
-
-  // 2) TEK SOHBET ucu
-  if (!ad) ad = await dene('tekSohbet', '/api/' + WAHA_OTURUM + '/chats/' + jid,
-    (r) => String((r && (r.name || r.Name || r.subject || r.Subject)) || '').trim());
-
-  // 3) GRUP ucu
-  if (!ad) ad = await dene('grupUcu', '/api/' + WAHA_OTURUM + '/groups/' + jid,
-    (r) => String((r && (r.Name || r.name || r.subject)) || '').trim());
-
-  if (yaz && !ad) {
-    _adAramaYazildi++;
-    log('ad aranidi (' + String(jid).slice(0, 22) + ') BULUNAMADI -> ' + rapor.join(' | ')
-      + (_adAramaYazildi === 3 ? '   [bu rapor artik yazilmayacak]' : ''));
-  } else if (yaz && ad) {
-    _adAramaYazildi++;
-    log('ad bulundu (' + String(jid).slice(0, 22) + ') -> ' + rapor.join(' | '));
   }
-  return ad;
+  for (const bekle of [800, 2500, 6000, 15000]) {
+    await uyu(bekle);
+    ad = await grupAdiOku(jid);
+    if (ad) return ad;
+  }
+  if (_adAramaYazildi < 3) {
+    _adAramaYazildi++;
+    log('ad bulunamadi (' + String(jid).slice(0, 22) + ') — tazeleme sonrasi da BOS'
+      + (_adAramaYazildi === 3 ? '   [bu uyari artik yazilmayacak]' : ''));
+  }
+  return '';
 }
 
 async function adsizlariTamamla(sock, liste) {
