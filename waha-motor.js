@@ -1998,6 +1998,14 @@ async function oturumHazirla() {
   const adaylar = kancaAdaylari();
   const kancalar = adaylar.map((taban, i) => ({ url: taban + '/olay/' + i, events: KANCA_OLAYLARI }));
   const kanca = kancalar[0];
+  // ═══ NOWEB DEPOSU (2026-08) ══════════════════════════════════════
+  // WAHA'nin hata mesaji birebir soyluyordu:
+  //   "Enable NOWEB store config.noweb.store.enabled=True and
+  //    config.noweb.store.full_sync=True"
+  // Depo kapaliyken sohbet listesi, grup bilgisi ve gecmis GELMIYOR.
+  // Ortam degiskeni yeni oturumlarda gecerli; mevcut oturum icin ayrica
+  // OTURUM AYARINA da yaziyoruz ki eski oturumda da acilsin.
+  const oturumAyari = { webhooks: kancalar, noweb: { store: { enabled: true, fullSync: true } } };
   try {
     const s = await istek('/api/sessions/' + WAHA_OTURUM);
     const kayitli = (s.config && s.config.webhooks) || [];
@@ -2019,8 +2027,8 @@ async function oturumHazirla() {
       log('olay adresleri yazilıyor (' + kancalar.length + ' aday):');
       for (const k of kancalar) log('   ' + k.url);
       try {
-        await istek('/api/sessions/' + WAHA_OTURUM, { method: 'PUT', body: { config: { webhooks: kancalar } } });
-        log('olay adresleri + olay listesi guncellendi');
+        await istek('/api/sessions/' + WAHA_OTURUM, { method: 'PUT', body: { config: oturumAyari } });
+        log('olay adresleri + NOWEB deposu ayari yazildi');
         try {
           const k = await istek('/api/sessions/' + WAHA_OTURUM);
           const y = ((k.config && k.config.webhooks) || []);
@@ -2031,11 +2039,23 @@ async function oturumHazirla() {
     } else {
       log('olay adresleri ve olay listesi zaten dogru (' + kayitli.length + ' adres)');
     }
+    // Depo acik mi? Kapaliysa ac — grup adlari ve gecmis buna bagli.
+    const depo = s.config && s.config.noweb && s.config.noweb.store;
+    if (!depo || !depo.enabled) {
+      log('⚠ NOWEB deposu KAPALI — grup adlari/gecmis bu yuzden gelmiyor. Aciliyor...');
+      try {
+        await istek('/api/sessions/' + WAHA_OTURUM, { method: 'PUT', body: { config: oturumAyari } });
+        log('  depo acildi — oturum yeniden baslatiliyor (ayarin islemesi icin)');
+        await istek('/api/sessions/' + WAHA_OTURUM + '/restart', { method: 'POST', zamanAsimiMs: 60000 });
+      } catch (e) { log('  acilamadi: ' + String(e.message).slice(0, 90)); }
+    } else {
+      log('NOWEB deposu acik (fullSync: ' + !!depo.fullSync + ')');
+    }
     return s;
   } catch (e) {
     if (e.status === 404) {
       log('oturum yok, olusturuluyor...');
-      await istek('/api/sessions', { method: 'POST', body: { name: WAHA_OTURUM, start: true, config: { webhooks: kancalar } } });
+      await istek('/api/sessions', { method: 'POST', body: { name: WAHA_OTURUM, start: true, config: oturumAyari } });
       return { status: 'STARTING' };
     }
     throw e;
