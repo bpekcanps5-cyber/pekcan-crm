@@ -650,7 +650,19 @@ async function grupBilgiDoldur(sock) {
     sock._bilgiCalisiyor = false;
   }
 }
-const _olukUclar = new Set();   // yanit vermeyen uclar — bir daha denenmez
+// Yanit vermeyen uclar. KALICI DEGIL — WAHA acilirken senkron yuzunden
+// gecici yavaslayabiliyor. Bir kez zaman asimina ugrayan uc sonsuza kadar
+// dislanirsa, sonradan duzelse bile onu hic kullanamayiz. 10 dakika sonra
+// yeniden denenir.
+const _olukUclar = new Map();   // yol -> ne zamana kadar dislanacak
+const OLUK_SURESI_MS = 10 * 60 * 1000;
+function olukMu(yol) {
+  const t = _olukUclar.get(yol);
+  if (!t) return false;
+  if (Date.now() > t) { _olukUclar.delete(yol); return false; }
+  return true;
+}
+function olukIsaretle(yol) { _olukUclar.set(yol, Date.now() + OLUK_SURESI_MS); }
 
 // ═══════════════════════════════════════════════════════════════════
 //  TEK SEFERLIK UC DENEMESI
@@ -811,9 +823,9 @@ async function isimleriTazele(sock) {
   try {
     let kayitlar = [];
     for (const yol of ['/api/' + WAHA_OTURUM + '/chats', '/api/' + WAHA_OTURUM + '/chats/overview']) {
-      if (_olukUclar.has(yol)) continue;
+      if (olukMu(yol)) continue;
       try { kayitlar = await _sayfaliCek(yol, 40000); if (kayitlar.length) break; }
-      catch (e) { if (e.zamanAsimi) _olukUclar.add(yol); }
+      catch (e) { if (e.zamanAsimi) olukIsaretle(yol); }
     }
     if (!kayitlar.length) return;
 
@@ -885,15 +897,15 @@ async function ilkListeyiCek(sock) {
   for (const [ad, yol, sure] of denenecek) {
     // Daha once yanit vermemis bir uca tekrar tekrar 25-45 saniye
     // harcamayalim; her denemede tum sistem bekliyor.
-    if (_olukUclar.has(yol)) continue;
+    if (olukMu(yol)) continue;
     log('liste deneniyor: ' + ad + ' ...');
     let kayitlar;
     try {
       kayitlar = await _sayfaliCek(yol, sure);
     } catch (e) {
       if (e.zamanAsimi) {
-        _olukUclar.add(yol);
-        log('  ' + ad + ' yanit vermedi — bu uc bir daha denenmeyecek');
+        olukIsaretle(yol);
+        log('  ' + ad + ' yanit vermedi — 10 dakika denenmeyecek');
       } else {
         log('  ' + ad + ' olmadi: ' + String(e.message).slice(0, 110));
       }
