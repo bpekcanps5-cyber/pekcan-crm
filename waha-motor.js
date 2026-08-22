@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / makbuz-tekrar-17';
+const MOTOR_SURUM = '2026-08-22 / grup-tek-tik-18';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -2395,7 +2395,13 @@ async function tikTakibi(sock, jid, cekirdek) {
   if (!sock._tikIzlenen) sock._tikIzlenen = new Set();
   if (sock._tikIzlenen.size >= TIK_EN_FAZLA) return;
   sock._tikIzlenen.add(cekirdek);
-  let sonDurum = 2;   // gonderim onaylandi = tek tik
+  // ═══ SIFIRDAN BASLA (2026-08) ══════════════════════════════════
+  // server.js GRUP mesajlarini 1 (saat) ile kaydediyor:
+  //   const baslangicDurum = jid.endsWith('@g.us') ? 1 : 2;
+  // Yani grupta tek tik icin bile AYRI bir guncelleme gerekiyor.
+  // Eskiden 2'den basliyordum, "zaten tek tikteyiz" sanip o guncellemeyi
+  // hic gondermiyordum — mesajlar saatte cakili kaliyordu.
+  let sonDurum = 0;
   try {
     for (const bekle of TIK_TAKVIM) {
       await uyu(bekle);
@@ -2407,6 +2413,10 @@ async function tikTakibi(sock, jid, cekirdek) {
         dizi = Array.isArray(veri) ? veri : (veri && Array.isArray(veri.data) ? veri.data : []);
       } catch (_) { continue; }
       const bul = dizi.find((x) => kimlikCekirdegi(mesajKimligi(x, (x._data && x._data.key) || {})) === cekirdek);
+      if ((sock._tikDeneme = (sock._tikDeneme || 0) + 1) <= 8) {
+        log('tik sorgusu [' + cekirdek.slice(0, 12) + '] -> ' + dizi.length + ' mesaj okundu, '
+          + (bul ? 'mesaj bulundu ack=' + (bul.ack != null ? bul.ack : '(yok)') : 'MESAJ BULUNAMADI'));
+      }
       if (!bul) continue;
       const ackHam = (bul.ack != null) ? Number(bul.ack)
         : ((bul._data && bul._data.status != null) ? Number(bul._data.status) : null);
