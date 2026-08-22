@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / receipt-olayi-9';
+const MOTOR_SURUM = '2026-08-22 / dongu-kesildi-10';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -2915,6 +2915,19 @@ async function wahaBaglan() {
     if (/group\.v2\.update|group\.update/.test(tip)) {
       const jid = veri.id || veri.chatId || jidAl(veri);
       if (!jid) return;
+      // ═══ SERT HIZ SINIRI ══════════════════════════════════════════
+      // Bu olay saniyede yuzlerce gelebiliyor (olculdu: 3000 olayin
+      // 2866'si). Mesaj hattini tikamasin diye dakikada en fazla 120
+      // tanesi isleniyor, gerisi sayilip birakiliyor. Grup adlari zaten
+      // mesaj geldiginde ve panelden yenilendiginde aliniyor.
+      const dk = Math.floor(Date.now() / 60000);
+      if (sock._grupDk !== dk) { sock._grupDk = dk; sock._grupSayac = 0; sock._grupAtlanan = 0; }
+      sock._grupSayac = (sock._grupSayac || 0) + 1;
+      if (sock._grupSayac > 120) {
+        sock._grupAtlanan = (sock._grupAtlanan || 0) + 1;
+        if (sock._grupAtlanan === 1) log('grup olaylari cok yogun — bu dakika icin kisitlandi');
+        return;
+      }
       const g = veri.group || veri.groupMetadata || veri;
       const ad = String(g.Name || g.name || g.subject || g.Subject || '').trim();
       const acikHam = (g.TopicDeleted === true) ? ''
@@ -2928,30 +2941,15 @@ async function wahaBaglan() {
           + (ad ? '  | ad VAR: "' + ad.slice(0, 26) + '"' : '  | ad YOK'));
       }
 
-      // ═══ DEGISIKLIGI CANLI SOR (2026-08) ════════════════════════
-      // WhatsApp "bu grup degisti" diyor ama olayin ICINDE guncel
-      // aciklama her zaman gelmiyor (bicimi surume gore degisiyor).
-      // Olayin icerigine guvenmek yerine olayi TETIKLEYICI sayip
-      // gruba CANLI soruyoruz — aciklama degistigi an panele duser.
-      // Grup basina 10 saniyede en fazla bir sorgu; yigilma olmaz.
-      if (sock._bilinenAdlar && sock._bilinenAdlar.has(jid)) {
-        if (!sock._degisimSon) sock._degisimSon = new Map();
-        const son = sock._degisimSon.get(jid) || 0;
-        if (Date.now() - son > 10000) {
-          sock._degisimSon.set(jid, Date.now());
-          if (sock._degisimSon.size > 5000) sock._degisimSon.delete(sock._degisimSon.keys().next().value);
-          setTimeout(() => {
-            grupServisindenSor(jid, true).then((b) => {
-              if (!b || !b.subject) return;
-              const eskiAd = sock._bilinenAdlar.get(jid);
-              sock._bilinenAdlar.set(jid, b.subject);
-              sock.ev.emit('groups.update', [{ id: jid, subject: b.subject, desc: b.desc || '' }]);
-              if (eskiAd !== b.subject) log('grup adi degisti -> "' + b.subject.slice(0, 30) + '"');
-              else log('grup aciklamasi tazelendi: "' + String(b.desc || '').slice(0, 34) + '"');
-            }).catch(() => {});
-          }, 400);
-        }
-      }
+      // ═══ CANLI SORGU KALDIRILDI (2026-08) ═══════════════════════
+      // BURADA GERI SORMAK SISTEMI BOGUYORDU:
+      //   olay ozeti (3000 toplam): group.v2.update=2866, message=30
+      // "Grup degisti" olayi gelince gruba geri soruyordum; o sorgu yeni
+      // olay doguruyor, o da yeni sorgu... Olay hatti doluyor, MESAJLAR
+      // ve TIKLER sikisip kaliyordu (message sayisi 30'da cakili kaldi).
+      // Artik geri sormuyoruz: olayin ICINDE ad/aciklama varsa onu
+      // kullaniyoruz, yoksa gecip gidiyoruz. Aciklama zaten panelde
+      // "yenile" tusuna basildiginda canli cekiliyor.
 
       if (!ad && acikHam === undefined) { sock._bosGrupOlayi = (sock._bosGrupOlayi || 0) + 1; return; }
 
