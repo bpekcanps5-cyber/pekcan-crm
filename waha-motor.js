@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / tik-servisten-8';
+const MOTOR_SURUM = '2026-08-22 / receipt-olayi-9';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -2720,10 +2720,33 @@ async function wahaBaglan() {
       if (!jid.includes('@g.us')) {
         jid = jid.endsWith('@lid') ? (lidNumara.get(jid) || jid) : numaraTemizle(jid);
       }
-      sock.ev.emit('messages.update', [{
-        key: { id: kimligiEslestir(id), remoteJid: jid, fromMe: benim },
-        update: { status: ackCevir(veri.ack != null ? veri.ack : 1) },
-      }]);
+      // ═══ DOGRU OLAYI GONDER (2026-08) ═══════════════════════════
+      // server.js 'messages.update' ile gelen durumu BILEREK 2'de
+      // (tek tik) kirpiyor — cunku Baileys sifreleme bozukken bile
+      // "iletildi" diyebiliyormus, yaniltici tik cikiyormus.
+      // Cift tik ve mavi tik SADECE 'message-receipt.update' olayindan
+      // kabul ediliyor. Ben 'messages.update' yolluyordum, o yuzden
+      // tikler hep tek tikte takili kaliyordu.
+      // Artik: tek tik -> messages.update, teslim/okundu -> receipt.
+      const wahaAck = Number(veri.ack != null ? veri.ack : 1);
+      const anahtar = { id: kimligiEslestir(id), remoteJid: jid, fromMe: benim };
+      if (wahaAck >= 3) {
+        // okundu (ve dinlendi) -> mavi tik
+        sock.ev.emit('message-receipt.update', [{
+          key: anahtar,
+          receipt: { userJid: jid, receiptTimestamp: Math.floor(Date.now() / 1000),
+                     readTimestamp: Math.floor(Date.now() / 1000) },
+        }]);
+      } else if (wahaAck === 2) {
+        // teslim edildi -> cift tik
+        sock.ev.emit('message-receipt.update', [{
+          key: anahtar,
+          receipt: { userJid: jid, receiptTimestamp: Math.floor(Date.now() / 1000) },
+        }]);
+      } else {
+        // sunucuya ulasti -> tek tik
+        sock.ev.emit('messages.update', [{ key: anahtar, update: { status: ackCevir(wahaAck) } }]);
+      }
       return;
     }
 
@@ -2843,10 +2866,17 @@ async function wahaBaglan() {
           sock._sonAck.set(m.key.id, yeniDurum);
           if (sock._sonAck.size > 3000) sock._sonAck.delete(sock._sonAck.keys().next().value);
           if (onceki !== undefined) {   // ilk gelis zaten upsert ile gidiyor
-            sock.ev.emit('messages.update', [{
-              key: { id: m.key.id, remoteJid: m.key.remoteJid, fromMe: m.key.fromMe },
-              update: { status: yeniDurum },
-            }]);
+            const ak = { id: m.key.id, remoteJid: m.key.remoteJid, fromMe: m.key.fromMe };
+            const simdiSn = Math.floor(Date.now() / 1000);
+            if (yeniDurum >= 4) {
+              sock.ev.emit('message-receipt.update', [{ key: ak,
+                receipt: { userJid: ak.remoteJid, receiptTimestamp: simdiSn, readTimestamp: simdiSn } }]);
+            } else if (yeniDurum === 3) {
+              sock.ev.emit('message-receipt.update', [{ key: ak,
+                receipt: { userJid: ak.remoteJid, receiptTimestamp: simdiSn } }]);
+            } else {
+              sock.ev.emit('messages.update', [{ key: ak, update: { status: yeniDurum } }]);
+            }
             if ((sock._tikIzleme = (sock._tikIzleme || 0) + 1) <= 5) {
               const adlar = { 1: 'bekliyor', 2: 'tek tik', 3: 'cift tik', 4: 'mavi tik', 5: 'dinlendi' };
               log('tik ilerledi -> ' + (adlar[yeniDurum] || yeniDurum));
