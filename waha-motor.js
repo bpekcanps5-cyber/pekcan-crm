@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / tek-adres-7';
+const MOTOR_SURUM = '2026-08-22 / tik-servisten-8';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -1538,7 +1538,13 @@ function wahaSoketYap(secenek = {}) {
     if ((sock._gonderimIzleme = (sock._gonderimIzleme || 0) + 1) <= 5) {
       log('mesaj gonderildi #' + sock._gonderimIzleme + ' | WAHA kimlik: ' + String(id).slice(0, 46));
     }
-    return { key: { id, remoteJid: jid, fromMe: true }, message: icerik, status: 1 };
+    // ═══ TEK TIK ANINDA (2026-08) ════════════════════════════════════
+    // status 1 = saat (bekliyor). WAHA gonderimi ONAYLADIGINA gore mesaj
+    // sunucuya ulasmis demektir; Baileys olceginde bu 2 = TEK TIK.
+    // Teslim (cift tik) ve okundu (mavi tik) bildirimleri grup
+    // servisinden geliyor — WAHA onlari hic gondermiyor (olculdu: 3800
+    // olayda message.ack sifir).
+    return { key: { id, remoteJid: jid, fromMe: true }, message: icerik, status: 2 };
   };
 
   // ── 2) OKUNDU ISARETLE ──

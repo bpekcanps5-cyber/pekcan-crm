@@ -41,7 +41,10 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"bytes"
+	"net/url"
 )
 
 type uye struct {
@@ -74,6 +77,63 @@ var (
 	onbellekSuresi = 60 * time.Second
 )
 
+// ═══════════════════════════════════════════════════════════════════
+//  TIK (TESLIM/OKUNDU) BILDIRIMI  —  WAHA bunu vermiyor
+//  -------------------------------------------------------------------
+//  OLCUM: 3800 olayda 'message.ack' SIFIR. WAHA olay listesine yaziyor
+//  ama tik olayini hic gondermiyor. Bu yuzden panelde tek tik / cift tik
+//  hic degismiyordu.
+//
+//  Bu servis zaten WhatsApp'a bagli ve teslim bildirimlerini
+//  (events.Receipt) goruyor. Onlari WAHA'nin bicimide ('message.ack')
+//  kopruye iletiyoruz — koprude tek satir degismiyor, oradaki mevcut
+//  tik isleyicisi calisiyor.
+//
+//  WhatsApp -> WAHA olcegi:
+//     teslim edildi      -> ack 2  (cift tik)
+//     okundu / kendinden -> ack 3  (mavi tik)
+//     dinlendi (ses)     -> ack 4
+// ═══════════════════════════════════════════════════════════════════
+var (
+	kopruAdres = ""
+	kopruOturum = ""
+	tikSayaci  = 0
+)
+
+func tikGonder(mesajID, sohbet string, ack int, benim bool) {
+	if kopruAdres == "" {
+		return
+	}
+	govde := map[string]any{
+		"event":   "message.ack",
+		"session": kopruOturum,
+		"payload": map[string]any{
+			"id":     mesajID,
+			"chatId": sohbet,
+			"fromMe": benim,
+			"ack":    ack,
+		},
+	}
+	ham, err := json.Marshal(govde)
+	if err != nil {
+		return
+	}
+	istemciHTTP := &http.Client{Timeout: 8 * time.Second}
+	r, err := istemciHTTP.Post(kopruAdres, "application/json", bytes.NewReader(ham))
+	if err != nil {
+		if tikSayaci < 3 {
+			fmt.Println("tik iletilemedi:", err)
+		}
+		tikSayaci++
+		return
+	}
+	r.Body.Close()
+	tikSayaci++
+	if tikSayaci <= 5 {
+		fmt.Printf("tik iletildi #%d: %s ack=%d\n", tikSayaci, mesajID, ack)
+	}
+}
+
 func main() {
 	port := os.Getenv("GRUP_PORT")
 	if port == "" {
@@ -98,7 +158,38 @@ func main() {
 		return
 	}
 
+	kopruAdres = os.Getenv("KOPRU_URL")
+	if kopruAdres == "" {
+		kopruAdres = "http://127.0.0.1:3210/olay/0"
+	}
+	kopruOturum = os.Getenv("KOPRU_OTURUM")
+	if kopruOturum == "" {
+		kopruOturum = "test"
+	}
+	if _, err := url.Parse(kopruAdres); err != nil {
+		fmt.Println("KOPRU_URL hatali:", err)
+	}
+
 	istemci = whatsmeow.NewClient(cihaz, kayit)
+
+	// Teslim/okundu bildirimlerini kopruye ilet
+	istemci.AddEventHandler(func(olay interface{}) {
+		v, tamam := olay.(*events.Receipt)
+		if !tamam {
+			return
+		}
+		ack := 2 // teslim edildi -> cift tik
+		if v.Type == types.ReceiptTypeRead || v.Type == types.ReceiptTypeReadSelf {
+			ack = 3 // okundu -> mavi tik
+		} else if v.Type == types.ReceiptTypePlayed {
+			ack = 4
+		}
+		sohbet := v.Chat.String()
+		for _, mid := range v.MessageIDs {
+			tikGonder(string(mid), sohbet, ack, true)
+		}
+	})
+
 	if err := istemci.Connect(); err != nil {
 		fmt.Println("baglanilamadi:", err)
 		return
@@ -120,8 +211,10 @@ func main() {
 
 	http.HandleFunc("/saglik", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
-			"bagli":    istemci.IsConnected(),
-			"onbellek": len(onbellek),
+			"bagli":       istemci.IsConnected(),
+			"onbellek":    len(onbellek),
+			"tikGonderim": tikSayaci,
+			"kopru":       kopruAdres,
 		})
 	})
 
