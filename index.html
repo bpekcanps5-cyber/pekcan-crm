@@ -11800,6 +11800,10 @@ function openInfo(){
   html+='<div class="ih-av'+(c.isGroup?' group':'')+'"'+(c.avatar?' onclick="profilFotoBuyut()"':'')+' '+heroAv+'>'+(c.avatar?'':(c.isGroup?groupSvg():initials(dispName)))+'</div>';
   html+='<div class="ih-name">'+esc(dispName)+'</div>';
   html+='<div class="ih-sub">'+(c.isGroup?((c.memberCount||c.members?.length||0)+' üye'):(isLidChat?'numara gizli':'+'+esc(num)))+'</div>';
+  // Uye listesi henuz cekilmediyse: ELLE cekme tusu
+  if(c.isGroup && (!c.members || !c.members.length)){
+    html+='<button class="grup-foto-btn" id="uyeCekBtn" onclick="uyeleriCek()" title="Grup üyelerini ve numaralarını WhatsApp\'tan çek">👥 Üyeleri ve numaraları çek</button>';
+  }
   // GRUP ise: fotograf degistir butonu (sadece bagli iken)
   if(c.isGroup && connected){
     html+='<button class="grup-foto-btn" onclick="grupFotoSec()" title="Grup fotoğrafını değiştir">📷 Fotoğrafı Değiştir</button>';
@@ -11857,11 +11861,30 @@ function openInfo(){
   if(c.isGroup && c.members?.some(mb=>mb.avatar===undefined)){
     ws.send(JSON.stringify({type:'getMemberAvatars', jid:activeJid}));
   }
-  // grup uye listesi BOSSA: sadece UYELERI iste (mesajlara dokunma!)
-  if(c.isGroup && (!c.members || !c.members.length) && connected){
-    ws.send(JSON.stringify({type:'getGroupMembers', jid:activeJid}));
-  }
+  // ═══ UYELER ARTIK OTOMATIK CEKILMIYOR (2026-08) ══════════════════
+  // Karar: grup adi otomatik gelsin, ACIKLAMA ve NUMARALAR tusla gelsin.
+  // Her grup bilgisi acilisinda uye listesi cekmek WhatsApp'i bosuna
+  // yoruyordu; o guc mesajlara ayrilsin. Bir kere cekilen liste zaten
+  // kayitli kaliyor, bir daha sorulmuyor.
 }
+// ═══ UYELERI ELLE CEK ═══════════════════════════════════════════════
+// Otomatik cekim kaldirildigi icin bu tusla istenildiginde cekilir.
+// Bir kere cekildikten sonra kayitli kalir, tekrar sorulmaz.
+function uyeleriCek(){
+  if(!activeJid || !connected){ showToast('Bağlantı yok.'); return; }
+  const b=document.getElementById('uyeCekBtn');
+  if(b){ b.textContent='⏳ Çekiliyor…'; b.style.pointerEvents='none'; }
+  try{ ws.send(JSON.stringify({type:'getGroupMembers', jid:activeJid})); }
+  catch(e){ showToast('Gönderilemedi, tekrar dene.'); if(b){ b.textContent='👥 Üyeleri ve numaraları çek'; b.style.pointerEvents=''; } return; }
+  setTimeout(()=>{
+    const bb=document.getElementById('uyeCekBtn');
+    if(bb && bb.textContent.includes('Çekiliyor')){
+      bb.textContent='👥 Üyeleri ve numaraları çek'; bb.style.pointerEvents='';
+      showToast('⚠️ Cevap gelmedi, tekrar dene');
+    }
+  }, 25000);
+}
+
 // Kisiye ozel isim kaydet (panelde gosterilir)
 function editContactName(){
   const c=chats[activeJid]; if(!c)return;

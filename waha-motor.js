@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / qr-durumsuz-26';
+const MOTOR_SURUM = '2026-08-22 / hafif-otomatik-28';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -1683,7 +1683,24 @@ function wahaSoketYap(secenek = {}) {
   //    4) sohbet listesi      -> ilk sayfa taramasi (son care)
   //  Ad nereden gelirse gelsin uyeler ayrica tamamlanmaya calisilir.
   // ═══════════════════════════════════════════════════════════════
-  sock.groupMetadata = async (jid) => {
+  // ═══════════════════════════════════════════════════════════════
+  //  groupMetadata(jid, tam)
+  //  -------------------------------------------------------------
+  //  tam=false (VARSAYILAN, otomatik yollar): SADECE AD.
+  //     Ad zaten biliniyorsa AG ISTEGI HIC YAPILMAZ.
+  //  tam=true (panel tuslari): ad + aciklama + uyeler, canli sorgu.
+  //
+  //  NEDEN: aciklama ve uye listesi her mesajda otomatik cekilince
+  //  WhatsApp'a bosuna yuk biniyor ve MESAJ TRAFIGI zarar goruyordu.
+  //  Kullanicinin karari: "grup adi otomatik gelsin, aciklama ve
+  //  numaralar tusla gelsin". Bir kere ogrenilen ad bir daha sorulmaz.
+  // ═══════════════════════════════════════════════════════════════
+  sock.groupMetadata = async (jid, tam) => {
+    // HAFIF YOL: adi biliyorsak hicbir istek atma
+    if (!tam && sock._bilinenAdlar && sock._bilinenAdlar.get(jid)) {
+      return { id: jid, subject: sock._bilinenAdlar.get(jid), desc: undefined,
+        participants: [], size: 0, owner: null, creation: 0 };
+    }
     const onb = _grupOnbellek.get(jid);
     if (onb && Date.now() - onb.ts < (onb.sure || GRUP_ONBELLEK_MS)) {
       // Onbellekteki kayit BOS ise de hata firlatmaliyiz — yoksa dongu
@@ -1701,7 +1718,7 @@ function wahaSoketYap(secenek = {}) {
         // ── 0) GRUP SERVISI (canli sorgu) ──
         // taze=1: servisin onbellegini de atla. Panel "yenile" dediginde
         // gercekten WhatsApp'a sorulsun, eski aciklama donmesin.
-        b = await grupServisindenSor(jid, true);
+        b = await grupServisindenSor(jid, !!tam);
         if (b && b.subject) {
           if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
           sock._bilinenAdlar.set(jid, b.subject);
@@ -1977,6 +1994,7 @@ function wahaSoketYap(secenek = {}) {
     ilkListeDurdur(sock);   // bekleyen liste denemeleri bosuna calismasin
     durumBekcisiDurdur(sock);
     if (sock._akisBekci) { clearInterval(sock._akisBekci); sock._akisBekci = null; }
+    mesajTaramasiDurdur(sock);
   };
 
   return sock;
@@ -2254,9 +2272,10 @@ async function grupBilgisiniGetir(sock, jid) {
   if (canli) {
     if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
     sock._bilinenAdlar.set(jid, canli.subject);
-    sock.ev.emit('groups.update', [{ id: jid, subject: canli.subject, desc: canli.desc }]);
-    log('mesaj dustu -> "' + canli.subject.slice(0, 32) + '"'
-      + (canli.desc ? ' (aciklama var)' : '') + ' | ' + canli.size + ' uye');
+    // SADECE AD yayinlanir — aciklama ve uye listesi panel tuslariyla
+    // gelir. Otomatik gondermek WhatsApp'i bosuna yoruyordu.
+    sock.ev.emit('groups.update', [{ id: jid, subject: canli.subject }]);
+    log('mesaj dustu -> grup adi: "' + canli.subject.slice(0, 32) + '"');
     return;
   }
   const oku = async () => {
@@ -2275,9 +2294,10 @@ async function grupBilgisiniGetir(sock, jid) {
   if (!b) return;
   if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
   sock._bilinenAdlar.set(jid, b.subject);
-  sock.ev.emit('groups.update', [{ id: jid, subject: b.subject, desc: b.desc || '' }]);
-  log('mesaj dustu -> "' + b.subject.slice(0, 32) + '"'
-    + (b.desc ? ' (aciklama var)' : '') + (b.participants.length ? ' | ' + b.participants.length + ' uye' : ''));
+  // SADECE AD yayinlanir. Aciklamayi buradan gondermiyoruz ki panel
+  // "aciklama bos" diye kaydetmesin — o tusla gelecek.
+  sock.ev.emit('groups.update', [{ id: jid, subject: b.subject }]);
+  log('mesaj dustu -> grup adi: "' + b.subject.slice(0, 32) + '"');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2559,6 +2579,12 @@ function kancaSunucusuAc() {
       } else if (_olaySayaci % 200 === 0) {
         log('olay ozeti (' + _olaySayaci + ' toplam): '
           + [..._olayTipleri].map(([t, n]) => t + '=' + n).join(' '));
+        // Mesaj disi olaylar kuyrugu doldurursa MESAJLAR KAYBOLUYOR.
+        // Oran bozulursa acikca uyar ki bir daha sessizce yasanmasin.
+        const mesajSayisi = (_olayTipleri.get('message') || 0) + (_olayTipleri.get('message.any') || 0);
+        if (_olaySayaci > 600 && mesajSayisi < _olaySayaci * 0.05) {
+          log('⚠ olaylarin %95\'i mesaj DISI — kuyruk tikaniyor olabilir, mesaj kaybi riski');
+        }
       }
     });
   });
@@ -2571,9 +2597,29 @@ function kancaSunucusuAc() {
 }
 
 // Oturumu hazirla: yoksa olustur, webhook'u bizim kopruye yonlendir
-const KANCA_OLAYLARI = ['message', 'message.any', 'message.ack', 'message.revoked', 'message.reaction',
-  'session.status', 'state.change', 'group.v2.update', 'group.v2.participants',
-  'presence.update', 'chat.archive'];
+// ═══════════════════════════════════════════════════════════════════
+//  ABONE OLDUGUMUZ OLAYLAR  —  MESAJ ONCELIKLI (2026-08)
+//  -------------------------------------------------------------------
+//  OLCUM (gercek log): 3000 olayin 2884'u 'group.v2.update', sadece 5'i
+//  'message' idi. WAHA olaylari SIRAYLA gonderiyor; binlerce grup
+//  guncellemesi kuyrugu tikiyor ve MESAJLAR ARKADA KALIP KAYBOLUYORDU.
+//  Panelde "fotograf geldi ama sonraki mesajlar yok" tablosunun sebebi
+//  buydu — hem de tum gruplarda.
+//
+//  KALDIRILANLAR ve neden guvenli:
+//    group.v2.update / group.v2.participants
+//      -> Grup adi/aciklamasi zaten MESAJ GELDIGINDE grup servisinden
+//         canli cekiliyor; panelin "yenile" tusu da canli soruyor.
+//         Bu olaylara ihtiyacimiz yok, sadece kuyrugu dolduruyorlardi.
+//    presence.update ("yaziyor...")
+//      -> Sik gelen, degeri dusuk bir bildirim. Mesaj kaybina deger mez.
+//         Geri istenirse .env: WAHA_PRESENCE=acik
+//
+//  MESAJ, TIK, SILME, TEPKI ve OTURUM olaylari AYNEN duruyor.
+// ═══════════════════════════════════════════════════════════════════
+const KANCA_OLAYLARI = ['message', 'message.any', 'message.ack', 'message.revoked',
+  'message.reaction', 'session.status', 'state.change', 'chat.archive']
+  .concat((process.env.WAHA_PRESENCE || '').toLowerCase() === 'acik' ? ['presence.update'] : []);
 
 async function oturumHazirla() {
   // Her adaya AYRI YOL: /olay/0, /olay/1 ... boylece olay gelince
@@ -2751,6 +2797,7 @@ function qrTakibiBaslat(sock) {
         durumBekcisiBaslat(sock);   // baglantiyi izlemeye devam et
         baglantiBasladiYaz();
         setTimeout(() => { kopuklukTelafisi(sock).catch(() => {}); }, 4000);
+        mesajTaramasiBaslat(sock);
         const ben = s.me || s.user || {};
         sock.user = benKur(ben);
         sock.ws.isOpen = true;
@@ -2853,6 +2900,80 @@ function qrTakibiBaslat(sock) {
   sock._qrHizliBitis = Date.now() + 90000;   // acilista da hizli basla
   temposunuAyarla();
   tur();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  MESAJ TARAYICI  —  "hicbir mesaj kaybolmasin" garantisi
+//  -------------------------------------------------------------------
+//  Kanca (webhook) tek seferliktir: WAHA bir olayi gonderemezse o mesaj
+//  SONSUZA KADAR kaybolur. Bugun panelde "fotograf geldi ama sonraki
+//  mesajlar yok" tablosunun sebebi buydu.
+//
+//  Bu tarayici periyodik olarak EN SON KONUSULAN sohbetleri okuyup
+//  panelde olmayan mesajlari tamamlar. Kanca calisiyorsa hicbir sey
+//  bulmaz (bedava); kanca bir sey kacirdiysa TELAFI EDER.
+//
+//  Yuk: dakikada bir tur, turda en fazla 25 sohbet = ~25 kucuk istek.
+//  Hepsi yerel WAHA'ya gider, WhatsApp'i yormaz.
+//  Kapatmak icin .env: WAHA_TARAYICI=kapali
+// ═══════════════════════════════════════════════════════════════════
+const TARAYICI_MOD = (process.env.WAHA_TARAYICI || 'acik').toLowerCase();
+const TARAYICI_ARALIK_MS = Number(process.env.WAHA_TARAYICI_ARALIK_MS) || 60000;
+const TARAYICI_SOHBET = 25;
+
+async function mesajTaramasi(sock) {
+  if (sock._kapali || sock._taramaCalisiyor) return;
+  sock._taramaCalisiyor = true;
+  try {
+    let sohbetler = [];
+    try {
+      const veri = await istek('/api/' + WAHA_OTURUM + '/chats?limit=' + TARAYICI_SOHBET + '&offset=0',
+        { zamanAsimiMs: 20000 });
+      sohbetler = Array.isArray(veri) ? veri : (veri && Array.isArray(veri.data) ? veri.data : []);
+    } catch (_) { return; }
+    if (!sohbetler.length) return;
+
+    const eksikler = [];
+    for (const c of sohbetler) {
+      if (sock._kapali) break;
+      const jid = jidAl(c);
+      if (!jid || !jid.includes('@')) continue;
+      try {
+        const ham = await istek('/api/' + WAHA_OTURUM + '/chats/' + jid
+          + '/messages?limit=20&downloadMedia=false', { zamanAsimiMs: 12000 });
+        const dizi = Array.isArray(ham) ? ham : (ham && Array.isArray(ham.data) ? ham.data : []);
+        for (const w of dizi) {
+          const m = baileysMesaji(w);
+          if (!m || !m.key.id) continue;
+          if (!m.key.remoteJid) m.key.remoteJid = jid;
+          if (sock._sonMesajlar.has(m.key.id)) continue;   // zaten panelde
+          sock._sonMesajlar.add(m.key.id);
+          if (sock._sonMesajlar.size > 5000) {
+            sock._sonMesajlar.delete(sock._sonMesajlar.values().next().value);
+          }
+          eksikler.push(m);
+        }
+      } catch (_) { /* bu sohbet okunamadi, digerine gec */ }
+      await uyu(120);
+    }
+    if (eksikler.length) {
+      sock.ev.emit('messages.upsert', { type: 'notify', messages: eksikler });
+      log('mesaj tarayici: ' + eksikler.length + ' EKSIK mesaj bulundu ve panele eklendi');
+      for (const m of eksikler) grupAdiniTani(sock, m.key.remoteJid);
+    }
+  } finally {
+    sock._taramaCalisiyor = false;
+  }
+}
+
+function mesajTaramasiBaslat(sock) {
+  if (TARAYICI_MOD === 'kapali' || sock._taramaTimer) return;
+  sock._taramaTimer = setInterval(() => { mesajTaramasi(sock).catch(() => {}); }, TARAYICI_ARALIK_MS);
+  setTimeout(() => { mesajTaramasi(sock).catch(() => {}); }, 20000);   // ilk tur
+  log('mesaj tarayici kuruldu (' + Math.round(TARAYICI_ARALIK_MS / 1000) + 'sn) — kanca bir sey kacirirsa telafi eder');
+}
+function mesajTaramasiDurdur(sock) {
+  if (sock._taramaTimer) { clearInterval(sock._taramaTimer); sock._taramaTimer = null; }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3000,6 +3121,7 @@ function durumBekcisiBaslat(sock) {
       _kopmaZamani = Date.now();
       durumBekcisiDurdur(sock);
     if (sock._akisBekci) { clearInterval(sock._akisBekci); sock._akisBekci = null; }
+    mesajTaramasiDurdur(sock);
       sock.ws.isOpen = false;
       sock._qrHizliBitis = Date.now() + 90000;
       sock.ev.emit('connection.update', {
@@ -3049,99 +3171,12 @@ async function wahaBaglan() {
   sock._olayIsle = (olay) => {
     const tip = String(olay.event || olay.type || '');
     const veri = olay.payload || olay.data || {};
-    if (olay.session && olay.session !== WAHA_OTURUM) return;
 
-    // 1) BAGLANTI DURUMU
-    if (/session\.status|state\.change/.test(tip)) {
-      const durum = String(veri.status || veri.state || '').toUpperCase();
-      if (/WORKING|CONNECTED|OPEN/.test(durum)) {
-        sock.ws.isOpen = true;
-        if (!sock.user) {
-          istek('/api/sessions/' + WAHA_OTURUM).then((s) => {
-            const ben = s.me || s.user || {};
-            sock.user = benKur(ben);
-            qrTakibiDurdur(sock);
-            sock.ev.emit('connection.update', { connection: 'open' });
-          }).catch(() => sock.ev.emit('connection.update', { connection: 'open' }));
-        } else {
-          sock.ev.emit('connection.update', { connection: 'open' });
-        }
-      } else if (/SCAN_QR|STARTING/.test(durum)) {
-        if (veri.qr || veri.qrCode) sock.ev.emit('connection.update', { qr: veri.qr || veri.qrCode });
-        else sock.ev.emit('connection.update', { connection: 'connecting' });
-        qrTakibiBaslat(sock);   // QR uretilene kadar takip et
-      } else if (/STOPPED|FAILED|DISCONNECT/.test(durum)) {
-        sock.ws.isOpen = false;
-        // WAHA oturumu gercekten sonlandiysa 401 (loggedOut), degilse 428
-        const kod = /LOGGED_OUT|UNPAIRED/.test(durum) ? 401 : 428;
-        const hata = new Error('WAHA durum: ' + durum);
-        hata.output = { statusCode: kod, payload: { message: durum } };
-        sock.ev.emit('connection.update', { connection: 'close', lastDisconnect: { error: hata } });
-      }
-      return;
-    }
-
-    // 2) MESAJ DURUMU (tik)
-    if (/message\.ack/.test(tip)) {
-      // Ilk 3 tik olayinin HAM icerigini yaz — alan adlarini gorelim
-      if ((sock._ackIzleme = (sock._ackIzleme || 0) + 1) <= 3) {
-        log('tik olayi #' + sock._ackIzleme + ' ham: ' + JSON.stringify(veri).slice(0, 220));
-      }
-      const id = (veri.id && veri.id._serialized) || veri.id;
-      // ═══ DOGRU SOHBETI SEC (2026-08) ════════════════════════════
-      // ESKIDEN: 'chatId || from || to' deniyordu. Giden mesajlarda
-      // 'from' BIZIM numaramiz oluyor -> tik guncellemesi olmayan bir
-      // sohbete gidiyor ve panelde tik HIC degismiyordu.
-      const benim = !!(veri.fromMe != null ? veri.fromMe : true);
-      let jid = veri.chatId || veri.chatID
-        || (benim ? (veri.to || veri.from) : (veri.from || veri.to));
-      if (!id || !jid) return;
-      jid = String(jid);
-      if (!jid.includes('@g.us')) {
-        jid = jid.endsWith('@lid') ? (lidNumara.get(jid) || jid) : numaraTemizle(jid);
-      }
-      // ═══ DOGRU OLAYI GONDER (2026-08) ═══════════════════════════
-      // server.js 'messages.update' ile gelen durumu BILEREK 2'de
-      // (tek tik) kirpiyor — cunku Baileys sifreleme bozukken bile
-      // "iletildi" diyebiliyormus, yaniltici tik cikiyormus.
-      // Cift tik ve mavi tik SADECE 'message-receipt.update' olayindan
-      // kabul ediliyor. Ben 'messages.update' yolluyordum, o yuzden
-      // tikler hep tek tikte takili kaliyordu.
-      // Artik: tek tik -> messages.update, teslim/okundu -> receipt.
-      const wahaAck = Number(veri.ack != null ? veri.ack : 1);
-      const anahtar = { id: kimligiEslestir(id), remoteJid: jid, fromMe: benim };
-      makbuzYolla(sock, anahtar, ackCevir(wahaAck));
-      return;
-    }
-
-    // 3) MESAJ SILINDI
-    if (/message\.revoked/.test(tip)) {
-      const hedef = veri.before || veri.after || veri;
-      const id = (hedef.id && hedef.id._serialized) || hedef.id;
-      const jid = hedef.chatId || hedef.from;
-      if (id && jid) {
-        sock.ev.emit('messages.update', [{ key: { id, remoteJid: jid }, update: { messageStubType: 1 } }]);
-      }
-      return;
-    }
-
-    // 4) TEPKI (emoji)
-    if (/message\.reaction/.test(tip)) {
-      const hedefId = (veri.reaction && veri.reaction.messageId) || veri.messageId;
-      const jid = veri.chatId || veri.from;
-      if (hedefId && jid) {
-        sock.ev.emit('messages.upsert', {
-          type: 'notify',
-          messages: [{
-            key: { remoteJid: jid, fromMe: !!veri.fromMe, id: 'r_' + Date.now() },
-            message: { reactionMessage: { key: { id: hedefId, remoteJid: jid }, text: (veri.reaction && veri.reaction.text) || '' } },
-            messageTimestamp: Math.floor(Date.now() / 1000),
-          }],
-        });
-      }
-      return;
-    }
-
+    // ═══ MESAJ EN ONCE ISLENIR (2026-08) ══════════════════════════
+    // Kullanicinin en kritik istegi: "mesajlarin hepsi gelsin".
+    // Bu dal artik EN BASTA; diger olaylar (tik, grup, oturum) mesajin
+    // onune gecemez. Mesaj isleme yolunda agir is YOK — grup adi cekme
+    // gibi seyler arka plana atiliyor.
     // 5) YENI MESAJ
     if (/^message(\.any)?$/.test(tip)) {
       const m = baileysMesaji(veri);
@@ -3240,6 +3275,99 @@ async function wahaBaglan() {
       // yayiyoruz — kullanicinin istedigi "dustukce yenilensin" davranisi.
       // Sadece daha once bakilmamis gruplar icin, grup basina TEK sefer.
       grupAdiniTani(sock, m.key.remoteJid);
+      return;
+    }
+
+    if (olay.session && olay.session !== WAHA_OTURUM) return;
+
+    // 1) BAGLANTI DURUMU
+    if (/session\.status|state\.change/.test(tip)) {
+      const durum = String(veri.status || veri.state || '').toUpperCase();
+      if (/WORKING|CONNECTED|OPEN/.test(durum)) {
+        sock.ws.isOpen = true;
+        if (!sock.user) {
+          istek('/api/sessions/' + WAHA_OTURUM).then((s) => {
+            const ben = s.me || s.user || {};
+            sock.user = benKur(ben);
+            qrTakibiDurdur(sock);
+            sock.ev.emit('connection.update', { connection: 'open' });
+          }).catch(() => sock.ev.emit('connection.update', { connection: 'open' }));
+        } else {
+          sock.ev.emit('connection.update', { connection: 'open' });
+        }
+      } else if (/SCAN_QR|STARTING/.test(durum)) {
+        if (veri.qr || veri.qrCode) sock.ev.emit('connection.update', { qr: veri.qr || veri.qrCode });
+        else sock.ev.emit('connection.update', { connection: 'connecting' });
+        qrTakibiBaslat(sock);   // QR uretilene kadar takip et
+      } else if (/STOPPED|FAILED|DISCONNECT/.test(durum)) {
+        sock.ws.isOpen = false;
+        // WAHA oturumu gercekten sonlandiysa 401 (loggedOut), degilse 428
+        const kod = /LOGGED_OUT|UNPAIRED/.test(durum) ? 401 : 428;
+        const hata = new Error('WAHA durum: ' + durum);
+        hata.output = { statusCode: kod, payload: { message: durum } };
+        sock.ev.emit('connection.update', { connection: 'close', lastDisconnect: { error: hata } });
+      }
+      return;
+    }
+
+    // 2) MESAJ DURUMU (tik)
+    if (/message\.ack/.test(tip)) {
+      // Ilk 3 tik olayinin HAM icerigini yaz — alan adlarini gorelim
+      if ((sock._ackIzleme = (sock._ackIzleme || 0) + 1) <= 3) {
+        log('tik olayi #' + sock._ackIzleme + ' ham: ' + JSON.stringify(veri).slice(0, 220));
+      }
+      const id = (veri.id && veri.id._serialized) || veri.id;
+      // ═══ DOGRU SOHBETI SEC (2026-08) ════════════════════════════
+      // ESKIDEN: 'chatId || from || to' deniyordu. Giden mesajlarda
+      // 'from' BIZIM numaramiz oluyor -> tik guncellemesi olmayan bir
+      // sohbete gidiyor ve panelde tik HIC degismiyordu.
+      const benim = !!(veri.fromMe != null ? veri.fromMe : true);
+      let jid = veri.chatId || veri.chatID
+        || (benim ? (veri.to || veri.from) : (veri.from || veri.to));
+      if (!id || !jid) return;
+      jid = String(jid);
+      if (!jid.includes('@g.us')) {
+        jid = jid.endsWith('@lid') ? (lidNumara.get(jid) || jid) : numaraTemizle(jid);
+      }
+      // ═══ DOGRU OLAYI GONDER (2026-08) ═══════════════════════════
+      // server.js 'messages.update' ile gelen durumu BILEREK 2'de
+      // (tek tik) kirpiyor — cunku Baileys sifreleme bozukken bile
+      // "iletildi" diyebiliyormus, yaniltici tik cikiyormus.
+      // Cift tik ve mavi tik SADECE 'message-receipt.update' olayindan
+      // kabul ediliyor. Ben 'messages.update' yolluyordum, o yuzden
+      // tikler hep tek tikte takili kaliyordu.
+      // Artik: tek tik -> messages.update, teslim/okundu -> receipt.
+      const wahaAck = Number(veri.ack != null ? veri.ack : 1);
+      const anahtar = { id: kimligiEslestir(id), remoteJid: jid, fromMe: benim };
+      makbuzYolla(sock, anahtar, ackCevir(wahaAck));
+      return;
+    }
+
+    // 3) MESAJ SILINDI
+    if (/message\.revoked/.test(tip)) {
+      const hedef = veri.before || veri.after || veri;
+      const id = (hedef.id && hedef.id._serialized) || hedef.id;
+      const jid = hedef.chatId || hedef.from;
+      if (id && jid) {
+        sock.ev.emit('messages.update', [{ key: { id, remoteJid: jid }, update: { messageStubType: 1 } }]);
+      }
+      return;
+    }
+
+    // 4) TEPKI (emoji)
+    if (/message\.reaction/.test(tip)) {
+      const hedefId = (veri.reaction && veri.reaction.messageId) || veri.messageId;
+      const jid = veri.chatId || veri.from;
+      if (hedefId && jid) {
+        sock.ev.emit('messages.upsert', {
+          type: 'notify',
+          messages: [{
+            key: { remoteJid: jid, fromMe: !!veri.fromMe, id: 'r_' + Date.now() },
+            message: { reactionMessage: { key: { id: hedefId, remoteJid: jid }, text: (veri.reaction && veri.reaction.text) || '' } },
+            messageTimestamp: Math.floor(Date.now() / 1000),
+          }],
+        });
+      }
       return;
     }
 
@@ -3364,6 +3492,7 @@ async function wahaBaglan() {
       durumBekcisiBaslat(sock);
       baglantiBasladiYaz();
       setTimeout(() => { kopuklukTelafisi(sock).catch(() => {}); }, 4000);
+      mesajTaramasiBaslat(sock);
       setImmediate(() => sock.ev.emit('connection.update', { connection: 'open' }));
     } else {
       setImmediate(() => sock.ev.emit('connection.update', { connection: 'connecting' }));

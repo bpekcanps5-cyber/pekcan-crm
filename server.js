@@ -4207,7 +4207,7 @@ wss.on('connection', (ws) => {
             (async () => {
               const s = SOCK;
               let meta = null;
-              try { meta = await Promise.race([s.groupMetadata(msg.jid), new Promise((res) => setTimeout(() => res(null), 8000))]); } catch (_) {}
+              try { meta = await Promise.race([s.groupMetadata(msg.jid, true), new Promise((res) => setTimeout(() => res(null), 8000))]); } catch (_) {}
               // desc boş/yoksa TAZE toplu çağrıdan tamamla (60sn önbelleği ATLA -> zorla=true)
               if (!meta || meta.desc === undefined || meta.desc === null) {
                 try {
@@ -4533,7 +4533,7 @@ wss.on('connection', (ws) => {
         if (chat && chat.isGroup) {
           try {
             const meta = await Promise.race([
-              SOCK.groupMetadata(msg.jid),
+              SOCK.groupMetadata(msg.jid, true),   // uye listesi -> TAM bilgi
               new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000)),
             ]);
             if (meta && meta.participants) {
@@ -4570,7 +4570,7 @@ wss.on('connection', (ws) => {
             let meta = null;
             try {
               meta = await Promise.race([
-                SOCK.groupMetadata(msg.jid),
+                SOCK.groupMetadata(msg.jid, true),
                 new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000)),
               ]);
             } catch (e2) {
@@ -5225,8 +5225,16 @@ wss.on('connection', (ws) => {
         const oncekiSayi = (C3 && C3.size) || 0;
         if (C3 && C3.clear) C3.clear();
         avatarCache.clear(); groupMetaCache.clear();
+        // ═══ BELLEKTEKI ISIM HARITALARI DA TEMIZLENMELI ══════════════
+        // Sohbetleri silsek bile bu haritalar dolu kalirsa panel kisileri
+        // yeniden uretebiliyor ("kisileri silmiyor" sikayeti). Bunlar
+        // sadece BU SUREÇTE tutulan onbellek; Supabase'deki ortak
+        // 'contacts' tablosuna DOKUNULMUYOR (canli hatla ortak).
         try { if (typeof grupAdlari !== 'undefined' && grupAdlari.clear) grupAdlari.clear(); } catch (_) {}
         try { if (typeof chatLabels !== 'undefined' && chatLabels.clear) chatLabels.clear(); } catch (_) {}
+        try { if (typeof savedContacts !== 'undefined' && savedContacts.clear) savedContacts.clear(); } catch (_) {}
+        try { if (typeof contactNames !== 'undefined' && contactNames.clear) contactNames.clear(); } catch (_) {}
+        try { if (typeof avatarCache !== 'undefined' && avatarCache.clear) avatarCache.clear(); } catch (_) {}
         console.log(`   ↳ bellekten ${oncekiSayi} sohbet silindi`);
         let db_ = { chats: 0, messages: 0, gruplar: 0, kisiler: 0 };
         if (db.isReady() && db.wipeLine) {
@@ -6334,10 +6342,22 @@ async function aciklamaMotorTur() {
 // bu tarama sadece o olayin kacirdiklarini toplayan yedek yoldur.
 // 20 saniyede bir calisiyordu -> 60 saniye. Ilk dolumdan sonra zaten
 // cogu grubun aciklamasi dolu oluyor ve atlaniyor; sik calismasinin faydasi yok.
-setInterval(() => {
-  if (!arkaPlanCalisabilirMi()) return;
-  aciklamaMotorTur().catch(() => {});
-}, 60 * 1000);
+// ═══ OTOMATIK ACIKLAMA TARAMASI KAPATILABILIR (2026-08) ════════════
+// Kullanici karari: "grup adi otomatik gelsin, ACIKLAMA ve NUMARALAR
+// tusla gelsin — otomatik cekmek bosa kurek, WhatsApp gucunu MESAJLARA
+// harcayalim". Aciklamanin zaten panelde 'Yenile' tusu var.
+// WAHA motorunda varsayilan KAPALI; Baileys'te eskisi gibi acik kalir.
+// Geri acmak icin .env:  ACIKLAMA_MOTORU=acik
+const _aciklamaMotorMod = (process.env.ACIKLAMA_MOTORU
+  || (String(process.env.MOTOR || '').toLowerCase() === 'waha' ? 'kapali' : 'acik')).toLowerCase();
+if (_aciklamaMotorMod === 'kapali') {
+  console.log('ℹ️  Otomatik aciklama taramasi KAPALI — aciklama panelden "Yenile" ile cekilir');
+} else {
+  setInterval(() => {
+    if (!arkaPlanCalisabilirMi()) return;
+    aciklamaMotorTur().catch(() => {});
+  }, 60 * 1000);
+}
 
 // ── ESKİ toplu senkron: SADECE ad + üye sayısı için (hızlı, açıklama motoru ayrı hallediyor) ──
 async function topluAciklamaSenkron(lineId) {
