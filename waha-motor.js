@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / telafi-ve-dogrulama-24';
+const MOTOR_SURUM = '2026-08-22 / olay-akisi-guvence-25';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -1976,6 +1976,7 @@ function wahaSoketYap(secenek = {}) {
     if (sock._qrTimer) { clearInterval(sock._qrTimer); sock._qrTimer = null; }
     ilkListeDurdur(sock);   // bekleyen liste denemeleri bosuna calismasin
     durumBekcisiDurdur(sock);
+    if (sock._akisBekci) { clearInterval(sock._akisBekci); sock._akisBekci = null; }
   };
 
   return sock;
@@ -2080,6 +2081,23 @@ const _olayTipleri = new Map();
 function kancaBekcisi(sock) {
   if (sock._kancaBekcisiKuruldu) return;
   sock._kancaBekcisiKuruldu = true;
+
+  // ═══ OLAY AKISI DURDU MU? ════════════════════════════════════════
+  // Baglanti "acik" gorunse bile olaylar kesilebiliyor (kanca adresi
+  // bozulur, WAHA icten kopar). O zaman mesajlar panele HIC dusmez ve
+  // kimse fark etmez. Bu bekci 2 dakikada bir sayaci karsilastirir;
+  // hic ilerlememisse olay adreslerini yeniden yazar.
+  sock._akisBekci = setInterval(async () => {
+    if (sock._kapali) return;
+    const onceki = sock._akisSonSayac || 0;
+    sock._akisSonSayac = _olaySayaci;
+    if (_olaySayaci > onceki) return;              // akis var
+    if (!sock._akisUyari) { sock._akisUyari = 1; return; }  // ilk turda sabret
+    log('⚠ 2 dakikadir hic olay gelmedi — olay adresleri yeniden yaziliyor');
+    sock._akisUyari = 0;
+    try { _adresSadelestirildi = false; await oturumHazirla(); }
+    catch (e) { log('   yazilamadi: ' + String(e.message).slice(0, 60)); }
+  }, 120000);
 
   // 'acik' modda beklemeden ac
   if (WS_MOD === 'acik') websoketBaslat('ayar acik');
@@ -2369,6 +2387,28 @@ async function _tekAdreseIndir(indeks) {
     const ayar = Object.assign({}, s.config, { webhooks: kalan });
     await istek('/api/sessions/' + WAHA_OTURUM, { method: 'PUT', body: { config: ayar } });
     log('olay adresi TEKE indirildi (' + kayitli.length + ' -> 1) — her olay artik BIR kez gelecek');
+
+    // ═══ GUVENLIK AGI (2026-08) ══════════════════════════════════════
+    // Teke indirmek riskli: sectigimiz adres sonradan calismaz hale
+    // gelirse HICBIR OLAY ULASMAZ ve mesajlar panele hic dusmez.
+    // Bu yuzden indirdikten sonra izliyoruz: 90 saniye boyunca tek bir
+    // olay bile gelmezse TUM adresleri geri aciyoruz. Fazladan olay
+    // gelmesi (tekrar) zararsiz — kimlige gore zaten eleniyor. Ama
+    // mesajin hic gelmemesi kabul edilemez.
+    const olayEsigi = _olaySayaci;
+    setTimeout(async () => {
+      if (_olaySayaci > olayEsigi) return;   // olay akiyor, sorun yok
+      log('⚠ teke indirdikten sonra 90 saniyedir olay yok — TUM adresler geri aciliyor');
+      try {
+        const hepsi = _kayitliKancalar.length ? _kayitliKancalar
+          : kancaAdaylari().map((t, i) => ({ url: t + '/olay/' + i, events: KANCA_OLAYLARI }));
+        const s2 = await istek('/api/sessions/' + WAHA_OTURUM);
+        const ayar2 = Object.assign({}, s2.config, { webhooks: hepsi });
+        await istek('/api/sessions/' + WAHA_OTURUM, { method: 'PUT', body: { config: ayar2 } });
+        _adresSadelestirildi = false;   // bir daha denenebilsin
+        log('   ' + hepsi.length + ' adres geri acildi');
+      } catch (e) { log('   geri acilamadi: ' + String(e.message).slice(0, 70)); }
+    }, 90000);
   } catch (e) { log('adres sadelestirilemedi: ' + String(e.message).slice(0, 70)); }
 }
 
@@ -2953,6 +2993,7 @@ function durumBekcisiBaslat(sock) {
       kopmaYaz(durum, 'bekci tespit etti');
       _kopmaZamani = Date.now();
       durumBekcisiDurdur(sock);
+    if (sock._akisBekci) { clearInterval(sock._akisBekci); sock._akisBekci = null; }
       sock.ws.isOpen = false;
       sock._qrHizliBitis = Date.now() + 90000;
       sock.ev.emit('connection.update', {
