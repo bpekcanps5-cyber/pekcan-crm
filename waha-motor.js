@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / tik-sorarak-16';
+const MOTOR_SURUM = '2026-08-22 / makbuz-tekrar-17';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -2334,6 +2334,43 @@ async function _tekAdreseIndir(indeks) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  MAKBUZU TEKRARLA  —  "tik gelmiyor" sorununun son halkasi
+//  -------------------------------------------------------------------
+//  server.js makbuzu alinca mesaji BELLEKTE ariyor:
+//      const m = chat.messages.find(x => x.id === id);
+//      if (!m) continue;              <-- bulunamazsa SESSIZCE duser
+//  Ama loglarda surekli "bellekte 0, DB'den 58 mesaj" yaziyor — yani
+//  mesajlar bellekte tutulmuyor, ustelik bellek doldugunda temizleniyor
+//  ("BELLEK KRITIK: 1246 mesaj bellekten dusuruldu").
+//  Makbuz TEK SEFERLIK geldigi icin, o an mesaj bellekte degilse tik
+//  sonsuza kadar kayboluyordu.
+//  COZUM: ayni makbuzu birkac kez, artan araliklarla yolluyoruz.
+//  server.js zaten "yeni durum eskisinden buyukse" diye bakiyor, yani
+//  tekrar zararsiz: ya tutar ya yok sayilir.
+// ═══════════════════════════════════════════════════════════════════
+const MAKBUZ_TEKRAR = [0, 1500, 5000, 15000];
+
+function makbuzYolla(sock, anahtar, durum) {
+  const gonder = () => {
+    if (sock._kapali) return;
+    const simdiSn = Math.floor(Date.now() / 1000);
+    if (durum >= 4) {
+      sock.ev.emit('message-receipt.update', [{ key: anahtar,
+        receipt: { userJid: anahtar.remoteJid, receiptTimestamp: simdiSn, readTimestamp: simdiSn } }]);
+    } else if (durum === 3) {
+      sock.ev.emit('message-receipt.update', [{ key: anahtar,
+        receipt: { userJid: anahtar.remoteJid, receiptTimestamp: simdiSn } }]);
+    } else {
+      sock.ev.emit('messages.update', [{ key: anahtar, update: { status: durum } }]);
+    }
+  };
+  for (const gecikme of MAKBUZ_TEKRAR) {
+    if (gecikme === 0) gonder();
+    else setTimeout(gonder, gecikme);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  TIK TAKIBI  —  WAHA'ya SORARAK
 //  -------------------------------------------------------------------
 //  OLCUM: WAHA 'message.ack' olayini HIC gondermiyor (3800 olayda sifir).
@@ -2377,17 +2414,7 @@ async function tikTakibi(sock, jid, cekirdek) {
       const durum = ackCevir(ackHam);
       if (durum > sonDurum) {
         sonDurum = durum;
-        const anahtar = { id: cekirdek, remoteJid: jid, fromMe: true };
-        const simdiSn = Math.floor(Date.now() / 1000);
-        if (durum >= 4) {
-          sock.ev.emit('message-receipt.update', [{ key: anahtar,
-            receipt: { userJid: jid, receiptTimestamp: simdiSn, readTimestamp: simdiSn } }]);
-        } else if (durum === 3) {
-          sock.ev.emit('message-receipt.update', [{ key: anahtar,
-            receipt: { userJid: jid, receiptTimestamp: simdiSn } }]);
-        } else {
-          sock.ev.emit('messages.update', [{ key: anahtar, update: { status: durum } }]);
-        }
+        makbuzYolla(sock, { id: cekirdek, remoteJid: jid, fromMe: true }, durum);
         if ((sock._tikTakipYazi = (sock._tikTakipYazi || 0) + 1) <= 6) {
           const adlar = { 2: 'tek tik', 3: 'cift tik', 4: 'mavi tik', 5: 'dinlendi' };
           log('tik (sorarak): ' + (adlar[durum] || durum) + '  [' + cekirdek.slice(0, 14) + ']');
@@ -2851,23 +2878,7 @@ async function wahaBaglan() {
       // Artik: tek tik -> messages.update, teslim/okundu -> receipt.
       const wahaAck = Number(veri.ack != null ? veri.ack : 1);
       const anahtar = { id: kimligiEslestir(id), remoteJid: jid, fromMe: benim };
-      if (wahaAck >= 3) {
-        // okundu (ve dinlendi) -> mavi tik
-        sock.ev.emit('message-receipt.update', [{
-          key: anahtar,
-          receipt: { userJid: jid, receiptTimestamp: Math.floor(Date.now() / 1000),
-                     readTimestamp: Math.floor(Date.now() / 1000) },
-        }]);
-      } else if (wahaAck === 2) {
-        // teslim edildi -> cift tik
-        sock.ev.emit('message-receipt.update', [{
-          key: anahtar,
-          receipt: { userJid: jid, receiptTimestamp: Math.floor(Date.now() / 1000) },
-        }]);
-      } else {
-        // sunucuya ulasti -> tek tik
-        sock.ev.emit('messages.update', [{ key: anahtar, update: { status: ackCevir(wahaAck) } }]);
-      }
+      makbuzYolla(sock, anahtar, ackCevir(wahaAck));
       return;
     }
 
