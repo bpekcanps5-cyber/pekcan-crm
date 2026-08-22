@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / cekirdek-kimlik-11';
+const MOTOR_SURUM = '2026-08-22 / hizli-qr-12';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -1925,6 +1925,8 @@ function wahaSoketYap(secenek = {}) {
   sock.query = async () => ({ ok: true });          // kalp atisi yedegi
   sock.updateMediaMessage = async (m) => m;         // medya WAHA'dan iniyor
   sock.logout = async () => {
+    // Panelden cikis yapildi -> QR'i BEKLETME, hizli moda gec
+    setTimeout(() => { try { qrHizliModaGec(sock, 'panelden cikis'); } catch (_) {} }, 500);
     try { await istek('/api/sessions/' + WAHA_OTURUM + '/logout', { method: 'POST' }); } catch (_) {}
     sock._kapali = true; sock.ws.isOpen = false;
   };
@@ -2550,6 +2552,9 @@ function qrTakibiBaslat(sock) {
         sock.ev.emit('connection.update', { connection: 'open' });
         return;
       }
+      // STARTING/SCAN_QR_CODE farketmez — QR hazirsa hemen al.
+      // WAHA bazen STARTING durumundayken QR'i zaten uretmis oluyor;
+      // sirf durum yazisi yuzunden beklemek gereksiz gecikme yaratiyordu.
       if (/STOPPED|FAILED/.test(durum)) {
         // ═══ OTURUM KURTARMA ═══════════════════════════════════════════
         // FAILED: telefondan cihaz kaldirilinca ya da oturum bozulunca
@@ -2557,6 +2562,9 @@ function qrTakibiBaslat(sock) {
         // sonra baslatmak gerekiyor. Sirayla deniyoruz.
         if (sock._kurtarmaCalisiyor) return;
         sock._kurtarmaCalisiyor = true;
+        // Bayrak takili kalmasin: 15 saniye sonra tekrar denenebilir olsun
+        setTimeout(() => { sock._kurtarmaCalisiyor = false; }, 15000);
+        sock._qrHizliBitis = Date.now() + 90000;   // QR'i hizla bekle
         log('oturum ' + durum + ' — kurtariliyor...');
         const dene = async (ad, yol, govde) => {
           try {
@@ -2658,8 +2666,31 @@ function qrTakibiBaslat(sock) {
       if (sayac % 4 === 1) log("QR takibi: WAHA'ya ulasilamadi — " + e.message);
     }
   };
-  sock._qrTimer = setInterval(tur, 5000);
+  // ═══ QR HIZLI MOD (2026-08) ═════════════════════════════════════
+  // Panelden ya da telefondan cikis yapilinca WAHA'nin STOPPED ->
+  // STARTING -> SCAN_QR_CODE yolculugu birkac saniye suruyor. 5 saniyede
+  // bir sorunca QR 20-30 saniye sonra geliyordu ve test etmek imkansizdi.
+  // Cikis anindan itibaren 90 saniye boyunca 1.5 saniyede bir soruyoruz;
+  // sonra normal tempoya donuyoruz (bosuna yuk olmasin).
+  const temposunuAyarla = () => {
+    const hizli = sock._qrHizliBitis && Date.now() < sock._qrHizliBitis;
+    const istenen = hizli ? 1500 : 5000;
+    if (sock._qrTempo === istenen) return;
+    sock._qrTempo = istenen;
+    if (sock._qrTimer) clearInterval(sock._qrTimer);
+    sock._qrTimer = setInterval(() => { temposunuAyarla(); tur(); }, istenen);
+  };
+  sock._qrHizliBitis = Date.now() + 90000;   // acilista da hizli basla
+  temposunuAyarla();
   tur();
+}
+
+// Cikis/kurtarma sonrasi QR'i hizla getir
+function qrHizliModaGec(sock, sebep) {
+  if (!sock) return;
+  sock._qrHizliBitis = Date.now() + 90000;
+  log('QR hizli moda gecildi (' + sebep + ') — 1.5sn araliklarla sorulacak');
+  if (!sock._qrTimer) qrTakibiBaslat(sock);
 }
 function qrTakibiDurdur(sock) {
   if (sock._qrTimer) { clearInterval(sock._qrTimer); sock._qrTimer = null; }
