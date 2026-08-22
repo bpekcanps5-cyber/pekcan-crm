@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / dongu-kesildi-10';
+const MOTOR_SURUM = '2026-08-22 / cekirdek-kimlik-11';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -311,16 +311,27 @@ function icerikleEslestir(jid, metin) {
 
 // Gelen kimlik bizim gonderdigimiz mesaja aitse, PANELE VERDIGIMIZ
 // kimligi dondur — boylece server.js ayni mesaj oldugunu anlar.
+// ═══ PANELDE HER ZAMAN CEKIRDEK KIMLIK (2026-08) ══════════════════
+// SORUN: WAHA ayni mesaji iki bicimde sunuyordu:
+//    gelen mesaj -> true_1203...@g.us_3EB0805047518F70E3CCA4  (uzun)
+//    tik olayi   -> 3EB0805047518F70E3CCA4                     (kisa)
+// server.js mesaji uzun kimlikle sakliyor, tik kisa kimlikle geliyor,
+// eslesmiyor ve TIK HIC ISLEMIYORDU. Kendi gonderdigimiz mesajlarda
+// eslestirme yapiyorduk ama TELEFONDAN atilanlarda o kayit yok, bu
+// yuzden onlarda hicbir zaman tutmuyordu.
+// COZUM: panel tarafinda her sey CEKIRDEK (son parca) kimlikle anilir.
+// Iki bicim de ayni cekirdegi verdigi icin eslesme kesindir.
+// WAHA'ya istek atarken (sil/duzenle/yanitla) uzun bicime cevrilir.
 function kimligiEslestir(gelenId) {
   const c = kimlikCekirdegi(gelenId);
-  const bizim = c && _gonderilenler.get(c);
-  if (bizim && bizim !== String(gelenId) && !_kimlikOrnegiYazildi) {
+  if (!c) return String(gelenId || '');
+  if (!_kimlikOrnegiYazildi && String(gelenId) !== c) {
     _kimlikOrnegiYazildi = true;
-    log('kimlik bicimi farkli, eslestirildi:');
-    log('   gonderimde : ' + bizim);
-    log('   olayda     : ' + gelenId);
+    log('kimlik sadelestirildi: "' + String(gelenId).slice(0, 46) + '" -> "' + c + '"');
   }
-  return bizim || String(gelenId || '');
+  // WAHA'nin tam bicimini sil/duzenle icin hatirla
+  if (String(gelenId).includes('_')) _panelToWaha.set(c, String(gelenId));
+  return c;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1432,7 +1443,11 @@ function wahaSoketYap(secenek = {}) {
   // ── 1) MESAJ GONDER ──
   sock.sendMessage = async (jid, icerik, ayar = {}) => {
     const ortak = { session: WAHA_OTURUM, chatId: jid };
-    if (ayar.quoted && ayar.quoted.key && ayar.quoted.key.id) ortak.reply_to = ayar.quoted.key.id;
+    if (ayar.quoted && ayar.quoted.key && ayar.quoted.key.id) {
+      // Panel cekirdek kimlik veriyor; WAHA tam bicimi bekliyor
+      const q = String(ayar.quoted.key.id);
+      ortak.reply_to = _panelToWaha.get(q) || (q.includes('_') ? q : ('true_' + jid + '_' + q));
+    }
     if (icerik.mentions && icerik.mentions.length) ortak.mentions = icerik.mentions;
 
     let yanit;
@@ -1534,7 +1549,11 @@ function wahaSoketYap(secenek = {}) {
       id = 'waha_' + Date.now();
       log('⚠ gonderim cevabinda kimlik BULUNAMADI — tik eslesmeyebilir');
     }
-    gonderimiKaydet(id, jid, typeof icerik.text === 'string' ? icerik.text : (icerik.caption || ''));
+    // Panele CEKIRDEK kimlik veriyoruz; WAHA'nin tam bicimini ayrica
+    // sakliyoruz ki silme/duzenleme/yanitlama dogru kimlikle gitsin.
+    const cekirdek = kimlikCekirdegi(id) || id;
+    if (String(id).includes('_')) _panelToWaha.set(cekirdek, String(id));
+    gonderimiKaydet(cekirdek, jid, typeof icerik.text === 'string' ? icerik.text : (icerik.caption || ''));
     if ((sock._gonderimIzleme = (sock._gonderimIzleme || 0) + 1) <= 5) {
       log('mesaj gonderildi #' + sock._gonderimIzleme + ' | WAHA kimlik: ' + String(id).slice(0, 46));
     }
@@ -1544,7 +1563,7 @@ function wahaSoketYap(secenek = {}) {
     // Teslim (cift tik) ve okundu (mavi tik) bildirimleri grup
     // servisinden geliyor — WAHA onlari hic gondermiyor (olculdu: 3800
     // olayda message.ack sifir).
-    return { key: { id, remoteJid: jid, fromMe: true }, message: icerik, status: 2 };
+    return { key: { id: cekirdek, remoteJid: jid, fromMe: true }, message: icerik, status: 2 };
   };
 
   // ── 2) OKUNDU ISARETLE ──
