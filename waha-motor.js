@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / grup-tek-tik-18';
+const MOTOR_SURUM = '2026-08-22 / makbuz-tek-kaynak-19';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -2387,7 +2387,10 @@ function makbuzYolla(sock, anahtar, durum) {
 //  YUK: mesaj basina en fazla 4 kucuk istek, hepsi yerel WAHA'ya.
 //  Ayni anda en fazla 25 mesaj izlenir; fazlasi sessizce birakilir.
 // ═══════════════════════════════════════════════════════════════════
-const TIK_TAKVIM = [2000, 5000, 12000, 30000];
+// WAHA ack'i ilerletmedigi icin bu sorgu cogu zaman bos donuyor.
+// Yine de kaldirmiyoruz: bazi surumlerde/kisisel sohbetlerde dolabiliyor.
+// Ama sadece 2 deneme — bosuna yuk olmasin.
+const TIK_TAKVIM = [3000, 10000];
 const TIK_EN_FAZLA = 25;
 
 async function tikTakibi(sock, jid, cekirdek) {
@@ -2421,6 +2424,13 @@ async function tikTakibi(sock, jid, cekirdek) {
       const ackHam = (bul.ack != null) ? Number(bul.ack)
         : ((bul._data && bul._data.status != null) ? Number(bul._data.status) : null);
       if (ackHam == null || isNaN(ackHam)) continue;
+      // ═══ WAHA ACK'I GUNCELLEMIYOR (2026-08, olculdu) ═══════════════
+      // WAHA gonderilen mesaji sonsuza kadar ack=0 / "PENDING" olarak
+      // tutuyor; hicbir zaman ilerletmiyor. Yani WAHA'ya SORMAK da tik
+      // getirmiyor — bilgi onda yok. 0 gorunce bir sey yayinlamiyoruz
+      // (yoksa saat ikonunu geri yaziyorduk).
+      // Gercek tik tek yerden gelir: grup servisi (whatsmeow makbuzlari).
+      if (ackHam <= 0) continue;
       const durum = ackCevir(ackHam);
       if (durum > sonDurum) {
         sonDurum = durum;
