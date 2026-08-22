@@ -232,6 +232,40 @@ function gonderimiKaydet(id, jid, metin) {
   }
 }
 
+// ═══ GONDERIM CEVABINDAN KIMLIGI COZ (2026-08) ════════════════════
+// ESKI HATA: sadece 'yanit.id' bakiliyordu. NOWEB motoru gonderim
+// cevabini BAILEYS bicimide veriyor — kimlik 'yanit.key.id' altinda.
+// Bulamayinca 'waha_1787384317392' gibi UYDURMA kimlik uretiliyordu.
+// Uydurma kimlikle: mesaj gorunur, ama TIK ESLESMEZ (ack gercek
+// kimlikle gelir). "tik yok" sikayetinin sebebi buydu.
+// Artik bilinen tum yerlere bakiyoruz ve ilk gonderimde cevabin
+// tamamini loga yaziyoruz ki bir daha karanlikta kalmayalim.
+let _gonderimCevabiYazildi = false;
+
+function gonderimKimligiCoz(yanit, jid) {
+  if (!yanit || typeof yanit !== 'object') return '';
+  const y = yanit;
+  const adaylar = [
+    y.id && y.id._serialized, y.key && y.key._serialized,
+    typeof y.id === 'string' ? y.id : null,
+    y.key && y.key.id, y.messageId, y.message_id,
+    y.message && y.message.key && y.message.key.id,
+    y.data && y.data.id && y.data.id._serialized,
+    y.data && y.data.key && y.data.key.id,
+  ];
+  let kisa = '';
+  for (const a of adaylar) {
+    const v = a && String(a).trim();
+    if (!v) continue;
+    if (v.includes('_')) return v;      // zaten tam bicim
+    if (!kisa) kisa = v;
+  }
+  if (!kisa) return '';
+  // Kisa kimlik bulduk — WAHA uclari tam bicimi bekliyor, kuralim
+  const benim = (y.key && y.key.fromMe !== undefined) ? !!y.key.fromMe : true;
+  return (benim ? 'true_' : 'false_') + jid + '_' + kisa;
+}
+
 // ═══ SILME/DUZENLEME ICIN KIMLIK BICIMLERI (2026-08) ═══════════════
 // WAHA'nin silme ve duzenleme uclari hangi bicimi bekliyor BILMIYORUZ:
 //   tam  : true_120363...@g.us_3EB0ABC
@@ -1488,7 +1522,15 @@ function wahaSoketYap(secenek = {}) {
       throw new Error('WAHA: desteklenmeyen mesaj turu');
     }
 
-    const id = (yanit && ((yanit.id && yanit.id._serialized) || yanit.id)) || ('waha_' + Date.now());
+    if (!_gonderimCevabiYazildi && yanit) {
+      _gonderimCevabiYazildi = true;
+      log('gonderim cevabi (bir kez): ' + JSON.stringify(yanit).slice(0, 260));
+    }
+    let id = gonderimKimligiCoz(yanit, jid);
+    if (!id) {
+      id = 'waha_' + Date.now();
+      log('⚠ gonderim cevabinda kimlik BULUNAMADI — tik eslesmeyebilir');
+    }
     gonderimiKaydet(id, jid, typeof icerik.text === 'string' ? icerik.text : (icerik.caption || ''));
     if ((sock._gonderimIzleme = (sock._gonderimIzleme || 0) + 1) <= 5) {
       log('mesaj gonderildi #' + sock._gonderimIzleme + ' | WAHA kimlik: ' + String(id).slice(0, 46));
@@ -2853,7 +2895,7 @@ module.exports = {
   WAHA_URL, WAHA_API_KEY, WAHA_OTURUM, WAHA_KANCA_PORT, WAHA_KANCA_URL,
   istek, wahaSoketYap, baileysMesaji, baileysGrup, wahaMedyaIndir, qrAl,
   wahaBaglan, oturumHazirla,
-  numaraTemizle, jidAl, zamanAl, lidNumara, benKur, ackCevir, baileysMesaji,
+  numaraTemizle, jidAl, zamanAl, lidNumara, benKur, ackCevir, baileysMesaji, gonderimKimligiCoz,
   ilkListeyiCek, ilkListeTuru, ilkListeBaslat, sohbetAdi, sohbetZamani,
   medyaAdresiDuzelt, yeniSohbetleriYayinla, isimleriTazele, adsizlariTamamla, tekSohbetAdi,
 };
