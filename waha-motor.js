@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / kopma-bekcisi-15';
+const MOTOR_SURUM = '2026-08-22 / tik-sorarak-16';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -1563,6 +1563,8 @@ function wahaSoketYap(secenek = {}) {
     // Teslim (cift tik) ve okundu (mavi tik) bildirimleri grup
     // servisinden geliyor — WAHA onlari hic gondermiyor (olculdu: 3800
     // olayda message.ack sifir).
+    // Tik olayi gelmediginden durumu SORARAK takip ediyoruz
+    tikTakibi(sock, jid, cekirdek).catch(() => {});
     return { key: { id: cekirdek, remoteJid: jid, fromMe: true }, message: icerik, status: 2 };
   };
 
@@ -2329,6 +2331,73 @@ async function _tekAdreseIndir(indeks) {
     await istek('/api/sessions/' + WAHA_OTURUM, { method: 'PUT', body: { config: ayar } });
     log('olay adresi TEKE indirildi (' + kayitli.length + ' -> 1) — her olay artik BIR kez gelecek');
   } catch (e) { log('adres sadelestirilemedi: ' + String(e.message).slice(0, 70)); }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TIK TAKIBI  —  WAHA'ya SORARAK
+//  -------------------------------------------------------------------
+//  OLCUM: WAHA 'message.ack' olayini HIC gondermiyor (3800 olayda sifir).
+//  Yani beklemekle tik gelmiyor. Ama WAHA'nin mesaj listesi ucu her
+//  mesajin 'ack' degerini TASIYOR. O halde beklemek yerine SORACAGIZ.
+//
+//  Gonderilen mesajin durumunu artan araliklarla birkac kez sorup
+//  ilerlemeyi panele bildiriyoruz:
+//     ack 1 -> tek tik   (sunucuya ulasti)
+//     ack 2 -> cift tik  (teslim edildi)
+//     ack 3 -> mavi tik  (okundu)
+//  Okundu'ya ulasinca ya da deneme hakki bitince takip biter.
+//
+//  YUK: mesaj basina en fazla 4 kucuk istek, hepsi yerel WAHA'ya.
+//  Ayni anda en fazla 25 mesaj izlenir; fazlasi sessizce birakilir.
+// ═══════════════════════════════════════════════════════════════════
+const TIK_TAKVIM = [2000, 5000, 12000, 30000];
+const TIK_EN_FAZLA = 25;
+
+async function tikTakibi(sock, jid, cekirdek) {
+  if (!sock || sock._kapali || !cekirdek) return;
+  if (!sock._tikIzlenen) sock._tikIzlenen = new Set();
+  if (sock._tikIzlenen.size >= TIK_EN_FAZLA) return;
+  sock._tikIzlenen.add(cekirdek);
+  let sonDurum = 2;   // gonderim onaylandi = tek tik
+  try {
+    for (const bekle of TIK_TAKVIM) {
+      await uyu(bekle);
+      if (sock._kapali) break;
+      let dizi = [];
+      try {
+        const veri = await istek('/api/' + WAHA_OTURUM + '/chats/' + jid
+          + '/messages?limit=12&downloadMedia=false', { zamanAsimiMs: 10000 });
+        dizi = Array.isArray(veri) ? veri : (veri && Array.isArray(veri.data) ? veri.data : []);
+      } catch (_) { continue; }
+      const bul = dizi.find((x) => kimlikCekirdegi(mesajKimligi(x, (x._data && x._data.key) || {})) === cekirdek);
+      if (!bul) continue;
+      const ackHam = (bul.ack != null) ? Number(bul.ack)
+        : ((bul._data && bul._data.status != null) ? Number(bul._data.status) : null);
+      if (ackHam == null || isNaN(ackHam)) continue;
+      const durum = ackCevir(ackHam);
+      if (durum > sonDurum) {
+        sonDurum = durum;
+        const anahtar = { id: cekirdek, remoteJid: jid, fromMe: true };
+        const simdiSn = Math.floor(Date.now() / 1000);
+        if (durum >= 4) {
+          sock.ev.emit('message-receipt.update', [{ key: anahtar,
+            receipt: { userJid: jid, receiptTimestamp: simdiSn, readTimestamp: simdiSn } }]);
+        } else if (durum === 3) {
+          sock.ev.emit('message-receipt.update', [{ key: anahtar,
+            receipt: { userJid: jid, receiptTimestamp: simdiSn } }]);
+        } else {
+          sock.ev.emit('messages.update', [{ key: anahtar, update: { status: durum } }]);
+        }
+        if ((sock._tikTakipYazi = (sock._tikTakipYazi || 0) + 1) <= 6) {
+          const adlar = { 2: 'tek tik', 3: 'cift tik', 4: 'mavi tik', 5: 'dinlendi' };
+          log('tik (sorarak): ' + (adlar[durum] || durum) + '  [' + cekirdek.slice(0, 14) + ']');
+        }
+      }
+      if (sonDurum >= 4) break;   // okundu, takip bitti
+    }
+  } finally {
+    sock._tikIzlenen.delete(cekirdek);
+  }
 }
 
 function kancaSunucusuAc() {
