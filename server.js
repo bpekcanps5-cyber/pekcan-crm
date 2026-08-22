@@ -5228,16 +5228,16 @@ wss.on('connection', (ws) => {
         try { if (typeof grupAdlari !== 'undefined' && grupAdlari.clear) grupAdlari.clear(); } catch (_) {}
         try { if (typeof chatLabels !== 'undefined' && chatLabels.clear) chatLabels.clear(); } catch (_) {}
         console.log(`   ↳ bellekten ${oncekiSayi} sohbet silindi`);
-        let db_ = { chats: 0, messages: 0, contacts: 0 };
+        let db_ = { chats: 0, messages: 0, gruplar: 0, kisiler: 0 };
         if (db.isReady() && db.wipeLine) {
           try {
             db_ = await db.wipeLine(_LID);
-            console.log(`   ↳ Supabase: ${db_.chats} sohbet, ${db_.messages} mesaj, ${db_.contacts} kisi silindi`);
+            console.log(`   ↳ Supabase: ${db_.gruplar} grup + ${db_.kisiler} kisi = ${db_.chats} sohbet, ${db_.messages} mesaj silindi`);
           } catch (e) { console.error('   ⚠️  Supabase silme hatasi:', e.message); }
         }
         hafifChatsYayinla(_LID, new Map());
         broadcastHat(_LID, { type: 'opOk',
-          message: `Her şey silindi (${db_.chats} sohbet, ${db_.messages} mesaj, ${db_.contacts} kişi). Liste sıfırdan başlayacak.` });
+          message: `Her şey silindi (${db_.gruplar} grup, ${db_.kisiler} kişi, ${db_.messages} mesaj). Liste sıfırdan başlayacak.` });
         console.log('   ↳ tamam.');
       }
     } catch (e) { console.error('Panel mesaji islenemedi:', e.message); }

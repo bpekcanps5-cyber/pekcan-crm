@@ -615,50 +615,53 @@ async function wipeAll() {
 // ama bire-bir kisi sohbetleri (is_group=false) ve kayitli kisiler (contacts) kalir.
 async function wipeGroups(lineId = null) {
   if (!aktif) return { chats: 0, messages: 0 };
-  // ═══ HAT FILTRESI HER ZAMAN UYGULANIR (2026-08) ═══════════════════
-  // ESKI HATA: lineId null gelince kosuldan '$1' dusuyor ama parametre
-  // yine gonderiliyordu -> "bind message supplies 1 parameters, but
-  // prepared statement requires 0" hatasi. Silme HIC calismiyordu.
-  // DAHA TEHLIKELISI: hata olmasaydi kosul 'WHERE is_group=true' olarak
-  // kalacak ve TUM HATLARIN gruplarini, yani CANLI VERIYI silecekti.
-  // Artik hat her zaman H() ile cozuluyor ve kosula MUTLAKA giriyor.
-  const hat = H(lineId);                       // 'ofis' | 'waha_ofis' ...
-  const kosul = 'WHERE is_group=true AND line_id=$1';
-  const gruplar = await pool.query(`SELECT jid FROM chats ${kosul}`, [hat]);
-  let mesajSayisi = 0;
-  for (const g of gruplar.rows) {
-    const r = await q('DELETE FROM messages WHERE jid=$1 AND line_id=$2', [g.jid, hat]);
-    mesajSayisi += (r && r.rowCount) || 0;
-    try { await q('DELETE FROM chat_labels WHERE chat_jid=$1 AND line_id=$2', [g.jid, hat]); } catch (e) {}
-    try { await q('DELETE FROM chat_assignments WHERE chat_jid=$1 AND line_id=$2', [g.jid, hat]); } catch (e) {}
-  }
-  await q(`DELETE FROM chats ${kosul}`, [hat]);
-  return { chats: gruplar.rows.length, messages: mesajSayisi };
+  // ═══ DOGRU SUTUN ADLARI + TEK SORGU (2026-08) ═════════════════════
+  // ESKI HATALAR:
+  //  1) 'DELETE FROM messages WHERE jid=$1' -> messages tablosunda sutun
+  //     'jid' DEGIL 'chat_jid'. Her grup icin bir hata: 400 grupta 400
+  //     hata, log seli, sistem kilitleniyordu.
+  //  2) chat_labels / chat_assignments tablolarinda 'line_id' YOK —
+  //     bunlar CANLIYLA ORTAK. Silmeye calismak hem hata veriyordu hem
+  //     de calissaydi CANLININ etiketlerini silecekti. Dokunmuyoruz.
+  //  3) Grup grup dongu yerine TEK sorgu: sel imkansiz.
+  const hat = H(lineId);
+  const say = await pool.query(
+    'SELECT count(*)::int AS n FROM chats WHERE is_group=true AND line_id=$1', [hat]);
+  const m = await q(
+    `DELETE FROM messages WHERE line_id=$1
+       AND chat_jid IN (SELECT jid FROM chats WHERE is_group=true AND line_id=$1)`, [hat]);
+  await q('DELETE FROM chats WHERE is_group=true AND line_id=$1', [hat]);
+  return { chats: (say.rows[0] && say.rows[0].n) || 0, messages: (m && m.rowCount) || 0 };
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  HATTI TAMAMEN SIFIRLA  —  sohbetler, mesajlar, kisiler, etiket baglari
+//  HATTI TAMAMEN SIFIRLA  —  sohbetler + mesajlar
 //  -------------------------------------------------------------------
-//  "Sil tusuna basinca her sey gitsin, bir daha QR okutsak da geri
-//   gelmesin" istegi icin. SADECE VERILEN HATTA dokunur; baska hattin
-//  (ornegin canlinin) tek satirina bile dokunmaz.
-//  Kullanicilar, etiket TANIMLARI ve ayarlar KORUNUR — onlar hatta
-//  bagli calisma verisi degil, sistemin kendi ayari.
+//  Bu hatta ait TUM sohbetler (gruplar VE kisiler) ve mesajlar silinir.
+//  QR yeniden okutulsa bile geri gelmez; liste sifirdan baslar.
+//
+//  DOKUNULMAYANLAR ve NEDENI:
+//    contacts / chat_labels / chat_assignments tablolarinda 'line_id'
+//    SUTUNU YOK — bu tablolar CANLI HAT ile ORTAK kullaniliyor.
+//    Silmek canlinin kayitli isimlerini ve etiketlerini de yok ederdi.
+//    Zaten panelde gorunen kisiler 'chats' tablosundan geliyor; onlar
+//    siliniyor. contacts sadece isim eslemesi tutuyor, sohbet acmiyor.
 // ═══════════════════════════════════════════════════════════════════
 async function wipeLine(lineId = null) {
-  if (!aktif) return { chats: 0, messages: 0, contacts: 0 };
+  if (!aktif) return { chats: 0, messages: 0, gruplar: 0, kisiler: 0 };
   const hat = H(lineId);
-  const sayim = { chats: 0, messages: 0, contacts: 0 };
-  const sil = async (sql, ad) => {
-    try { const r = await q(sql, [hat]); return (r && r.rowCount) || 0; }
-    catch (e) { console.error('   ⚠️  ' + ad + ' silinemedi:', e.message); return 0; }
+  const d = await pool.query(
+    `SELECT count(*) FILTER (WHERE is_group) ::int AS gruplar,
+            count(*) FILTER (WHERE NOT is_group)::int AS kisiler
+       FROM chats WHERE line_id=$1`, [hat]);
+  const m = await q('DELETE FROM messages WHERE line_id=$1', [hat]);
+  const c = await q('DELETE FROM chats WHERE line_id=$1', [hat]);
+  return {
+    chats: (c && c.rowCount) || 0,
+    messages: (m && m.rowCount) || 0,
+    gruplar: (d.rows[0] && d.rows[0].gruplar) || 0,
+    kisiler: (d.rows[0] && d.rows[0].kisiler) || 0,
   };
-  sayim.messages = await sil('DELETE FROM messages WHERE line_id=$1', 'mesajlar');
-  await sil('DELETE FROM chat_labels WHERE line_id=$1', 'etiket baglari');
-  await sil('DELETE FROM chat_assignments WHERE line_id=$1', 'atamalar');
-  sayim.chats = await sil('DELETE FROM chats WHERE line_id=$1', 'sohbetler');
-  sayim.contacts = await sil('DELETE FROM contacts WHERE line_id=$1', 'kisiler');
-  return sayim;
 }
 
 // ============================================================
