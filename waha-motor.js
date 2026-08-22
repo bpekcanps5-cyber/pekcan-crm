@@ -349,9 +349,17 @@ async function grupServisindenSor(jid) {
       size: Number(v.participantCount) || (v.participants || []).length,
       owner: null,
       creation: 0,
-      participants: (v.participants || []).map((p) => ({
-        id: p.id, lid: p.id, admin: p.admin ? 'admin' : null, name: '',
-      })),
+      // Gercek numara 'id' alaninda geliyor; gizli kimlik ayri.
+      // Ikisini eslestirip hafizaya aliyoruz ki mesajlarda da numara cozulsun.
+      participants: (v.participants || []).map((p) => {
+        if (p.lid && p.id && p.id.endsWith('@s.whatsapp.net')) lidNumara.set(p.lid, p.id);
+        return {
+          id: p.id || p.lid,
+          lid: p.lid || p.id,
+          admin: p.admin ? 'admin' : null,
+          name: p.name || '',
+        };
+      }),
     };
   } catch (e) {
     if (_grupServisiVar === null) {
@@ -2083,7 +2091,13 @@ async function oturumHazirla() {
   // OTURUM AYARINA da yaziyoruz ki eski oturumda da acilsin.
   // Alan adi surume gore degisiyor: WAHA'nin hata mesaji 'full_sync'
   // diyor, API dokumani 'fullSync'. Ikisini birden yolluyoruz.
-  const depoAyari = { enabled: true, fullSync: true, full_sync: true };
+  // ═══ fullSync KAPALI (2026-08) ═══════════════════════════════════
+  // fullSync acikken WAHA tum gecmisi indirmeye calisiyor; 8500 gruplu
+  // hesapta bu is bitmiyor, oturum STARTING'de asili kaliyor ve QR HIC
+  // uretilmiyor. Panelin "QR hazirlaniyor" ekraninda kalmasinin sebebi
+  // buydu. Depo ACIK kalir (grup bilgisi icin gerekli), sadece toplu
+  // gecmis indirme kapatilir — zaten mesaj geldikce dolduruyoruz.
+  const depoAyari = { enabled: true, fullSync: false, full_sync: false };
   const oturumAyari = { webhooks: kancalar, noweb: { store: depoAyari } };
   try {
     const s = await istek('/api/sessions/' + WAHA_OTURUM);

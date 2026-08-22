@@ -45,7 +45,9 @@ import (
 )
 
 type uye struct {
-	ID    string `json:"id"`
+	ID    string `json:"id"`    // GERCEK NUMARA (varsa)
+	LID   string `json:"lid"`   // gizli kimlik
+	Name  string `json:"name"`  // WhatsApp'taki gorunen ad
 	Admin bool   `json:"admin"`
 }
 
@@ -162,9 +164,34 @@ func main() {
 			Topic:            strings.TrimSpace(bilgi.Topic),
 			ParticipantCount: len(bilgi.Participants),
 		}
+		// ═══ NUMARA HANGI ALANDA? (2026-08) ═════════════════════════
+		// WhatsApp grup uyelerini artik GIZLI KIMLIKLE (@lid) veriyor.
+		// Gercek numara AYRI alanda: PhoneNumber.
+		// Eskiden JID gonderiyorduk, o da @lid oldugu icin panelde
+		// "Bilinmeyen kisi / numara gizli" yaziyordu.
+		// Sira: PhoneNumber -> (lid degilse) JID -> son care LID
+		// Cihaz eki (:12) atiliyor, sadece .User kismi kullaniliyor.
 		for _, p := range bilgi.Participants {
+			numara := ""
+			if p.PhoneNumber.User != "" {
+				numara = p.PhoneNumber.User + "@s.whatsapp.net"
+			}
+			if numara == "" && p.JID.User != "" && p.JID.Server != "lid" {
+				numara = p.JID.User + "@s.whatsapp.net"
+			}
+			lidStr := ""
+			if p.LID.User != "" {
+				lidStr = p.LID.User + "@lid"
+			} else if p.JID.Server == "lid" && p.JID.User != "" {
+				lidStr = p.JID.User + "@lid"
+			}
+			if numara == "" {
+				numara = lidStr // gercekten gizli kalmis
+			}
 			cevap.Participants = append(cevap.Participants, uye{
-				ID:    p.JID.String(),
+				ID:    numara,
+				LID:   lidStr,
+				Name:  strings.TrimSpace(p.DisplayName),
 				Admin: p.IsAdmin || p.IsSuperAdmin,
 			})
 		}
