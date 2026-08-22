@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / hizli-qr-12';
+const MOTOR_SURUM = '2026-08-22 / qr-anlik-13';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -2530,6 +2530,12 @@ async function qrAl() {
 // QR'i duzenli araliklarla panele gonder (WAHA QR'i ~20 sn'de bir yeniliyor)
 function qrTakibiBaslat(sock) {
   if (sock._qrTimer) return;
+  // ═══ TEMPO SIFIRLANMALI (2026-08) ═══════════════════════════════
+  // Zamanlayici bir kez durdurulunca '_qrTempo' eski degerinde kaliyordu.
+  // Yeniden baslatildiginda "zaten ayni tempo" deyip HIC zamanlayici
+  // kurmuyor, sorgu tamamen oluyordu — cikistan sonra QR bu yuzden hic
+  // gelmedi (logda 'baslat: tamam'dan sonra tek satir yok).
+  sock._qrTempo = 0;
   let sonQR = '';
   let sayac = 0;
   const tur = async () => {
@@ -2674,7 +2680,7 @@ function qrTakibiBaslat(sock) {
   // sonra normal tempoya donuyoruz (bosuna yuk olmasin).
   const temposunuAyarla = () => {
     const hizli = sock._qrHizliBitis && Date.now() < sock._qrHizliBitis;
-    const istenen = hizli ? 1500 : 5000;
+    const istenen = hizli ? 800 : 5000;   // hizli modda saniyede bir bucuk
     if (sock._qrTempo === istenen) return;
     sock._qrTempo = istenen;
     if (sock._qrTimer) clearInterval(sock._qrTimer);
@@ -2693,6 +2699,7 @@ function qrHizliModaGec(sock, sebep) {
   if (!sock._qrTimer) qrTakibiBaslat(sock);
 }
 function qrTakibiDurdur(sock) {
+  sock._qrTempo = 0;   // yeniden baslatilabilsin
   if (sock._qrTimer) { clearInterval(sock._qrTimer); sock._qrTimer = null; }
 }
 
