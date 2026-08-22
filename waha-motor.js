@@ -178,6 +178,32 @@ function benKur(ben) {
 // ═══ WAHA MESAJINI BAILEYS BICIMINE CEVIR ═══════════════════════════
 // GOWS ham WhatsApp mesajini _data.Message altinda veriyor ve bu bicim
 // Baileys ile AYNI. Bu yuzden server.js'in cozucusu degismeden calisiyor.
+// ═══════════════════════════════════════════════════════════════════
+//  MESAJ KIMLIGI — TEK BICIM (2026-08)
+//  -------------------------------------------------------------------
+//  WAHA bir mesaji IKI farkli kimlikle sunuyor:
+//    ust seviye  w.id          -> "true_120363...@g.us_3EB0ABC"  (TAM)
+//    ic yapi     _data.key.id  -> "3EB0ABC"                      (KISA)
+//
+//  ESKI HATA: gonderirken TAM kimlik doner, gelen mesajda KISA kimlik
+//  okunurdu. Ikisi esitlenmeyince server.js kendi gonderdigi mesaji
+//  geri geldiginde TANIMIYORDU. Bu tek hata su alti sikayeti dogurdu:
+//    1) mesaj panelde IKI KERE gorunuyor  (esleseydi tekilesecekti)
+//    2) tek tik / cift tik hic degismiyor (ack baska kimlige geliyor)
+//    3) "mesajin iletilmedi" uyarilari    (ack tutmayinca iletilmedi sanildi)
+//    4) mesaj silinemiyor                 (WAHA o kimligi bulamiyor)
+//    5) duzenleyince yeniden gonderiyor   (duzenlenecek mesaj bulunamiyor)
+//    6) yanitlama normal mesaj gibi dusuyor (reply_to eslesmiyor)
+//
+//  COZUM: her yerde TAM kimlik. WAHA'nin silme/duzenleme/yanitlama
+//  uclari da zaten tam kimlik bekliyor.
+function mesajKimligi(w, anahtar) {
+  const tam = w && ((w.id && w.id._serialized) || (typeof w.id === 'string' ? w.id : ''));
+  if (tam) return String(tam);
+  const kisa = (anahtar && anahtar.id) || (w && w._data && w._data.Info && w._data.Info.ID) || '';
+  return String(kisa || '');
+}
+
 // ═══ TIK CEVIRISI: WAHA -> Baileys ══════════════════════════════════
 // ESKI HATA: WAHA'nin 'ack' degeri Baileys'in 'status' degeri sanilip
 // oldugu gibi aktariliyordu. AMA IKI OLCEK BIR KAYIK:
@@ -218,7 +244,7 @@ function baileysMesaji(w) {
       key: {
         remoteJid: sohbetN,
         fromMe: !!anahtar.fromMe,
-        id: anahtar.id || w.id || '',
+        id: mesajKimligi(w, anahtar),
         participant: katilimciN || undefined,
         remoteJidAlt: anahtar.remoteJidAlt || anahtar.remoteJidPn || undefined,
         remoteJidPn: anahtar.remoteJidPn || anahtar.remoteJidAlt || undefined,
@@ -288,7 +314,7 @@ function baileysMesaji(w) {
     key: {
       remoteJid: sohbet,
       fromMe: benimMi,
-      id: (w.id && w.id._serialized) || w.id || bilgi.ID || '',
+      id: mesajKimligi(w, { id: bilgi.ID }),
       participant: katilimci || undefined,
       // server.js'in LID cozucusu bu alanlara bakiyor — bos birakmayalim
       remoteJidAlt: sohbetAlt || undefined,
@@ -1265,42 +1291,65 @@ function wahaSoketYap(secenek = {}) {
     if (icerik.mentions && icerik.mentions.length) ortak.mentions = icerik.mentions;
 
     let yanit;
-    if (icerik.text != null) {
-      yanit = await istek('/api/sendText', { method: 'POST', body: { ...ortak, text: icerik.text } });
+
+    // ═══ SIRA ONEMLI (2026-08) ══════════════════════════════════════
+    // ESKI HATA: en basta 'icerik.text' kontrol ediliyordu. Duzenleme
+    // istegi hem 'edit' hem 'text' tasidigi icin koda YENI MESAJ gibi
+    // gorunuyor ve mesaji duzenlemek yerine YENIDEN GONDERIYORDU.
+    // ("mesaj duzenleyince yeniden gonderiyor" sikayeti tam olarak buydu)
+    // Bu yuzden OZEL islemler (duzenle/sil/tepki/ilet) metinden ONCE
+    // kontrol ediliyor.
+
+    if (icerik.edit) {
+      // MESAJ DUZENLE
+      const duzId = icerik.edit.id || (icerik.edit.key && icerik.edit.key.id) || icerik.edit;
+      yanit = await istek('/api/' + WAHA_OTURUM + '/chats/' + jid + '/messages/' + duzId,
+        { method: 'PUT', body: { text: icerik.text || '' } });
+      return { key: { id: duzId, remoteJid: jid, fromMe: true }, message: icerik, status: 1 };
+
+    } else if (icerik.delete) {
+      // MESAJ SIL (herkesten)
+      const silId = icerik.delete.id || (icerik.delete.key && icerik.delete.key.id) || icerik.delete;
+      await istek('/api/' + WAHA_OTURUM + '/chats/' + jid + '/messages/' + silId, { method: 'DELETE' });
+      return { key: { id: silId, remoteJid: jid, fromMe: true } };
+
+    } else if (icerik.react) {
+      const tepkiId = (icerik.react.key && icerik.react.key.id) || icerik.react.key || icerik.react.id;
+      await istek('/api/reaction', { method: 'PUT', body: { session: WAHA_OTURUM,
+        messageId: tepkiId, reaction: icerik.react.text || '' } });
+      return { key: { id: 'react', remoteJid: jid, fromMe: true } };
+
+    } else if (icerik.forward) {
+      yanit = await istek('/api/forwardMessage', { method: 'POST', body: { session: WAHA_OTURUM,
+        chatId: jid, messageId: (icerik.forward.key && icerik.forward.key.id) || icerik.forward.id } });
+
+    } else if (icerik.poll) {
+      yanit = await istek('/api/sendPoll', { method: 'POST', body: { ...ortak,
+        poll: { name: icerik.poll.name, options: icerik.poll.values || [], multipleAnswers: false } } });
+
     } else if (icerik.image) {
       const b64 = Buffer.isBuffer(icerik.image) ? icerik.image.toString('base64') : String(icerik.image);
       yanit = await istek('/api/sendImage', { method: 'POST', body: { ...ortak, caption: icerik.caption || '',
         file: { mimetype: icerik.mimetype || 'image/jpeg', filename: icerik.fileName || 'foto.jpg', data: b64 } } });
+
     } else if (icerik.video) {
       const b64 = Buffer.isBuffer(icerik.video) ? icerik.video.toString('base64') : String(icerik.video);
       yanit = await istek('/api/sendVideo', { method: 'POST', body: { ...ortak, caption: icerik.caption || '',
         file: { mimetype: icerik.mimetype || 'video/mp4', filename: icerik.fileName || 'video.mp4', data: b64 } } });
+
     } else if (icerik.audio) {
       const b64 = Buffer.isBuffer(icerik.audio) ? icerik.audio.toString('base64') : String(icerik.audio);
       yanit = await istek('/api/sendVoice', { method: 'POST', body: { ...ortak,
         file: { mimetype: icerik.mimetype || 'audio/ogg; codecs=opus', filename: 'ses.ogg', data: b64 } } });
+
     } else if (icerik.document) {
       const b64 = Buffer.isBuffer(icerik.document) ? icerik.document.toString('base64') : String(icerik.document);
       yanit = await istek('/api/sendFile', { method: 'POST', body: { ...ortak, caption: icerik.caption || '',
         file: { mimetype: icerik.mimetype || 'application/octet-stream', filename: icerik.fileName || 'dosya', data: b64 } } });
-    } else if (icerik.delete) {
-      // mesaj silme (herkesten)
-      const silId = icerik.delete.id || icerik.delete;
-      await istek('/api/' + WAHA_OTURUM + '/chats/' + jid + '/messages/' + silId, { method: 'DELETE' });
-      return { key: { id: silId, remoteJid: jid, fromMe: true } };
-    } else if (icerik.react) {
-      await istek('/api/reaction', { method: 'PUT', body: { session: WAHA_OTURUM,
-        messageId: (icerik.react.key && icerik.react.key.id) || icerik.react.key, reaction: icerik.react.text || '' } });
-      return { key: { id: 'react', remoteJid: jid, fromMe: true } };
-    } else if (icerik.poll) {
-      yanit = await istek('/api/sendPoll', { method: 'POST', body: { ...ortak,
-        poll: { name: icerik.poll.name, options: icerik.poll.values || [], multipleAnswers: false } } });
-    } else if (icerik.forward) {
-      yanit = await istek('/api/forwardMessage', { method: 'POST', body: { session: WAHA_OTURUM,
-        chatId: jid, messageId: (icerik.forward.key && icerik.forward.key.id) || icerik.forward.id } });
-    } else if (icerik.edit) {
-      yanit = await istek('/api/' + WAHA_OTURUM + '/chats/' + jid + '/messages/' + (icerik.edit.id || icerik.edit),
-        { method: 'PUT', body: { text: icerik.text || '' } });
+
+    } else if (icerik.text != null) {
+      yanit = await istek('/api/sendText', { method: 'POST', body: { ...ortak, text: icerik.text } });
+
     } else {
       throw new Error('WAHA: desteklenmeyen mesaj turu');
     }
