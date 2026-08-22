@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / makbuz-tek-kaynak-19';
+const MOTOR_SURUM = '2026-08-22 / grup-gri-tik-20';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -1563,7 +1563,24 @@ function wahaSoketYap(secenek = {}) {
     // Teslim (cift tik) ve okundu (mavi tik) bildirimleri grup
     // servisinden geliyor — WAHA onlari hic gondermiyor (olculdu: 3800
     // olayda message.ack sifir).
-    // Tik olayi gelmediginden durumu SORARAK takip ediyoruz
+    // ═══ GRUPTA GRI CIFT TIK (2026-08) ═══════════════════════════════
+    // WhatsApp'ta grup mesaji HERKES OKUYANA kadar mavi tik olmuyor;
+    // dolayisiyla okuma makbuzu da dogmuyor ve mesaj panelde sonsuza
+    // kadar SAAT ikonunda kaliyordu. Kisisel sohbette tek kisi okudugu
+    // icin makbuz hemen geliyor, orada sorun yoktu.
+    // server.js grup mesajini 1 (saat) ile kaydediyor:
+    //     const baslangicDurum = jid.endsWith('@g.us') ? 1 : 2;
+    // WAHA gonderimi ONAYLADIGINA gore mesaj WhatsApp sunucusuna
+    // ulasmistir. Bu yuzden kisa bir gecikmeyle GRI CIFT TIK veriyoruz.
+    // MAVI tik yine sadece gercek okuma makbuzuyla gelir (grup servisi).
+    // Ust uste yazma riski yok: server.js sadece durum ARTARSA guncelliyor.
+    if (String(jid).endsWith('@g.us')) {
+      setTimeout(() => {
+        if (sock._kapali) return;
+        makbuzYolla(sock, { id: cekirdek, remoteJid: jid, fromMe: true }, 3);
+      }, 2000);
+    }
+    // WAHA'nin kendi ack'ini de yoklamaya devam (bazi surumlerde doluyor)
     tikTakibi(sock, jid, cekirdek).catch(() => {});
     return { key: { id: cekirdek, remoteJid: jid, fromMe: true }, message: icerik, status: 2 };
   };
