@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / kimlik+aciklama-4';
+const MOTOR_SURUM = '2026-08-22 / hizli-yenileme-5';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -498,7 +498,7 @@ async function grupServisindenSor(jid, taze) {
   if (_grupServisiVar === false) return null;
   try {
     const iptal = new AbortController();
-    const saat = setTimeout(() => iptal.abort(), 25000);
+    const saat = setTimeout(() => iptal.abort(), taze ? 6000 : 15000);
     let r;
     try {
       r = await fetch(GRUP_SERVISI + '/grup?jid=' + jid + (taze ? '&taze=1' : ''), { signal: iptal.signal });
@@ -1647,7 +1647,7 @@ function wahaSoketYap(secenek = {}) {
         for (const yol of ['/api/' + WAHA_OTURUM + '/groups/' + jid,
                            '/api/' + WAHA_OTURUM + '/groups/' + String(jid).split('@')[0]]) {
           try {
-            const g = await istek(yol, { zamanAsimiMs: 15000 });
+            const g = await istek(yol, { zamanAsimiMs: 6000 });
             if (g) { b = baileysGrup(g); if (b) break; }
           } catch (_) { /* sonrakini dene */ }
         }
@@ -1673,7 +1673,12 @@ function wahaSoketYap(secenek = {}) {
           if (Date.now() - sonZor > 10 * 60 * 1000) {
             _zorDeneme.set(jid, Date.now());
             if (_zorDeneme.size > 8000) _zorDeneme.delete(_zorDeneme.keys().next().value);
-            const bitis = Date.now() + 9000;   // 20sn sinirina rahat sigsin
+            // ═══ SURE KISITI (2026-08) ════════════════════════════
+            // Panelin "Aciklamayi yenile" tusu bu cagriyi 8 SANIYEDE
+            // iptal ediyor. Blok 9 saniye surunce cevap tam gelecekken
+            // sure doluyor ve server.js ESKI veriyle devam ediyordu.
+            // 4 saniye: hem tusa yetisir hem "Yeniden Bul" (20sn) icin bol.
+            const bitis = Date.now() + 4000;
             await grupBasinaTazele(jid);
             while (Date.now() < bitis) {
               await uyu(1500);
@@ -1698,7 +1703,7 @@ function wahaSoketYap(secenek = {}) {
           // Uyeler bos ise ayri uctan tamamla (panelde "0 uye" gorunmesin)
           // Uye cekimi de bekletmesin: 8 saniyede gelmezse bosver
           if (!b.participants || !b.participants.length) {
-            b = await Promise.race([uyeleriTamamla(jid, b), uyu(8000).then(() => b)]);
+            b = await Promise.race([uyeleriTamamla(jid, b), uyu(3000).then(() => b)]);
           }
           _grupOnbellek.set(jid, { veri: b, ts: Date.now(), sure: GRUP_ONBELLEK_MS });
         } else {
