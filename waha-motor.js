@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / grup-gri-tik-20';
+const MOTOR_SURUM = '2026-08-22 / sadece-kimlik-22';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -215,7 +215,7 @@ function kimlikCekirdegi(id) {
 // icerikten eslestirebilelim. Sadece 90 saniyelik pencerede ve sadece
 // KENDI gonderdigimiz mesajlar icin — yanlis eslesme riski yok denecek
 // kadar az, tekrar sorunu ise tamamen bitiyor.
-const _gonderimIcerik = [];   // { jid, metin, id, ts }
+
 // ═══ TERS ESLESME (2026-08) ═══════════════════════════════════════
 // Panele verdigimiz kimlik ile WAHA'nin gercek kimligi farkli olabilir.
 // Silme/duzenleme WAHA'nin kimligini istiyor; panel ise bize kendi
@@ -223,16 +223,11 @@ const _gonderimIcerik = [];   // { jid, metin, id, ts }
 // Bu olmadan: mesaj panelde duzgun gorunur ama SILINEMEZ/DUZENLENEMEZ.
 const _panelToWaha = new Map();
 
-function gonderimiKaydet(id, jid, metin) {
+function gonderimiKaydet(id) {
   const c = kimlikCekirdegi(id);
-  if (c) {
-    _gonderilenler.set(c, String(id));
-    if (_gonderilenler.size > 3000) _gonderilenler.delete(_gonderilenler.keys().next().value);
-  }
-  if (jid && typeof metin === 'string') {
-    _gonderimIcerik.push({ jid, metin, id: String(id), ts: Date.now() });
-    while (_gonderimIcerik.length > 200) _gonderimIcerik.shift();
-  }
+  if (!c) return;
+  _gonderilenler.set(c, String(id));
+  if (_gonderilenler.size > 3000) _gonderilenler.delete(_gonderilenler.keys().next().value);
 }
 
 // ═══ GONDERIM CEVABINDAN KIMLIGI COZ (2026-08) ════════════════════
@@ -298,16 +293,23 @@ function kimlikBicimleri(id, jid, benimMi) {
   return liste;
 }
 
-function icerikleEslestir(jid, metin) {
-  if (!jid || typeof metin !== 'string' || !metin) return '';
-  const simdi = Date.now();
-  for (let i = _gonderimIcerik.length - 1; i >= 0; i--) {
-    const k = _gonderimIcerik[i];
-    if (simdi - k.ts > 90000) break;
-    if (k.jid === jid && k.metin === metin) return k.id;
-  }
-  return '';
-}
+// ═══ ICERIKTEN ESLESTIRME KALDIRILDI (2026-08) ════════════════════
+// Eskiden kimlik tutmazsa "son 90 saniyede ayni sohbete ayni metin
+// gonderildi mi" diye bakiliyordu. BU TEHLIKELI: ayni mesaji bilerek
+// iki kez gondermek mesru bir istek (robot mesajlari, hatirlatmalar) ve
+// bu yontem ikincisini birincinin yankisi sanip PANELDEN SILEBILIYORDU.
+// Metne bakarak karar vermek prensip olarak yanlis.
+// ARTIK SADECE KIMLIK: her sey cekirdek kimlige indirildigi icin
+// gonderim ile yanki zaten kesin eslesiyor, tahmine gerek yok.
+
+
+// ═══ HER KAYIT BIR KEZ ESLESIR (2026-08) ═══════════════════════════
+// RISK: robot hep AYNI metni gonderiyor ("Iptal isleminiz alinmistir...").
+// Iki robot mesaji 90 saniye icinde arka arkaya giderse, ikincisinin
+// yankisi BIRINCININ kimligiyle eslesir; server.js "bu mesaj zaten var"
+// deyip ikinciyi ELER ve mesaj PANELDEN KAYBOLUR.
+// Cozum: bir kayit eslestikten sonra listeden dusuruluyor. Boylece her
+// gonderim en fazla BIR yankiyla eslesir, ikinci mesaj kendi basina durur.
 
 // Gelen kimlik bizim gonderdigimiz mesaja aitse, PANELE VERDIGIMIZ
 // kimligi dondur — boylece server.js ayni mesaj oldugunu anlar.
@@ -1553,7 +1555,7 @@ function wahaSoketYap(secenek = {}) {
     // sakliyoruz ki silme/duzenleme/yanitlama dogru kimlikle gitsin.
     const cekirdek = kimlikCekirdegi(id) || id;
     if (String(id).includes('_')) _panelToWaha.set(cekirdek, String(id));
-    gonderimiKaydet(cekirdek, jid, typeof icerik.text === 'string' ? icerik.text : (icerik.caption || ''));
+    gonderimiKaydet(cekirdek);
     if ((sock._gonderimIzleme = (sock._gonderimIzleme || 0) + 1) <= 5) {
       log('mesaj gonderildi #' + sock._gonderimIzleme + ' | WAHA kimlik: ' + String(id).slice(0, 46));
     }
@@ -2981,25 +2983,6 @@ async function wahaBaglan() {
       }
       // 'message' gelen, 'message.any' hem gelen hem giden -> ikisi de gelirse
       // ayni mesaj iki kez islenmesin diye kimlige gore eleme
-      // Kimlik eslesmediyse ICERIKTEN eslestir (kendi mesajimizsa)
-      if (m.key.fromMe) {
-        const cek0 = kimlikCekirdegi(mesajKimligi(veri, (veri._data && veri._data.key) || {}));
-        if (!_gonderilenler.has(cek0)) {
-          const govdeMetin = (m.message && (m.message.conversation
-            || (m.message.extendedTextMessage && m.message.extendedTextMessage.text))) || '';
-          const bizimId = icerikleEslestir(m.key.remoteJid, govdeMetin);
-          if (bizimId) {
-            const gercek = mesajKimligi(veri, (veri._data && veri._data.key) || {});
-            m.key.id = bizimId;
-            if (cek0) _gonderilenler.set(cek0, bizimId);   // bir dahakine kimlikten eslesir
-            if (gercek) {
-              _panelToWaha.set(bizimId, String(gercek));   // silme/duzenleme icin
-              if (_panelToWaha.size > 3000) _panelToWaha.delete(_panelToWaha.keys().next().value);
-            }
-          }
-        }
-      }
-
       // ── IZLEME: kendi gonderdigimiz mesajlarin kimligini yaz ──
       // Tekrar sorunu devam ederse sebebi buradan gorulur: gonderim
       // kimligiyle olay kimligi ayni mi, eslesme tuttu mu?
