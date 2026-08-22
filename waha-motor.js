@@ -207,11 +207,34 @@ function kimlikCekirdegi(id) {
   return p[p.length - 1];
 }
 
-function gonderimiKaydet(id) {
+// Gonderdigimiz mesajin ICERIGINI de sakliyoruz: WAHA olayda bambaska
+// bir kimlik verirse (log 'eslesti mi: HAYIR' dedi) kimlikten degil
+// icerikten eslestirebilelim. Sadece 90 saniyelik pencerede ve sadece
+// KENDI gonderdigimiz mesajlar icin — yanlis eslesme riski yok denecek
+// kadar az, tekrar sorunu ise tamamen bitiyor.
+const _gonderimIcerik = [];   // { jid, metin, id, ts }
+
+function gonderimiKaydet(id, jid, metin) {
   const c = kimlikCekirdegi(id);
-  if (!c) return;
-  _gonderilenler.set(c, String(id));
-  if (_gonderilenler.size > 3000) _gonderilenler.delete(_gonderilenler.keys().next().value);
+  if (c) {
+    _gonderilenler.set(c, String(id));
+    if (_gonderilenler.size > 3000) _gonderilenler.delete(_gonderilenler.keys().next().value);
+  }
+  if (jid && typeof metin === 'string') {
+    _gonderimIcerik.push({ jid, metin, id: String(id), ts: Date.now() });
+    while (_gonderimIcerik.length > 200) _gonderimIcerik.shift();
+  }
+}
+
+function icerikleEslestir(jid, metin) {
+  if (!jid || typeof metin !== 'string' || !metin) return '';
+  const simdi = Date.now();
+  for (let i = _gonderimIcerik.length - 1; i >= 0; i--) {
+    const k = _gonderimIcerik[i];
+    if (simdi - k.ts > 90000) break;
+    if (k.jid === jid && k.metin === metin) return k.id;
+  }
+  return '';
 }
 
 // Gelen kimlik bizim gonderdigimiz mesaja aitse, PANELE VERDIGIMIZ
@@ -1405,7 +1428,7 @@ function wahaSoketYap(secenek = {}) {
     }
 
     const id = (yanit && ((yanit.id && yanit.id._serialized) || yanit.id)) || ('waha_' + Date.now());
-    gonderimiKaydet(id);   // geri geldiginde taniyalim
+    gonderimiKaydet(id, jid, typeof icerik.text === 'string' ? icerik.text : (icerik.caption || ''));
     if ((sock._gonderimIzleme = (sock._gonderimIzleme || 0) + 1) <= 5) {
       log('mesaj gonderildi #' + sock._gonderimIzleme + ' | WAHA kimlik: ' + String(id).slice(0, 46));
     }
@@ -2575,8 +2598,50 @@ async function wahaBaglan() {
     if (/^message(\.any)?$/.test(tip)) {
       const m = baileysMesaji(veri);
       if (!m || !m.key.remoteJid) return;
+
+      // ═══ DUZENLENEN MESAJ YENI MESAJ DEGILDIR (2026-08) ═══════════
+      // WhatsApp bir mesaj duzenlendiginde bunu AYRI bir mesaj olayi
+      // olarak yolluyor: icinde protocolMessage.editedMessage var ve
+      // hangi mesajin duzenlendigi protocolMessage.key.id'de yaziyor.
+      // Eskiden bunu normal mesaj sanip panele EKLIYORDUK — mesaji
+      // duzenledigin an panelde IKINCI SATIR olarak beliriyordu.
+      // Artik 'messages.update' olarak yayiyoruz: mevcut mesajin metni
+      // guncelleniyor, yeni satir olusmuyor.
+      const pm = m.message && m.message.protocolMessage;
+      if (pm && (pm.editedMessage || pm.type === 14 || pm.type === 'MESSAGE_EDIT')) {
+        const hedef = (pm.key && pm.key.id) || '';
+        const yeniIcerik = pm.editedMessage || null;
+        if (hedef && yeniIcerik) {
+          sock.ev.emit('messages.update', [{
+            key: { id: kimligiEslestir(hedef), remoteJid: m.key.remoteJid, fromMe: m.key.fromMe },
+            update: { message: yeniIcerik, messageTimestamp: m.messageTimestamp },
+          }]);
+          log('mesaj duzenlendi -> panelde guncellendi (yeni satir eklenmedi)');
+        }
+        return;
+      }
+      // Silme bildirimi de mesaj degildir
+      if (pm && (pm.type === 0 || pm.type === 'REVOKE')) {
+        const hedef = (pm.key && pm.key.id) || '';
+        if (hedef) sock.ev.emit('messages.delete', { keys: [{ id: kimligiEslestir(hedef), remoteJid: m.key.remoteJid, fromMe: m.key.fromMe }] });
+        return;
+      }
       // 'message' gelen, 'message.any' hem gelen hem giden -> ikisi de gelirse
       // ayni mesaj iki kez islenmesin diye kimlige gore eleme
+      // Kimlik eslesmediyse ICERIKTEN eslestir (kendi mesajimizsa)
+      if (m.key.fromMe) {
+        const cek0 = kimlikCekirdegi(mesajKimligi(veri, (veri._data && veri._data.key) || {}));
+        if (!_gonderilenler.has(cek0)) {
+          const govdeMetin = (m.message && (m.message.conversation
+            || (m.message.extendedTextMessage && m.message.extendedTextMessage.text))) || '';
+          const bizimId = icerikleEslestir(m.key.remoteJid, govdeMetin);
+          if (bizimId) {
+            m.key.id = bizimId;
+            if (cek0) _gonderilenler.set(cek0, bizimId);   // bir dahakine kimlikten eslesir
+          }
+        }
+      }
+
       // ── IZLEME: kendi gonderdigimiz mesajlarin kimligini yaz ──
       // Tekrar sorunu devam ederse sebebi buradan gorulur: gonderim
       // kimligiyle olay kimligi ayni mi, eslesme tuttu mu?
