@@ -69,7 +69,9 @@ var (
 	onbellek = map[string]onbellekKayit{}
 	kilit    sync.RWMutex
 	// Ayni grubu ust uste sormayalim; WhatsApp'i yormaz, panel hizlanir.
-	onbellekSuresi = 5 * time.Minute
+	// Panelin "aciklamayi yenile" tusu icin kisa tutuluyor; ayrica
+	// ?taze=1 ile tamamen atlanabiliyor.
+	onbellekSuresi = 60 * time.Second
 )
 
 func main() {
@@ -134,13 +136,17 @@ func main() {
 			ham += "@g.us"
 		}
 
-		// Onbellek
-		kilit.RLock()
-		k, varMi := onbellek[ham]
-		kilit.RUnlock()
-		if varMi && time.Since(k.ts) < onbellekSuresi {
-			json.NewEncoder(w).Encode(k.veri)
-			return
+		// ?taze=1 gelirse onbellegi ATLA — panel "yenile" dedi demektir,
+		// grup aciklamasi az once degismis olabilir.
+		taze := r.URL.Query().Get("taze") == "1"
+		if !taze {
+			kilit.RLock()
+			k, varMi := onbellek[ham]
+			kilit.RUnlock()
+			if varMi && time.Since(k.ts) < onbellekSuresi {
+				json.NewEncoder(w).Encode(k.veri)
+				return
+			}
 		}
 
 		jid, err := types.ParseJID(ham)

@@ -33,6 +33,9 @@ const WAHA_URL = (process.env.WAHA_URL || 'http://localhost:3000').replace(/\/+$
 const WAHA_API_KEY = process.env.WAHA_API_KEY || '';
 const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
+// Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
+// yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
+const MOTOR_SURUM = '2026-08-22 / kimlik-cozumu-3';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -491,14 +494,14 @@ function baileysMesaji(w) {
 const GRUP_SERVISI = process.env.GRUP_SERVISI_URL || 'http://127.0.0.1:3211';
 let _grupServisiVar = null;   // null=bilinmiyor, true/false=olculdu
 
-async function grupServisindenSor(jid) {
+async function grupServisindenSor(jid, taze) {
   if (_grupServisiVar === false) return null;
   try {
     const iptal = new AbortController();
     const saat = setTimeout(() => iptal.abort(), 25000);
     let r;
     try {
-      r = await fetch(GRUP_SERVISI + '/grup?jid=' + jid, { signal: iptal.signal });
+      r = await fetch(GRUP_SERVISI + '/grup?jid=' + jid + (taze ? '&taze=1' : ''), { signal: iptal.signal });
     } finally { clearTimeout(saat); }
     if (!r.ok) {
       if (_grupServisiVar === null) { _grupServisiVar = true; log('grup servisi calisiyor (bu grupta cevap yok)'); }
@@ -1568,7 +1571,15 @@ function wahaSoketYap(secenek = {}) {
   // istekler de tek cagriya biniyor. Kasmanin bir kismi buydu.
   const _grupOnbellek = new Map();   // jid -> { veri, ts }
   const _grupUcus = new Map();       // jid -> ucus halindeki soz
-  const GRUP_ONBELLEK_MS = 60000;        // adi olan grup: 1 dk
+  // ═══ ONBELLEK KISALTILDI (2026-08) ═══════════════════════════════
+  // Panelin "aciklamayi yenile" tusu bu fonksiyondan geciyor. Onbellek
+  // 1 dakika olunca grup aciklamasini degistirdikten hemen sonra tusa
+  // basildiginda ESKI aciklama donuyordu. Kisa tutuyoruz; ust uste
+  // gelen istekler zaten '_grupUcus' ile tek cagriya biniyor.
+  // 5 saniye: "yenile" tusuna basildiginda pratikte CANLI sorgu olur.
+  // Ani yigilmayi zaten '_grupUcus' engelliyor (ayni anda gelen istekler
+  // tek cagriya biner), uzun onbellege gerek yok.
+  const GRUP_ONBELLEK_MS = 5000;
   const GRUP_BOS_ONBELLEK_MS = 60000;    // adi BOS grup: 1 dk (tekrar denenince yeniden sorulsun)
   let _grupHataYazildi = 0;
 
@@ -1622,7 +1633,9 @@ function wahaSoketYap(secenek = {}) {
       try {
         let b = null;
         // ── 0) GRUP SERVISI (canli sorgu) ──
-        b = await grupServisindenSor(jid);
+        // taze=1: servisin onbellegini de atla. Panel "yenile" dediginde
+        // gercekten WhatsApp'a sorulsun, eski aciklama donmesin.
+        b = await grupServisindenSor(jid, true);
         if (b && b.subject) {
           if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
           sock._bilinenAdlar.set(jid, b.subject);
@@ -2295,6 +2308,7 @@ function kancaSunucusuAc() {
   });
   // 0.0.0.0 -> Docker kutusundan da erisilebilsin (sadece localhost YETMEZ)
   _kancaSunucu.listen(WAHA_KANCA_PORT, '0.0.0.0', () => {
+    log('════ waha-motor surum: ' + MOTOR_SURUM + ' ════');
     log('olay koprusu dinliyor: ' + WAHA_KANCA_URL + '  (port ' + WAHA_KANCA_PORT + ')');
   });
   _kancaSunucu.on('error', (e) => log('olay koprusu hatasi: ' + e.message));
