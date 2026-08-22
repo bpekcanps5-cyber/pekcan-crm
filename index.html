@@ -4081,6 +4081,17 @@
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
         <span id="grupSilYazi">Sadece grupları sil</span>
       </div>
+
+      <!-- TAM SIFIRLAMA: gruplar + kisiler + mesajlar, hem panelde hem
+           Supabase'de. QR yeniden okutulsa bile eski veri geri gelmez.
+           3 kez onay istenir: yanlislikla basilmasi neredeyse imkansiz. -->
+      <div style="font-size:11px;color:var(--muted);padding:10px 8px 8px;line-height:1.5;border-top:1px solid rgba(0,0,0,.06);margin-top:6px">
+        🧨 <b>Her şeyi sıfırla:</b> gruplar, kişiler ve mesajlar hem panelden hem veritabanından silinir. QR'ı yeniden okutsan bile geri gelmez; liste sıfırdan, mesaj geldikçe dolar. <b>Onaylamak için 3 kez bas.</b>
+      </div>
+      <div class="set-item" id="hepsiSilBtn" onclick="hepsiSilAdim()" style="color:#fff; background:#c0392b; font-weight:700; border-radius:10px; justify-content:center">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 1 21h22L12 2zm1 15h-2v-2h2v2zm0-4h-2V9h2v4z"/></svg>
+        <span id="hepsiSilYazi">Her şeyi sıfırla</span>
+      </div>
     </div>
   </div>
 </div>
@@ -7842,6 +7853,50 @@ function _grupSilSifirla(){
   if(y) y.textContent='Sadece grupları sil';
   if(b) b.style.background='';
 }
+// ═══ HER SEYI SIFIRLA (3 kez onay) ═══════════════════════════════
+// Geri donusu yok: gruplar + kisiler + mesajlar hem panelden hem
+// Supabase'den silinir. Bu yuzden tek basista degil, UC basista calisir
+// ve arada 5 saniye beklemezsen sayac sifirlanir.
+let _hepsiSilOnay=0, _hepsiSilTimer=null;
+function _hepsiSilSifirla(){
+  _hepsiSilOnay=0;
+  if(_hepsiSilTimer){ clearTimeout(_hepsiSilTimer); _hepsiSilTimer=null; }
+  const y=document.getElementById('hepsiSilYazi');
+  const b=document.getElementById('hepsiSilBtn');
+  if(y) y.textContent='Her şeyi sıfırla';
+  if(b) b.style.background='#c0392b';
+}
+function hepsiSilAdim(){
+  if(!currentUser || currentUser.role!=='admin'){ showToast('Bu işlem için yetkiniz yok.'); return; }
+  _hepsiSilOnay++;
+  const y=document.getElementById('hepsiSilYazi');
+  const b=document.getElementById('hepsiSilBtn');
+  if(_hepsiSilTimer) clearTimeout(_hepsiSilTimer);
+  if(_hepsiSilOnay===1){
+    if(y) y.textContent='⚠️ HER ŞEY SİLİNECEK — tekrar bas';
+    if(b) b.style.background='#a93226';
+    _hepsiSilTimer=setTimeout(_hepsiSilSifirla, 5000);
+    return;
+  }
+  if(_hepsiSilOnay===2){
+    if(y) y.textContent='🧨 SON UYARI — geri dönüşü yok, tekrar bas';
+    if(b) b.style.background='#7b241c';
+    _hepsiSilTimer=setTimeout(_hepsiSilSifirla, 5000);
+    return;
+  }
+  // ucuncu basis: gercekten sil
+  _hepsiSilTimer=null;
+  if(y) y.textContent='Siliniyor…';
+  try{ ws.send(JSON.stringify({type:'wipeLine'})); }
+  catch(e){ showToast('Bağlantı yok, tekrar dene.'); _hepsiSilSifirla(); return; }
+  setTimeout(()=>{
+    const m=document.getElementById('settingsMenu'); if(m) m.classList.remove('show');
+    const ic=document.getElementById('tehlikeliIcerik'); if(ic) ic.style.display='none';
+    const ok=document.getElementById('tehlikeliOk'); if(ok) ok.textContent='▼';
+    _hepsiSilSifirla();
+  }, 600);
+}
+
 function grupSilAdim(){
   if(!currentUser || currentUser.role!=='admin'){ showToast('Bu işlem için yetkiniz yok.'); return; }
   _grupSilOnay++;

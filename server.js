@@ -5197,13 +5197,47 @@ wss.on('connection', (ws) => {
         // Supabase'de sadece gruplari sil (bu hatta ait)
         if (db.isReady() && db.wipeGroups) {
           try {
-            await db.wipeGroups(_LID === 'ofis' ? null : _LID);
-            console.log('   ↳ Supabase grup verileri silindi (kisiler korundu)');
+            // HAT HER ZAMAN VERILIR: 'null' gecince db tarafinda filtre
+            // dusuyor ve TUM HATLARIN verisi silinme riskine giriyordu.
+            const sonuc = await db.wipeGroups(_LID);
+            console.log(`   ↳ Supabase: ${sonuc.chats} grup, ${sonuc.messages} mesaj silindi`);
+
           } catch (e) { console.error('   ⚠️  Supabase grup silme hatasi:', e.message); }
         }
         // Panele guncel listeyi gonder (sadece kalan kisiler) — hafif + parcali
         hafifChatsYayinla(_LID, (C2 && C2.forEach) ? C2 : new Map());
         broadcastHat(_LID, { type: 'opOk', message: 'Gruplar silindi. Kayıtlı kişiler korundu. Yeni mesaj geldikçe gruplar temiz şekilde geri gelecek.' });
+        console.log('   ↳ tamam.');
+      }
+
+      // ═══ HATTI TAMAMEN SIFIRLA ═══════════════════════════════════════
+      // Panelde ve Supabase'de bu hatta ait HER SEY silinir: gruplar,
+      // kisiler, mesajlar, etiket baglari, atamalar. QR yeniden okutulsa
+      // bile eski veri geri gelmez; liste sifirdan, mesaj geldikce dolar.
+      // SADECE BU HAT: baska hattin (canlinin) tek satirina dokunulmaz.
+      else if (msg.type === 'wipeLine') {
+        if (ws._role !== 'admin') {
+          ws.send(JSON.stringify({ type: 'opError', error: 'Bu işlem için yetkiniz yok.' }));
+          return;
+        }
+        console.log(`🧨 HAT TAMAMEN SIFIRLANIYOR [hat: ${_LID}]...`);
+        const C3 = hatChats(_LID);
+        const oncekiSayi = (C3 && C3.size) || 0;
+        if (C3 && C3.clear) C3.clear();
+        avatarCache.clear(); groupMetaCache.clear();
+        try { if (typeof grupAdlari !== 'undefined' && grupAdlari.clear) grupAdlari.clear(); } catch (_) {}
+        try { if (typeof chatLabels !== 'undefined' && chatLabels.clear) chatLabels.clear(); } catch (_) {}
+        console.log(`   ↳ bellekten ${oncekiSayi} sohbet silindi`);
+        let db_ = { chats: 0, messages: 0, contacts: 0 };
+        if (db.isReady() && db.wipeLine) {
+          try {
+            db_ = await db.wipeLine(_LID);
+            console.log(`   ↳ Supabase: ${db_.chats} sohbet, ${db_.messages} mesaj, ${db_.contacts} kisi silindi`);
+          } catch (e) { console.error('   ⚠️  Supabase silme hatasi:', e.message); }
+        }
+        hafifChatsYayinla(_LID, new Map());
+        broadcastHat(_LID, { type: 'opOk',
+          message: `Her şey silindi (${db_.chats} sohbet, ${db_.messages} mesaj, ${db_.contacts} kişi). Liste sıfırdan başlayacak.` });
         console.log('   ↳ tamam.');
       }
     } catch (e) { console.error('Panel mesaji islenemedi:', e.message); }

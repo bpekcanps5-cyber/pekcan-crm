@@ -614,21 +614,51 @@ async function wipeAll() {
 // Temiz baslangic icin: gruplar + grup mesajlari + gruba bagli etiket/atama silinir,
 // ama bire-bir kisi sohbetleri (is_group=false) ve kayitli kisiler (contacts) kalir.
 async function wipeGroups(lineId = null) {
-  if (!aktif) return;
-  // 1) Once silinecek grup jid'lerini bul (bu hatta ait, grup olanlar)
-  const kosul = lineId ? 'WHERE is_group=true AND line_id=$1' : 'WHERE is_group=true';
-  const params = H(lineId) ? [H(lineId)] : [];
-  const gruplar = await pool.query(`SELECT jid, line_id FROM chats ${kosul}`, params);
-  // 2) Bu gruplara ait mesajlari sil
+  if (!aktif) return { chats: 0, messages: 0 };
+  // ═══ HAT FILTRESI HER ZAMAN UYGULANIR (2026-08) ═══════════════════
+  // ESKI HATA: lineId null gelince kosuldan '$1' dusuyor ama parametre
+  // yine gonderiliyordu -> "bind message supplies 1 parameters, but
+  // prepared statement requires 0" hatasi. Silme HIC calismiyordu.
+  // DAHA TEHLIKELISI: hata olmasaydi kosul 'WHERE is_group=true' olarak
+  // kalacak ve TUM HATLARIN gruplarini, yani CANLI VERIYI silecekti.
+  // Artik hat her zaman H() ile cozuluyor ve kosula MUTLAKA giriyor.
+  const hat = H(lineId);                       // 'ofis' | 'waha_ofis' ...
+  const kosul = 'WHERE is_group=true AND line_id=$1';
+  const gruplar = await pool.query(`SELECT jid FROM chats ${kosul}`, [hat]);
+  let mesajSayisi = 0;
   for (const g of gruplar.rows) {
-    await q('DELETE FROM messages WHERE jid=$1 AND line_id=$2', [g.jid, g.line_id]);
-    // gruba bagli etiket baglantilari ve atamalar (tablolar varsa)
-    try { await q('DELETE FROM chat_labels WHERE chat_jid=$1 AND line_id=$2', [g.jid, g.line_id]); } catch (e) {}
-    try { await q('DELETE FROM chat_assignments WHERE chat_jid=$1 AND line_id=$2', [g.jid, g.line_id]); } catch (e) {}
+    const r = await q('DELETE FROM messages WHERE jid=$1 AND line_id=$2', [g.jid, hat]);
+    mesajSayisi += (r && r.rowCount) || 0;
+    try { await q('DELETE FROM chat_labels WHERE chat_jid=$1 AND line_id=$2', [g.jid, hat]); } catch (e) {}
+    try { await q('DELETE FROM chat_assignments WHERE chat_jid=$1 AND line_id=$2', [g.jid, hat]); } catch (e) {}
   }
-  // 3) Grup sohbetlerini sil (kisiler kalir)
-  await q(`DELETE FROM chats ${kosul}`, params);
-  // contacts ve users tablosuna DOKUNMA
+  await q(`DELETE FROM chats ${kosul}`, [hat]);
+  return { chats: gruplar.rows.length, messages: mesajSayisi };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  HATTI TAMAMEN SIFIRLA  —  sohbetler, mesajlar, kisiler, etiket baglari
+//  -------------------------------------------------------------------
+//  "Sil tusuna basinca her sey gitsin, bir daha QR okutsak da geri
+//   gelmesin" istegi icin. SADECE VERILEN HATTA dokunur; baska hattin
+//  (ornegin canlinin) tek satirina bile dokunmaz.
+//  Kullanicilar, etiket TANIMLARI ve ayarlar KORUNUR — onlar hatta
+//  bagli calisma verisi degil, sistemin kendi ayari.
+// ═══════════════════════════════════════════════════════════════════
+async function wipeLine(lineId = null) {
+  if (!aktif) return { chats: 0, messages: 0, contacts: 0 };
+  const hat = H(lineId);
+  const sayim = { chats: 0, messages: 0, contacts: 0 };
+  const sil = async (sql, ad) => {
+    try { const r = await q(sql, [hat]); return (r && r.rowCount) || 0; }
+    catch (e) { console.error('   ⚠️  ' + ad + ' silinemedi:', e.message); return 0; }
+  };
+  sayim.messages = await sil('DELETE FROM messages WHERE line_id=$1', 'mesajlar');
+  await sil('DELETE FROM chat_labels WHERE line_id=$1', 'etiket baglari');
+  await sil('DELETE FROM chat_assignments WHERE line_id=$1', 'atamalar');
+  sayim.chats = await sil('DELETE FROM chats WHERE line_id=$1', 'sohbetler');
+  sayim.contacts = await sil('DELETE FROM contacts WHERE line_id=$1', 'kisiler');
+  return sayim;
 }
 
 // ============================================================
@@ -1730,7 +1760,7 @@ module.exports = {
   getRawMessage, kapat,
   init, test, isReady, startKeepAlive,
   saveChat, saveMessage, saveContact, saveSetting, getSetting,
-  loadAll, loadMessages, deleteMessage, wipeAll, wipeGroups, searchMessages,
+  loadAll, loadMessages, deleteMessage, wipeAll, wipeGroups, wipeLine, searchMessages,
   cleanupOld, startCleanup,
   ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, setBagimsizOkuma, updateUser,
   setUserAvatar, listUserAvatars, setUserGorev, GECERLI_GOREV,
