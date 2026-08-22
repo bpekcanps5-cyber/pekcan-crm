@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / hizli-yenileme-5';
+const MOTOR_SURUM = '2026-08-22 / tik-tekrardan-6';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -2783,6 +2783,40 @@ async function wahaBaglan() {
           + ' | eslesti mi: ' + (_gonderilenler.has(cek) ? 'EVET -> ' + String(m.key.id).slice(0, 40) : 'HAYIR')
           + ' | daha once islendi mi: ' + (sock._sonMesajlar.has(m.key.id) ? 'EVET (elenir)' : 'hayir'));
       }
+      // ═══ TEKRAR GELEN MESAJ = TIK GUNCELLEMESI (2026-08) ══════════
+      // WAHA ayri bir 'message.ack' olayi GONDERMIYOR (logda tek satir
+      // yok). Bunun yerine AYNI MESAJI tekrar tekrar yolluyor ve her
+      // seferinde icindeki 'ack' degeri artiyor:
+      //     1. gelis -> ack 0/1  (bekliyor)
+      //     2. gelis -> ack 1    (tek tik / sunucu)
+      //     3. gelis -> ack 2    (cift tik / iletildi)
+      //     4. gelis -> ack 3    (mavi tik / okundu)
+      // Eskiden bunlari "tekrar" sanip ELIYORDUK — yani tikleri kendi
+      // elimizle cope atiyorduk. "tek tik cift tik yok" sikayetinin
+      // sebebi buydu. Artik tekrar geleni atmadan once ack'ine bakip
+      // ilerlediyse durum guncellemesi yayinliyoruz.
+      const gelenAck = (veri.ack != null) ? Number(veri.ack)
+        : ((veri._data && veri._data.status != null) ? Number(veri._data.status) : null);
+      if (gelenAck != null && !isNaN(gelenAck)) {
+        if (!sock._sonAck) sock._sonAck = new Map();
+        const onceki = sock._sonAck.get(m.key.id);
+        const yeniDurum = ackCevir(gelenAck);
+        if (onceki === undefined || yeniDurum > onceki) {
+          sock._sonAck.set(m.key.id, yeniDurum);
+          if (sock._sonAck.size > 3000) sock._sonAck.delete(sock._sonAck.keys().next().value);
+          if (onceki !== undefined) {   // ilk gelis zaten upsert ile gidiyor
+            sock.ev.emit('messages.update', [{
+              key: { id: m.key.id, remoteJid: m.key.remoteJid, fromMe: m.key.fromMe },
+              update: { status: yeniDurum },
+            }]);
+            if ((sock._tikIzleme = (sock._tikIzleme || 0) + 1) <= 5) {
+              const adlar = { 1: 'bekliyor', 2: 'tek tik', 3: 'cift tik', 4: 'mavi tik', 5: 'dinlendi' };
+              log('tik ilerledi -> ' + (adlar[yeniDurum] || yeniDurum));
+            }
+          }
+        }
+      }
+
       if (sock._sonMesajlar.has(m.key.id)) return;
       sock._sonMesajlar.add(m.key.id);
       if (sock._sonMesajlar.size > 800) sock._sonMesajlar.delete(sock._sonMesajlar.values().next().value);
