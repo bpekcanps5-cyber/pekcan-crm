@@ -213,6 +213,12 @@ function kimlikCekirdegi(id) {
 // KENDI gonderdigimiz mesajlar icin — yanlis eslesme riski yok denecek
 // kadar az, tekrar sorunu ise tamamen bitiyor.
 const _gonderimIcerik = [];   // { jid, metin, id, ts }
+// ═══ TERS ESLESME (2026-08) ═══════════════════════════════════════
+// Panele verdigimiz kimlik ile WAHA'nin gercek kimligi farkli olabilir.
+// Silme/duzenleme WAHA'nin kimligini istiyor; panel ise bize kendi
+// bildigi kimligi geri veriyor. Bu harita ikisini birbirine baglar.
+// Bu olmadan: mesaj panelde duzgun gorunur ama SILINEMEZ/DUZENLENEMEZ.
+const _panelToWaha = new Map();
 
 function gonderimiKaydet(id, jid, metin) {
   const c = kimlikCekirdegi(id);
@@ -224,6 +230,35 @@ function gonderimiKaydet(id, jid, metin) {
     _gonderimIcerik.push({ jid, metin, id: String(id), ts: Date.now() });
     while (_gonderimIcerik.length > 200) _gonderimIcerik.shift();
   }
+}
+
+// ═══ SILME/DUZENLEME ICIN KIMLIK BICIMLERI (2026-08) ═══════════════
+// WAHA'nin silme ve duzenleme uclari hangi bicimi bekliyor BILMIYORUZ:
+//   tam  : true_120363...@g.us_3EB0ABC
+//   kisa : 3EB0ABC
+// Tahmin etmek yerine SIRAYLA DENIYORUZ; hangisi tuttuysa onu hatirlayip
+// bir dahakine dogrudan onu kullaniyoruz. Bir tur denemeden sonra ek
+// maliyet kalmiyor.
+let _silmeBicimi = null;   // 'olduguGibi' | 'tam' | 'kisa'
+
+function kimlikBicimleri(id, jid, benimMi) {
+  const ham = String(id || '');
+  const liste = [];
+  const ekle = (x) => { if (x && !liste.includes(x)) liste.push(x); };
+
+  // 1) WAHA'nin GERCEK kimligi (olaydan ogrendik) — en dogrusu bu
+  const gercek = _panelToWaha.get(ham);
+  if (gercek) {
+    ekle(gercek);
+    ekle(kimlikCekirdegi(gercek));
+    ekle('true_' + jid + '_' + kimlikCekirdegi(gercek));
+  }
+  // 2) Panelin verdigi kimlik ve turevleri
+  const cek = kimlikCekirdegi(ham);
+  ekle(ham);
+  ekle('true_' + jid + '_' + cek);
+  ekle(cek);
+  return liste;
 }
 
 function icerikleEslestir(jid, metin) {
@@ -1374,16 +1409,42 @@ function wahaSoketYap(secenek = {}) {
     // kontrol ediliyor.
 
     if (icerik.edit) {
-      // MESAJ DUZENLE
+      // MESAJ DUZENLE — kimlik bicimini deneyerek bul
       const duzId = icerik.edit.id || (icerik.edit.key && icerik.edit.key.id) || icerik.edit;
-      yanit = await istek('/api/' + WAHA_OTURUM + '/chats/' + jid + '/messages/' + duzId,
-        { method: 'PUT', body: { text: icerik.text || '' } });
+      let oldu = false, sonHata = '';
+      for (const bicim of kimlikBicimleri(duzId, jid, true)) {
+        try {
+          yanit = await istek('/api/' + WAHA_OTURUM + '/chats/' + jid + '/messages/' + bicim,
+            { method: 'PUT', body: { text: icerik.text || '' } });
+          oldu = true;
+          if (!_silmeBicimi) {
+            _silmeBicimi = bicim === kimlikCekirdegi(duzId) ? 'kisa'
+              : (bicim.startsWith('true_') ? 'tam' : 'olduguGibi');
+            log('silme/duzenleme kimlik bicimi: ' + _silmeBicimi);
+          }
+          break;
+        } catch (e) { sonHata = String(e.message).slice(0, 90); }
+      }
+      if (!oldu) log('mesaj DUZENLENEMEDI (' + String(duzId).slice(0, 34) + '): ' + sonHata);
       return { key: { id: duzId, remoteJid: jid, fromMe: true }, message: icerik, status: 1 };
 
     } else if (icerik.delete) {
-      // MESAJ SIL (herkesten)
+      // MESAJ SIL (herkesten) — kimlik bicimini deneyerek bul
       const silId = icerik.delete.id || (icerik.delete.key && icerik.delete.key.id) || icerik.delete;
-      await istek('/api/' + WAHA_OTURUM + '/chats/' + jid + '/messages/' + silId, { method: 'DELETE' });
+      let oldu = false, sonHata = '';
+      for (const bicim of kimlikBicimleri(silId, jid, true)) {
+        try {
+          await istek('/api/' + WAHA_OTURUM + '/chats/' + jid + '/messages/' + bicim, { method: 'DELETE' });
+          oldu = true;
+          if (!_silmeBicimi) {
+            _silmeBicimi = bicim === kimlikCekirdegi(silId) ? 'kisa'
+              : (bicim.startsWith('true_') ? 'tam' : 'olduguGibi');
+            log('silme/duzenleme kimlik bicimi: ' + _silmeBicimi);
+          }
+          break;
+        } catch (e) { sonHata = String(e.message).slice(0, 90); }
+      }
+      if (!oldu) log('mesaj SILINEMEDI (' + String(silId).slice(0, 34) + '): ' + sonHata);
       return { key: { id: silId, remoteJid: jid, fromMe: true } };
 
     } else if (icerik.react) {
@@ -2546,6 +2607,10 @@ async function wahaBaglan() {
 
     // 2) MESAJ DURUMU (tik)
     if (/message\.ack/.test(tip)) {
+      // Ilk 3 tik olayinin HAM icerigini yaz — alan adlarini gorelim
+      if ((sock._ackIzleme = (sock._ackIzleme || 0) + 1) <= 3) {
+        log('tik olayi #' + sock._ackIzleme + ' ham: ' + JSON.stringify(veri).slice(0, 220));
+      }
       const id = (veri.id && veri.id._serialized) || veri.id;
       // ═══ DOGRU SOHBETI SEC (2026-08) ════════════════════════════
       // ESKIDEN: 'chatId || from || to' deniyordu. Giden mesajlarda
@@ -2636,8 +2701,13 @@ async function wahaBaglan() {
             || (m.message.extendedTextMessage && m.message.extendedTextMessage.text))) || '';
           const bizimId = icerikleEslestir(m.key.remoteJid, govdeMetin);
           if (bizimId) {
+            const gercek = mesajKimligi(veri, (veri._data && veri._data.key) || {});
             m.key.id = bizimId;
             if (cek0) _gonderilenler.set(cek0, bizimId);   // bir dahakine kimlikten eslesir
+            if (gercek) {
+              _panelToWaha.set(bizimId, String(gercek));   // silme/duzenleme icin
+              if (_panelToWaha.size > 3000) _panelToWaha.delete(_panelToWaha.keys().next().value);
+            }
           }
         }
       }
