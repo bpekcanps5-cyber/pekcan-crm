@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / olay-akisi-guvence-25';
+const MOTOR_SURUM = '2026-08-22 / qr-durumsuz-26';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -2788,7 +2788,13 @@ function qrTakibiBaslat(sock) {
       // WAHA bazen STARTING durumundayken QR'i zaten uretmis oluyor.
       // Sirf durum yazisi 'SCAN_QR_CODE' olmadi diye beklemek gereksiz
       // gecikme yaratiyordu.
-      if (/SCAN_QR_CODE|STARTING|QR/.test(durum)) {
+      // ═══ DURUM YAZISINA TAKILMA (2026-08) ══════════════════════════
+      // WAHA'nin durum yazisi surume gore degisiyor (SCAN_QR_CODE,
+      // STARTING, PENDING, WAITING...). Yaziyi listeye almak yerine artik
+      // sunu diyoruz: BAGLI DEGILSE QR'i DENE. QR hazirsa alinir, degilse
+      // bir sonraki tura kalir. "QR kodu hazirlaniyor" ekraninda takili
+      // kalmanin sebeplerinden biri buydu.
+      {
         const q = await qrAl();
         if (!q) {
           if (sayac % 4 === 1) log('QR alinamadi — WAHA henuz uretmemis olabilir, denemeye devam');
