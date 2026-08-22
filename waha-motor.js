@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / sadece-kimlik-22';
+const MOTOR_SURUM = '2026-08-22 / telafi-ve-dogrulama-24';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -1576,11 +1576,31 @@ function wahaSoketYap(secenek = {}) {
     // ulasmistir. Bu yuzden kisa bir gecikmeyle GRI CIFT TIK veriyoruz.
     // MAVI tik yine sadece gercek okuma makbuzuyla gelir (grup servisi).
     // Ust uste yazma riski yok: server.js sadece durum ARTARSA guncelliyor.
+    // ═══ ONCE DOGRULA, SONRA TIK KOY (2026-08) ═══════════════════════
+    // "gitmeyen mesaji gitti gibi gosteriyordu" sikayeti icin:
+    // korü korune gri tik koymuyoruz. Once WAHA'nin mesaj listesinde
+    // mesajin GERCEKTEN durdugunu dogruluyoruz. Duruyorsa WhatsApp onu
+    // kabul etmis demektir -> gri cift tik. Bulunamazsa saat ikonunda
+    // birakiyoruz ki kullanici gitmedigini gorsun (yanlis guven vermeyelim).
     if (String(jid).endsWith('@g.us')) {
-      setTimeout(() => {
-        if (sock._kapali) return;
-        makbuzYolla(sock, { id: cekirdek, remoteJid: jid, fromMe: true }, 3);
-      }, 2000);
+      (async () => {
+        for (const bekle of [2000, 5000, 12000]) {
+          await uyu(bekle);
+          if (sock._kapali) return;
+          try {
+            const ham = await istek('/api/' + WAHA_OTURUM + '/chats/' + jid
+              + '/messages?limit=15&downloadMedia=false', { zamanAsimiMs: 10000 });
+            const dizi = Array.isArray(ham) ? ham : (ham && Array.isArray(ham.data) ? ham.data : []);
+            const bulundu = dizi.some((x) =>
+              kimlikCekirdegi(mesajKimligi(x, (x._data && x._data.key) || {})) === cekirdek);
+            if (bulundu) {
+              makbuzYolla(sock, { id: cekirdek, remoteJid: jid, fromMe: true }, 3);
+              return;
+            }
+          } catch (_) { /* sonraki denemeye birak */ }
+        }
+        log('mesaj WAHA listesinde bulunamadi — tik konmadi (' + cekirdek.slice(0, 12) + ')');
+      })().catch(() => {});
     }
     // WAHA'nin kendi ack'ini de yoklamaya devam (bazi surumlerde doluyor)
     tikTakibi(sock, jid, cekirdek).catch(() => {});
@@ -2689,6 +2709,8 @@ function qrTakibiBaslat(sock) {
         sock._failedSayisi = 0;
         qrTakibiDurdur(sock);
         durumBekcisiBaslat(sock);   // baglantiyi izlemeye devam et
+        baglantiBasladiYaz();
+        setTimeout(() => { kopuklukTelafisi(sock).catch(() => {}); }, 4000);
         const ben = s.me || s.user || {};
         sock.user = benKur(ben);
         sock.ws.isOpen = true;
@@ -2788,6 +2810,128 @@ function qrTakibiBaslat(sock) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  KOPUKLUK TELAFISI  —  "aradaki yazismalar yok oluyordu"
+//  -------------------------------------------------------------------
+//  Baglanti koptugunda o sirada gelen mesajlar kopruye ULASMIYOR ve
+//  geri baglaninca da kimse onlari geri istemiyordu — kalici olarak
+//  kayboluyorlardi (PDF, dosya, metin farketmez).
+//  WAHA deposu acik oldugu icin o mesajlar WAHA'DA DURUYOR. Yapmamiz
+//  gereken tek sey: geri baglanir baglanmaz kopukluk penceresinde
+//  hareket olan sohbetleri okuyup eksikleri panele vermek.
+//
+//  KAPSAM SINIRLI: en son konusulan 50 sohbete bakilir ve sadece
+//  kopukluk zamanindan SONRA hareket olanlar okunur. Boylece 3500
+//  sohbetin hepsi taranmaz, sistem yorulmaz.
+// ═══════════════════════════════════════════════════════════════════
+let _kopmaZamani = 0;
+
+async function kopuklukTelafisi(sock) {
+  if (!_kopmaZamani || sock._kapali) return;
+  const kopuk = _kopmaZamani;
+  _kopmaZamani = 0;
+  const gecenSn = Math.round((Date.now() - kopuk) / 1000);
+  if (gecenSn < 5) return;                 // cok kisa kopukluk, gerek yok
+  log('kopukluk telafisi: ' + gecenSn + ' saniyelik bosluk taraniyor...');
+
+  let sohbetler = [];
+  try {
+    const veri = await istek('/api/' + WAHA_OTURUM + '/chats?limit=50&offset=0', { zamanAsimiMs: 20000 });
+    sohbetler = Array.isArray(veri) ? veri : (veri && Array.isArray(veri.data) ? veri.data : []);
+  } catch (e) {
+    log('  sohbet listesi okunamadi: ' + String(e.message).slice(0, 60));
+    return;
+  }
+
+  // Kopukluk penceresinde hareket olanlar (60sn pay birakiyoruz)
+  const esik = Math.floor((kopuk - 60000) / 1000);
+  const hedefler = [];
+  for (const c of sohbetler) {
+    const jid = jidAl(c);
+    if (!jid || !jid.includes('@')) continue;
+    const zaman = sohbetZamani(c);
+    if (!zaman || zaman >= esik) hedefler.push(jid);
+    if (hedefler.length >= 30) break;
+  }
+  if (!hedefler.length) { log('  bosluk sirasinda hareket yok'); return; }
+
+  let toplam = 0;
+  const biriken = [];
+  for (const jid of hedefler) {
+    if (sock._kapali) break;
+    try {
+      const ham = await istek('/api/' + WAHA_OTURUM + '/chats/' + jid
+        + '/messages?limit=25&downloadMedia=false', { zamanAsimiMs: 15000 });
+      const dizi = Array.isArray(ham) ? ham : (ham && Array.isArray(ham.data) ? ham.data : []);
+      for (const w of dizi) {
+        const m = baileysMesaji(w);
+        if (!m || !m.key.id) continue;
+        if (!m.key.remoteJid) m.key.remoteJid = jid;
+        // Kopukluktan ONCEKI mesajlari getirme
+        if (m.messageTimestamp && m.messageTimestamp < esik) continue;
+        if (sock._sonMesajlar.has(m.key.id)) continue;   // zaten panelde
+        sock._sonMesajlar.add(m.key.id);
+        biriken.push(m);
+        toplam++;
+      }
+    } catch (_) { /* bu sohbet okunamadi, digerine gec */ }
+    await uyu(150);
+  }
+  if (biriken.length) {
+    // Tek pakette gonder: server.js her gecmis yayininda tum sohbetleri
+    // veritabanina yaziyor, cok yayin Supabase'i yorar.
+    sock.ev.emit('messaging-history.set', { chats: [], contacts: [], messages: biriken, isLatest: false });
+  }
+  log('kopukluk telafisi bitti: ' + hedefler.length + ' sohbet tarandi, '
+    + toplam + ' kayip mesaj panele gonderildi');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  KOPMA GUNLUGU  —  once OLC, sonra coz
+//  -------------------------------------------------------------------
+//  "Baileys kopuyor" diye basladik ama kopmalarin SEBEBINI hic olcmedik.
+//  Bu gunluk her kopmayi kaliciya yaziyor:
+//     ne zaman | ne kadar bagli kaldi | sebep | o anki olay yogunlugu
+//  Boylece desen goruyoruz:
+//     - hep ayni saatlerde mi  -> ag/VPS
+//     - hep yogunlukta mi      -> yuk
+//     - rastgele mi            -> kutuphane/hesap
+//  Dosya: waha-kopma.log  (CRM klasorunde)
+// ═══════════════════════════════════════════════════════════════════
+const KOPMA_DOSYA = process.env.WAHA_KOPMA_LOG || 'waha-kopma.log';
+let _baglantiBaslangic = 0;
+let _kopmaSayisi = 0;
+
+function kopmaYaz(sebep, ek) {
+  try {
+    const fs = require('fs');
+    _kopmaSayisi++;
+    const simdi = new Date();
+    const sure = _baglantiBaslangic ? Math.round((Date.now() - _baglantiBaslangic) / 1000) : 0;
+    const olaylar = [..._olayTipleri].map(([t, n]) => t + '=' + n).join(' ');
+    const satir = [
+      simdi.toISOString(),
+      'kopma#' + _kopmaSayisi,
+      'bagli_kaldi=' + sure + 'sn',
+      'sebep=' + String(sebep || '?').replace(/\s+/g, '_').slice(0, 40),
+      'toplam_olay=' + _olaySayaci,
+      ek ? 'ek=' + String(ek).replace(/\s+/g, '_').slice(0, 60) : '',
+      olaylar ? '| ' + olaylar : '',
+    ].filter(Boolean).join('  ');
+    fs.appendFileSync(KOPMA_DOSYA, satir + '\n');
+    log('kopma gunluge yazildi (' + sure + 'sn bagli kalmisti, sebep: ' + sebep + ')');
+  } catch (_) { /* gunluk yazilamadi, akisi bozma */ }
+}
+
+function baglantiBasladiYaz() {
+  _baglantiBaslangic = Date.now();
+  try {
+    const fs = require('fs');
+    fs.appendFileSync(KOPMA_DOSYA,
+      new Date().toISOString() + '  BAGLANDI\n');
+  } catch (_) {}
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  DURUM BEKCISI  —  telefondan kopunca ANINDA fark et
 //  -------------------------------------------------------------------
 //  ESKI HATA: baglanti kurulunca durum sorgusu TAMAMEN duruyordu.
@@ -2806,6 +2950,8 @@ function durumBekcisiBaslat(sock) {
       const durum = String(s.status || s.state || '').toUpperCase();
       if (/WORKING|CONNECTED/.test(durum)) return;   // her sey yolunda
       log('baglanti dustu (durum: ' + durum + ') — QR icin hemen geciliyor');
+      kopmaYaz(durum, 'bekci tespit etti');
+      _kopmaZamani = Date.now();
       durumBekcisiDurdur(sock);
       sock.ws.isOpen = false;
       sock._qrHizliBitis = Date.now() + 90000;
@@ -3169,6 +3315,8 @@ async function wahaBaglan() {
       sock.user = benKur(ben);
       sock.ws.isOpen = true;
       durumBekcisiBaslat(sock);
+      baglantiBasladiYaz();
+      setTimeout(() => { kopuklukTelafisi(sock).catch(() => {}); }, 4000);
       setImmediate(() => sock.ev.emit('connection.update', { connection: 'open' }));
     } else {
       setImmediate(() => sock.ev.emit('connection.update', { connection: 'connecting' }));
