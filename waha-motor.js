@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / tik-tekrardan-6';
+const MOTOR_SURUM = '2026-08-22 / tek-adres-7';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -2282,6 +2282,27 @@ function websoketDurdur() {
   if (_wsBaglanti) { try { _wsBaglanti.close(); } catch (_) {} _wsBaglanti = null; }
 }
 
+// Calisan adres bulununca oturum ayarini TEK adrese indir.
+let _adresSadelestirildi = false;
+let _kayitliKancalar = [];   // WAHA'ya gercekten kaydettigimiz adresler
+async function _tekAdreseIndir(indeks) {
+  if (_adresSadelestirildi) return;
+  _adresSadelestirildi = true;
+  try {
+    // Yeniden hesaplamak yerine GERCEKTEN kaydettigimiz listeden sec —
+    // aradan zaman gecince ag arayuzleri degisebilir, indeks kayabilir.
+    const secilen = _kayitliKancalar[indeks];
+    if (!secilen) return;
+    const s = await istek('/api/sessions/' + WAHA_OTURUM);
+    const kayitli = (s.config && s.config.webhooks) || [];
+    if (kayitli.length <= 1) return;   // zaten tek
+    const kalan = [{ url: secilen.url, events: KANCA_OLAYLARI }];
+    const ayar = Object.assign({}, s.config, { webhooks: kalan });
+    await istek('/api/sessions/' + WAHA_OTURUM, { method: 'PUT', body: { config: ayar } });
+    log('olay adresi TEKE indirildi (' + kayitli.length + ' -> 1) — her olay artik BIR kez gelecek');
+  } catch (e) { log('adres sadelestirilemedi: ' + String(e.message).slice(0, 70)); }
+}
+
 function kancaSunucusuAc() {
   if (_kancaSunucu) return;
   _kancaSunucu = http.createServer((req, res) => {
@@ -2303,8 +2324,15 @@ function kancaSunucusuAc() {
       if (_olaySayaci === 1) {
         // Hangi adaydan geldi? Yol sonundaki numara onu soyluyor.
         const no = String(req.url || '').match(/\/olay\/(\d+)/);
-        const adres = no ? (kancaAdaylari()[Number(no[1])] || '?') : '(eski yol)';
+        const adres = no ? ((_kayitliKancalar[Number(no[1])] || {}).url || '?') : '(eski yol)';
         log('✅ WAHA\'dan ilk olay geldi: "' + tip + '" — calisan adres: ' + adres);
+        // ═══ FAZLA ADRESLERI SIL (2026-08) ══════════════════════════
+        // Hangi adresin ulastigini bilmedigimiz icin DORT aday birden
+        // kaydediliyordu. WAHA her olayi DORDUNE BIRDEN gonderiyor:
+        // her mesaj 4 kez geliyor, sistem 4 kat yukleniyor ve logda
+        // "ayni mesaj 5 kez geldi" gibi gorunuyor.
+        // Calisani ogrendik — digerlerini simdi siliyoruz.
+        if (no) _tekAdreseIndir(Number(no[1]));
       } else if (_olaySayaci % 200 === 0) {
         log('olay ozeti (' + _olaySayaci + ' toplam): '
           + [..._olayTipleri].map(([t, n]) => t + '=' + n).join(' '));
@@ -2346,6 +2374,7 @@ async function oturumHazirla() {
   // buydu. Depo ACIK kalir (grup bilgisi icin gerekli), sadece toplu
   // gecmis indirme kapatilir — zaten mesaj geldikce dolduruyoruz.
   const depoAyari = { enabled: true, fullSync: false, full_sync: false };
+  _kayitliKancalar = kancalar;
   const oturumAyari = { webhooks: kancalar, noweb: { store: depoAyari } };
   try {
     const s = await istek('/api/sessions/' + WAHA_OTURUM);
@@ -2776,6 +2805,9 @@ async function wahaBaglan() {
       // ── IZLEME: kendi gonderdigimiz mesajlarin kimligini yaz ──
       // Tekrar sorunu devam ederse sebebi buradan gorulur: gonderim
       // kimligiyle olay kimligi ayni mi, eslesme tuttu mu?
+      if (m.key.fromMe && (sock._fromMeHam = (sock._fromMeHam || 0) + 1) <= 2) {
+        log('giden mesaj HAM olay #' + sock._fromMeHam + ': ' + JSON.stringify(veri).slice(0, 300));
+      }
       if (m.key.fromMe && (sock._fromMeIzleme = (sock._fromMeIzleme || 0) + 1) <= 5) {
         const cek = kimlikCekirdegi(mesajKimligi(veri, (veri._data && veri._data.key) || {}));
         log('giden mesaj geri geldi #' + sock._fromMeIzleme
