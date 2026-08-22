@@ -1,172 +1,192 @@
 // ═══════════════════════════════════════════════════════════════════
-//  WHATSMEOW SONDASI  —  tek soruyu cevaplar
+//  GRUP SERVISI  —  whatsmeow'un canli grup sorgusu
 //  -------------------------------------------------------------------
-//  SORU: whatsmeow, 8500 grubun ADINI ve ACIKLAMASINI eksiksiz veriyor
-//        mu?  (WAHA/GOWS %64'unu bos donduruyordu, is bu yuzden tikandi)
+//  NEDEN VAR:
+//    WAHA grup bilgisini KENDI DEPOSUNDAN okuyor; depo eksik oldugu icin
+//    gruplarin %64'unde bos donuyor. whatsmeow'un GetGroupInfo cagrisi
+//    ise WhatsApp'a CANLI soruyor ve gercek cevabi getiriyor.
+//    Sonda ile olculdu: toplu cagri 2720/7487 verdi, tek tek sorunca
+//    denenen 10 grubun 10'unun da adi geldi.
 //
-//  Bu program BASKA HICBIR SEY YAPMAZ:
-//    - Mesaj gondermez, silmez, hicbir seye yazmaz
-//    - CRM'e, Supabase'e, canli sisteme dokunmaz
-//    - Sadece baglanir, grup listesini okur, sayar ve yazar
+//  NE YAPMIYOR:
+//    Mesaj gondermez, mesaj almaz, medya indirmez. Onlari WAHA yapiyor
+//    ve calisiyor. Bu servis SADECE grup bilgisi veriyor.
 //
-//  Cevap "evet" cikarsa tam koprüyu yazariz. "hayir" cikarsa 10 dakika
-//  kaybetmis oluruz, haftalar degil.
+//  CIHAZ:
+//    sonda.db'yi kullanir — yani sondanin okuttugun QR'ini. Telefona
+//    IKINCI bir bagli cihaz EKLENMEZ.
 //
-//  ONEMLI: Yeni bir cihaz baglantisi acar (QR okutulacak). Telefonunda
-//  "Bagli cihazlar" listesinde bir yer kaplar; is bitince cikaracagiz.
+//  KULLANIM:
+//    GET /grup?jid=120363...@g.us
+//      -> {"jid":"...","name":"...","topic":"...","participantCount":24,
+//          "participants":[{"id":"90555...@s.whatsapp.net","admin":true}]}
+//    GET /saglik   -> {"bagli":true}
 // ═══════════════════════════════════════════════════════════════════
 
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
-	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-func cizgi() { fmt.Println(strings.Repeat("=", 64)) }
+type uye struct {
+	ID    string `json:"id"`
+	Admin bool   `json:"admin"`
+}
+
+type grupCevap struct {
+	JID              string `json:"jid"`
+	Name             string `json:"name"`
+	Topic            string `json:"topic"`
+	ParticipantCount int    `json:"participantCount"`
+	Participants     []uye  `json:"participants"`
+}
+
+type onbellekKayit struct {
+	veri grupCevap
+	ts   time.Time
+}
+
+var (
+	istemci  *whatsmeow.Client
+	onbellek = map[string]onbellekKayit{}
+	kilit    sync.RWMutex
+	// Ayni grubu ust uste sormayalim; WhatsApp'i yormaz, panel hizlanir.
+	onbellekSuresi = 5 * time.Minute
+)
 
 func main() {
-	kayit := waLog.Stdout("wm", "ERROR", true) // gurultu olmasin
+	port := os.Getenv("GRUP_PORT")
+	if port == "" {
+		port = "3211"
+	}
+	dbYol := os.Getenv("GRUP_DB")
+	if dbYol == "" {
+		dbYol = "sonda.db" // sondanin cihazi — yeni QR gerekmez
+	}
 
-	// YENI API: her cagri context istiyor (go doc ciktisiyla dogrulandi)
+	kayit := waLog.Stdout("wm", "ERROR", true)
 	ctx := context.Background()
 
-	depo, err := sqlstore.New(ctx, "sqlite3", "file:sonda.db?_foreign_keys=on", kayit)
+	depo, err := sqlstore.New(ctx, "sqlite3", "file:"+dbYol+"?_foreign_keys=on", kayit)
 	if err != nil {
 		fmt.Println("veritabani acilamadi:", err)
 		return
 	}
 	cihaz, err := depo.GetFirstDevice(ctx)
-	if err != nil {
-		fmt.Println("cihaz okunamadi:", err)
+	if err != nil || cihaz == nil {
+		fmt.Println("kayitli cihaz yok — once sondayi calistirip QR okut:", err)
 		return
 	}
 
-	if cihaz == nil {
-		// Hic cihaz kayitli degilse yenisini olustur (ilk kurulum)
-		cihaz = depo.NewDevice()
-	}
-
-	istemci := whatsmeow.NewClient(cihaz, kayit)
-
-	if istemci.Store.ID == nil {
-		// Ilk kurulum: QR okut
-		qrKanal, _ := istemci.GetQRChannel(ctx)
-		if err := istemci.Connect(); err != nil {
-			fmt.Println("baglanilamadi:", err)
-			return
-		}
-		for olay := range qrKanal {
-			if olay.Event == "code" {
-				fmt.Println("\nTelefonda: Ayarlar > Bagli cihazlar > Cihaz bagla")
-				fmt.Println("Asagidaki kodu okut:")
-				qrterminal.GenerateHalfBlock(olay.Code, qrterminal.L, os.Stdout)
-			} else {
-				fmt.Println("QR durumu:", olay.Event)
-			}
-		}
-	} else {
-		if err := istemci.Connect(); err != nil {
-			fmt.Println("baglanilamadi:", err)
-			return
-		}
-	}
-
-	fmt.Println("\nbaglandi, WhatsApp senkronu bekleniyor (20 sn)...")
-	time.Sleep(20 * time.Second)
-
-	// ═══ ASIL SORU ═══════════════════════════════════════════════════
-	gruplar, err := istemci.GetJoinedGroups(ctx)
-	if err != nil {
-		fmt.Println("\nGRUP LISTESI ALINAMADI:", err)
-		istemci.Disconnect()
+	istemci = whatsmeow.NewClient(cihaz, kayit)
+	if err := istemci.Connect(); err != nil {
+		fmt.Println("baglanilamadi:", err)
 		return
 	}
+	fmt.Println("grup servisi: WhatsApp'a baglanildi")
 
-	adli, adsiz, aciklamali, uyeli := 0, 0, 0, 0
-	var adsizOrnek []string
-	for _, g := range gruplar {
-		if strings.TrimSpace(g.Name) != "" {
-			adli++
-		} else {
-			adsiz++
-			if len(adsizOrnek) < 5 {
-				adsizOrnek = append(adsizOrnek, g.JID.String())
+	// Baglanti kopabilir; sessizce yeniden baglan.
+	go func() {
+		for {
+			time.Sleep(20 * time.Second)
+			if !istemci.IsConnected() {
+				fmt.Println("grup servisi: baglanti koptu, yeniden baglaniyorum...")
+				if err := istemci.Connect(); err != nil {
+					fmt.Println("  olmadi:", err)
+				}
 			}
 		}
-		if strings.TrimSpace(g.Topic) != "" {
-			aciklamali++
-		}
-		if len(g.Participants) > 0 {
-			uyeli++
-		}
-	}
+	}()
 
-	fmt.Println()
-	cizgi()
-	fmt.Println("  WHATSMEOW SONUCU")
-	cizgi()
-	fmt.Printf("  toplam grup      : %d\n", len(gruplar))
-	fmt.Printf("  ADI OLAN         : %d\n", adli)
-	fmt.Printf("  adi BOS          : %d\n", adsiz)
-	fmt.Printf("  aciklamasi olan  : %d\n", aciklamali)
-	fmt.Printf("  uye listesi olan : %d\n", uyeli)
-	cizgi()
+	http.HandleFunc("/saglik", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"bagli":    istemci.IsConnected(),
+			"onbellek": len(onbellek),
+		})
+	})
 
-	// Ornek kayitlar — gercekten dolu mu, gozle gorelim
-	sort.Slice(gruplar, func(i, j int) bool { return gruplar[i].Name < gruplar[j].Name })
-	fmt.Println("  ILK 5 GRUP:")
-	for i, g := range gruplar {
-		if i >= 5 {
-			break
+	http.HandleFunc("/grup", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		ham := strings.TrimSpace(r.URL.Query().Get("jid"))
+		if ham == "" {
+			http.Error(w, `{"hata":"jid gerekli"}`, 400)
+			return
 		}
-		ack := strings.TrimSpace(g.Topic)
-		if len(ack) > 40 {
-			ack = ack[:40] + "..."
+		if !strings.Contains(ham, "@") {
+			ham += "@g.us"
 		}
-		fmt.Printf("    %-34s | %2d uye | %s\n",
-			kisalt(g.Name, 34), len(g.Participants), ack)
-	}
-	if adsiz > 0 {
-		fmt.Println("\n  ADI BOS OLANLARDAN ORNEK:")
-		for _, j := range adsizOrnek {
-			fmt.Println("    " + j)
+
+		// Onbellek
+		kilit.RLock()
+		k, varMi := onbellek[ham]
+		kilit.RUnlock()
+		if varMi && time.Since(k.ts) < onbellekSuresi {
+			json.NewEncoder(w).Encode(k.veri)
+			return
 		}
-	}
-	cizgi()
-	if adsiz == 0 && adli > 0 {
-		fmt.Println("  ✓ HEPSININ ADI GELDI — whatsmeow bu isi yapiyor.")
-	} else if adli > adsiz {
-		fmt.Printf("  ~ Cogu geldi (%d/%d). WAHA'dan iyi ama tam degil.\n", adli, len(gruplar))
-	} else {
-		fmt.Println("  ✗ Buyuk kismi bos — sorun kutuphanede degil, hesapta/olcekte.")
-	}
-	cizgi()
-	fmt.Println("\n  Bu ciktiyi oldugu gibi yapistir.")
-	fmt.Println("  Cikmak icin Ctrl+C (baglanti kapanir, cihaz kayitli kalir).")
+
+		jid, err := types.ParseJID(ham)
+		if err != nil {
+			http.Error(w, `{"hata":"jid cozulemedi"}`, 400)
+			return
+		}
+
+		// ═══ CANLI SORGU — WAHA'nin yapamadigi sey ═══════════════════
+		sorguCtx, iptal := context.WithTimeout(context.Background(), 20*time.Second)
+		defer iptal()
+		bilgi, err := istemci.GetGroupInfo(sorguCtx, jid)
+		if err != nil {
+			http.Error(w, `{"hata":"`+strings.ReplaceAll(err.Error(), `"`, `'`)+`"}`, 502)
+			return
+		}
+
+		cevap := grupCevap{
+			JID:              bilgi.JID.String(),
+			Name:             strings.TrimSpace(bilgi.Name),
+			Topic:            strings.TrimSpace(bilgi.Topic),
+			ParticipantCount: len(bilgi.Participants),
+		}
+		for _, p := range bilgi.Participants {
+			cevap.Participants = append(cevap.Participants, uye{
+				ID:    p.JID.String(),
+				Admin: p.IsAdmin || p.IsSuperAdmin,
+			})
+		}
+
+		// Sadece ISE YARAR cevabi sakla
+		if cevap.Name != "" {
+			kilit.Lock()
+			onbellek[ham] = onbellekKayit{veri: cevap, ts: time.Now()}
+			kilit.Unlock()
+		}
+		json.NewEncoder(w).Encode(cevap)
+	})
+
+	go func() {
+		fmt.Println("grup servisi dinliyor: http://127.0.0.1:" + port)
+		if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
+			fmt.Println("sunucu hatasi:", err)
+		}
+	}()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 	istemci.Disconnect()
-}
-
-func kisalt(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n-1]) + "…"
 }

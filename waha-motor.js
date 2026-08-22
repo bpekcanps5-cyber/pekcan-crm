@@ -305,6 +305,63 @@ function baileysMesaji(w) {
   };
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+//  GRUP SERVISI (whatsmeow) — WAHA'nin yapamadigi canli grup sorgusu
+//  -------------------------------------------------------------------
+//  OLCUM (sonda ile, gercek hatta):
+//    WAHA toplu cagri      : 7487 gruptan 2720'sinin adi var
+//    whatsmeow toplu cagri : 7487 gruptan 2720'sinin adi var  (AYNI)
+//    whatsmeow TEK TEK     : denenen 10 grubun 10'unun da adi geldi
+//  Yani fark kutuphanede degil, SORGU BICIMINDE: WAHA kendi deposundan
+//  okuyor, whatsmeow WhatsApp'a canli soruyor.
+//
+//  Bu yuzden mesaj/medya/gonderim WAHA'da kaliyor (calisiyor), sadece
+//  grup bilgisi bu kucuk servisten aliniyor.
+//  Servis yoksa hicbir sey bozulmaz — eski yola duser.
+// ═══════════════════════════════════════════════════════════════════
+const GRUP_SERVISI = process.env.GRUP_SERVISI_URL || 'http://127.0.0.1:3211';
+let _grupServisiVar = null;   // null=bilinmiyor, true/false=olculdu
+
+async function grupServisindenSor(jid) {
+  if (_grupServisiVar === false) return null;
+  try {
+    const iptal = new AbortController();
+    const saat = setTimeout(() => iptal.abort(), 25000);
+    let r;
+    try {
+      r = await fetch(GRUP_SERVISI + '/grup?jid=' + jid, { signal: iptal.signal });
+    } finally { clearTimeout(saat); }
+    if (!r.ok) {
+      if (_grupServisiVar === null) { _grupServisiVar = true; log('grup servisi calisiyor (bu grupta cevap yok)'); }
+      return null;
+    }
+    const v = await r.json();
+    if (_grupServisiVar === null) {
+      _grupServisiVar = true;
+      log('✓ grup servisi BAGLI — grup adlari canli sorguyla gelecek');
+    }
+    if (!v || !v.name) return null;
+    return {
+      id: v.jid || jid,
+      subject: String(v.name).trim(),
+      desc: String(v.topic || '').trim(),
+      size: Number(v.participantCount) || (v.participants || []).length,
+      owner: null,
+      creation: 0,
+      participants: (v.participants || []).map((p) => ({
+        id: p.id, lid: p.id, admin: p.admin ? 'admin' : null, name: '',
+      })),
+    };
+  } catch (e) {
+    if (_grupServisiVar === null) {
+      _grupServisiVar = false;
+      log('grup servisi yok (' + String(e.message).slice(0, 40) + ') — WAHA ile devam');
+    }
+    return null;
+  }
+}
+
 // ═══ GRUP BILGISI: WAHA -> Baileys bicimi ═══════════════════════════
 // GOWS BUYUK harfli alanlar veriyor: Name, Topic, Participants, JID
 function baileysGrup(g) {
@@ -1327,6 +1384,15 @@ function wahaSoketYap(secenek = {}) {
     const soz = (async () => {
       try {
         let b = null;
+        // ── 0) GRUP SERVISI (canli sorgu) ──
+        b = await grupServisindenSor(jid);
+        if (b && b.subject) {
+          if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+          sock._bilinenAdlar.set(jid, b.subject);
+          _grupOnbellek.set(jid, { veri: b, ts: Date.now(), sure: GRUP_ONBELLEK_MS });
+          return b;
+        }
+        b = null;
         // ── 1) GRUP UCU ──
         for (const yol of ['/api/' + WAHA_OTURUM + '/groups/' + jid,
                            '/api/' + WAHA_OTURUM + '/groups/' + String(jid).split('@')[0]]) {
@@ -1841,6 +1907,16 @@ function grupAdiniTani(sock, jid) {
 }
 
 async function grupBilgisiniGetir(sock, jid) {
+  // ONCE grup servisi (canli sorgu) — WAHA'nin veremedigini o veriyor
+  const canli = await grupServisindenSor(jid);
+  if (canli) {
+    if (!sock._bilinenAdlar) sock._bilinenAdlar = new Map();
+    sock._bilinenAdlar.set(jid, canli.subject);
+    sock.ev.emit('groups.update', [{ id: jid, subject: canli.subject, desc: canli.desc }]);
+    log('mesaj dustu -> "' + canli.subject.slice(0, 32) + '"'
+      + (canli.desc ? ' (aciklama var)' : '') + ' | ' + canli.size + ' uye');
+    return;
+  }
   const oku = async () => {
     try {
       const r = await istek('/api/' + WAHA_OTURUM + '/groups/' + jid, { zamanAsimiMs: 12000 });
