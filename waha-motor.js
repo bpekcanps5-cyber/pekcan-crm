@@ -179,6 +179,56 @@ function benKur(ben) {
 // GOWS ham WhatsApp mesajini _data.Message altinda veriyor ve bu bicim
 // Baileys ile AYNI. Bu yuzden server.js'in cozucusu degismeden calisiyor.
 // ═══════════════════════════════════════════════════════════════════
+//  GONDERDIGIMIZ MESAJI GERI GELDIGINDE TANI  (2026-08)
+//  -------------------------------------------------------------------
+//  WAHA ayni mesaji farkli kimlik bicimleriyle sunabiliyor:
+//     gonderim yaniti :  "true_1203...@g.us_3EB0ABC"   ya da  "3EB0ABC"
+//     gelen olay      :  digeri
+//  Hangisinin hangisi oldugunu VARSAYMAK yerine ESLESTIRIYORUZ:
+//  gonderirken aldigimiz kimligi hafizaya alip, mesaj geri geldiginde
+//  ---kimlik bicimi ne olursa olsun--- ayni kimligi kullaniyoruz.
+//
+//  Bu eslesme olmayinca su dort sey birden bozuluyordu:
+//    - mesaj panelde IKI KERE gorunuyor
+//    - tik hic degismiyor (saat ikonu takili kaliyor)
+//    - "mesajin iletilmedi" uyarisi
+//    - silme / duzenleme calismiyor
+//
+//  'cekirdek' = kimligin son parcasi. Iki bicim de ayni cekirdegi verir:
+//     true_1203...@g.us_3EB0ABC  ->  3EB0ABC
+//     3EB0ABC                    ->  3EB0ABC
+const _gonderilenler = new Map();   // cekirdek -> panele verdigimiz kimlik
+let _kimlikOrnegiYazildi = false;
+
+function kimlikCekirdegi(id) {
+  const s = String(id || '');
+  if (!s) return '';
+  const p = s.split('_');
+  return p[p.length - 1];
+}
+
+function gonderimiKaydet(id) {
+  const c = kimlikCekirdegi(id);
+  if (!c) return;
+  _gonderilenler.set(c, String(id));
+  if (_gonderilenler.size > 3000) _gonderilenler.delete(_gonderilenler.keys().next().value);
+}
+
+// Gelen kimlik bizim gonderdigimiz mesaja aitse, PANELE VERDIGIMIZ
+// kimligi dondur — boylece server.js ayni mesaj oldugunu anlar.
+function kimligiEslestir(gelenId) {
+  const c = kimlikCekirdegi(gelenId);
+  const bizim = c && _gonderilenler.get(c);
+  if (bizim && bizim !== String(gelenId) && !_kimlikOrnegiYazildi) {
+    _kimlikOrnegiYazildi = true;
+    log('kimlik bicimi farkli, eslestirildi:');
+    log('   gonderimde : ' + bizim);
+    log('   olayda     : ' + gelenId);
+  }
+  return bizim || String(gelenId || '');
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  MESAJ KIMLIGI — TEK BICIM (2026-08)
 //  -------------------------------------------------------------------
 //  WAHA bir mesaji IKI farkli kimlikle sunuyor:
@@ -244,7 +294,7 @@ function baileysMesaji(w) {
       key: {
         remoteJid: sohbetN,
         fromMe: !!anahtar.fromMe,
-        id: mesajKimligi(w, anahtar),
+        id: kimligiEslestir(mesajKimligi(w, anahtar)),
         participant: katilimciN || undefined,
         remoteJidAlt: anahtar.remoteJidAlt || anahtar.remoteJidPn || undefined,
         remoteJidPn: anahtar.remoteJidPn || anahtar.remoteJidAlt || undefined,
@@ -314,7 +364,7 @@ function baileysMesaji(w) {
     key: {
       remoteJid: sohbet,
       fromMe: benimMi,
-      id: mesajKimligi(w, { id: bilgi.ID }),
+      id: kimligiEslestir(mesajKimligi(w, { id: bilgi.ID })),
       participant: katilimci || undefined,
       // server.js'in LID cozucusu bu alanlara bakiyor — bos birakmayalim
       remoteJidAlt: sohbetAlt || undefined,
@@ -1355,6 +1405,10 @@ function wahaSoketYap(secenek = {}) {
     }
 
     const id = (yanit && ((yanit.id && yanit.id._serialized) || yanit.id)) || ('waha_' + Date.now());
+    gonderimiKaydet(id);   // geri geldiginde taniyalim
+    if ((sock._gonderimIzleme = (sock._gonderimIzleme || 0) + 1) <= 5) {
+      log('mesaj gonderildi #' + sock._gonderimIzleme + ' | WAHA kimlik: ' + String(id).slice(0, 46));
+    }
     return { key: { id, remoteJid: jid, fromMe: true }, message: icerik, status: 1 };
   };
 
@@ -2483,7 +2537,7 @@ async function wahaBaglan() {
         jid = jid.endsWith('@lid') ? (lidNumara.get(jid) || jid) : numaraTemizle(jid);
       }
       sock.ev.emit('messages.update', [{
-        key: { id, remoteJid: jid, fromMe: benim },
+        key: { id: kimligiEslestir(id), remoteJid: jid, fromMe: benim },
         update: { status: ackCevir(veri.ack != null ? veri.ack : 1) },
       }]);
       return;
@@ -2523,6 +2577,16 @@ async function wahaBaglan() {
       if (!m || !m.key.remoteJid) return;
       // 'message' gelen, 'message.any' hem gelen hem giden -> ikisi de gelirse
       // ayni mesaj iki kez islenmesin diye kimlige gore eleme
+      // ── IZLEME: kendi gonderdigimiz mesajlarin kimligini yaz ──
+      // Tekrar sorunu devam ederse sebebi buradan gorulur: gonderim
+      // kimligiyle olay kimligi ayni mi, eslesme tuttu mu?
+      if (m.key.fromMe && (sock._fromMeIzleme = (sock._fromMeIzleme || 0) + 1) <= 5) {
+        const cek = kimlikCekirdegi(mesajKimligi(veri, (veri._data && veri._data.key) || {}));
+        log('giden mesaj geri geldi #' + sock._fromMeIzleme
+          + ' | olay kimligi: ' + String(mesajKimligi(veri, (veri._data && veri._data.key) || {})).slice(0, 46)
+          + ' | eslesti mi: ' + (_gonderilenler.has(cek) ? 'EVET -> ' + String(m.key.id).slice(0, 40) : 'HAYIR')
+          + ' | daha once islendi mi: ' + (sock._sonMesajlar.has(m.key.id) ? 'EVET (elenir)' : 'hayir'));
+      }
       if (sock._sonMesajlar.has(m.key.id)) return;
       sock._sonMesajlar.add(m.key.id);
       if (sock._sonMesajlar.size > 800) sock._sonMesajlar.delete(sock._sonMesajlar.values().next().value);
