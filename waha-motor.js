@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / qr-anlik-13';
+const MOTOR_SURUM = '2026-08-22 / kopma-bekcisi-15';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -1934,6 +1934,7 @@ function wahaSoketYap(secenek = {}) {
     sock._kapali = true; sock.ws.isOpen = false;
     if (sock._qrTimer) { clearInterval(sock._qrTimer); sock._qrTimer = null; }
     ilkListeDurdur(sock);   // bekleyen liste denemeleri bosuna calismasin
+    durumBekcisiDurdur(sock);
   };
 
   return sock;
@@ -2552,6 +2553,7 @@ function qrTakibiBaslat(sock) {
       if (/WORKING|CONNECTED/.test(durum)) {
         sock._failedSayisi = 0;
         qrTakibiDurdur(sock);
+        durumBekcisiBaslat(sock);   // baglantiyi izlemeye devam et
         const ben = s.me || s.user || {};
         sock.user = benKur(ben);
         sock.ws.isOpen = true;
@@ -2562,75 +2564,34 @@ function qrTakibiBaslat(sock) {
       // WAHA bazen STARTING durumundayken QR'i zaten uretmis oluyor;
       // sirf durum yazisi yuzunden beklemek gereksiz gecikme yaratiyordu.
       if (/STOPPED|FAILED/.test(durum)) {
-        // ═══ OTURUM KURTARMA ═══════════════════════════════════════════
-        // FAILED: telefondan cihaz kaldirilinca ya da oturum bozulunca
-        // olusuyor. Bu durumda sadece 'start' yetmiyor; once DURDURUP
-        // sonra baslatmak gerekiyor. Sirayla deniyoruz.
+        // ═══ OLU OTURUM = DOGRUDAN YENI QR (2026-08) ══════════════════
+        // FAILED cogunlukla TELEFONDAN CIHAZ KALDIRILDIGI icin olusur.
+        // O anda oturum GERCEKTEN OLMUSTUR — kimlik bilgisi gecersizdir,
+        // "kurtarmanin" bir anlami yoktur. Eskiden once restart, sonra
+        // stop+start deneniyor, uc kez basarisiz olunca siliniyordu;
+        // bu da kullaniciyi 30-40 saniye QR ekraninda bekletiyordu.
+        // ARTIK: tek hamlede cikis + baslat. Cikis olu kimligi temizler,
+        // baslat yeni QR uretir. Saniyeler icinde QR gelir.
         if (sock._kurtarmaCalisiyor) return;
         sock._kurtarmaCalisiyor = true;
-        // Bayrak takili kalmasin: 15 saniye sonra tekrar denenebilir olsun
-        setTimeout(() => { sock._kurtarmaCalisiyor = false; }, 15000);
-        sock._qrHizliBitis = Date.now() + 90000;   // QR'i hizla bekle
-        log('oturum ' + durum + ' — kurtariliyor...');
-        const dene = async (ad, yol, govde) => {
-          try {
-            await istek(yol, { method: 'POST', body: govde });
-            log('  ' + ad + ': tamam');
-            return true;
-          } catch (e) { log('  ' + ad + ': ' + String(e.message).slice(0, 70)); return false; }
+        setTimeout(() => { sock._kurtarmaCalisiyor = false; }, 8000);
+        sock._qrHizliBitis = Date.now() + 90000;
+        log('oturum ' + durum + ' — olu kabul edildi, yeni QR icin sifirlaniyor');
+        const dene = async (ad, yol) => {
+          try { await istek(yol, { method: 'POST', zamanAsimiMs: 20000 }); return true; }
+          catch (e) { log('  ' + ad + ': ' + String(e.message).slice(0, 60)); return false; }
         };
-        try {
-          // ═══ INATCI FAILED -> OTURUMU SIFIRLA (2026-08) ═══════════
-          // Motor degistirilince (GOWS -> NOWEB) eski oturum dosyalari
-          // yeni motorla UYUMSUZ oluyor. WAHA acilista cokuyor, durum
-          // FAILED'e dusuyor, yeniden baslatmak da ise yaramiyor ve
-          // QR HIC uretilmiyor. Panel sonsuza kadar "baglaniyor" diyor.
-          // 3 basarisiz kurtarmadan sonra oturumu silip yeniden kuruyoruz:
-          // kimlik zaten calismiyor, kaybedecek bir sey yok, QR gelir.
-          sock._failedSayisi = (sock._failedSayisi || 0) + 1;
-          if (durum === 'FAILED' && sock._failedSayisi >= 3 && !sock._oturumSifirlandi) {
-            sock._oturumSifirlandi = true;
-            log('oturum ' + sock._failedSayisi + ' kez FAILED — sifirdan kuruluyor (QR istenecek)');
-            await dene('durdur', '/api/sessions/' + WAHA_OTURUM + '/stop');
-            await dene('cikis', '/api/sessions/' + WAHA_OTURUM + '/logout');
-            try {
-              await istek('/api/sessions/' + WAHA_OTURUM, { method: 'DELETE', zamanAsimiMs: 30000 });
-              log('  eski oturum silindi');
-            } catch (e) { log('  silinemedi: ' + String(e.message).slice(0, 60)); }
-            try { await oturumHazirla(); log('  yeni oturum kuruldu — QR birazdan gelecek'); }
-            catch (e) { log('  kurulamadi: ' + String(e.message).slice(0, 60)); }
-            return;
-          }
-          if (durum === 'FAILED') {
-            // 1) yeniden baslat
-            let ok = await dene('yeniden baslat', '/api/sessions/' + WAHA_OTURUM + '/restart');
-            if (!ok) {
-              // 2) durdur + baslat
-              await dene('durdur', '/api/sessions/' + WAHA_OTURUM + '/stop');
-              await new Promise((r) => setTimeout(r, 2000));
-              ok = await dene('baslat', '/api/sessions/' + WAHA_OTURUM + '/start');
-            }
-            if (!ok) {
-              // 3) oturumu SIL ve yeniden olustur (son care — QR gerektirir)
-              await dene('sil', '/api/sessions/' + WAHA_OTURUM + '/logout');
-              await new Promise((r) => setTimeout(r, 1500));
-              await dene('yeniden olustur', '/api/sessions', {
-                name: WAHA_OTURUM, start: true,
-                config: { webhooks: [{ url: WAHA_KANCA_URL + '/olay',
-                  events: ['message', 'message.any', 'message.ack', 'message.revoked', 'message.reaction',
-                           'session.status', 'state.change', 'group.v2.update', 'group.v2.participants'] }] },
-              });
-            }
-          } else {
-            await dene('baslat', '/api/sessions/' + WAHA_OTURUM + '/start');
-          }
-        } finally {
-          // 8 saniye sonra tekrar denenebilir (kurtarma dongusune girmesin)
-          setTimeout(() => { sock._kurtarmaCalisiyor = false; }, 8000);
-        }
+        // Cikis: olu kimligi temizler (STOPPED'da gerekmez, zararsiz)
+        if (durum === 'FAILED') await dene('cikis', '/api/sessions/' + WAHA_OTURUM + '/logout');
+        await dene('baslat', '/api/sessions/' + WAHA_OTURUM + '/start');
         return;
       }
-      if (/SCAN_QR/.test(durum)) {
+
+      // ═══ QR'I HEM SCAN_QR_CODE HEM STARTING'DE DENE ═══════════════
+      // WAHA bazen STARTING durumundayken QR'i zaten uretmis oluyor.
+      // Sirf durum yazisi 'SCAN_QR_CODE' olmadi diye beklemek gereksiz
+      // gecikme yaratiyordu.
+      if (/SCAN_QR_CODE|STARTING|QR/.test(durum)) {
         const q = await qrAl();
         if (!q) {
           if (sayac % 4 === 1) log('QR alinamadi — WAHA henuz uretmemis olabilir, denemeye devam');
@@ -2689,6 +2650,40 @@ function qrTakibiBaslat(sock) {
   sock._qrHizliBitis = Date.now() + 90000;   // acilista da hizli basla
   temposunuAyarla();
   tur();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  DURUM BEKCISI  —  telefondan kopunca ANINDA fark et
+//  -------------------------------------------------------------------
+//  ESKI HATA: baglanti kurulunca durum sorgusu TAMAMEN duruyordu.
+//  Telefondan cihaz kaldirildiginda kopru bunu HIC fark etmiyor, panel
+//  "bagli" gorunmeye devam ediyor ve QR hic gelmiyordu. Kullanicinin
+//  "telefondan kopardim, direkt gitmesi lazim" dedigi durum tam buydu.
+//  ARTIK: bagliyken de 4 saniyede bir durum sorulur. Durum WORKING'den
+//  cikar cikmaz kopukluk bildirilir ve QR takibi hizli modda baslar.
+// ═══════════════════════════════════════════════════════════════════
+function durumBekcisiBaslat(sock) {
+  if (sock._bekciTimer) return;
+  sock._bekciTimer = setInterval(async () => {
+    if (sock._kapali) return durumBekcisiDurdur(sock);
+    try {
+      const s = await istek('/api/sessions/' + WAHA_OTURUM, { zamanAsimiMs: 8000 });
+      const durum = String(s.status || s.state || '').toUpperCase();
+      if (/WORKING|CONNECTED/.test(durum)) return;   // her sey yolunda
+      log('baglanti dustu (durum: ' + durum + ') — QR icin hemen geciliyor');
+      durumBekcisiDurdur(sock);
+      sock.ws.isOpen = false;
+      sock._qrHizliBitis = Date.now() + 90000;
+      sock.ev.emit('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: 401 } } },
+      });
+      qrTakibiBaslat(sock);
+    } catch (_) { /* gecici ag hatasi, bir sonraki tura birak */ }
+  }, 4000);
+}
+function durumBekcisiDurdur(sock) {
+  if (sock._bekciTimer) { clearInterval(sock._bekciTimer); sock._bekciTimer = null; }
 }
 
 // Cikis/kurtarma sonrasi QR'i hizla getir
@@ -3073,6 +3068,7 @@ async function wahaBaglan() {
       const ben = s.me || s.user || {};
       sock.user = benKur(ben);
       sock.ws.isOpen = true;
+      durumBekcisiBaslat(sock);
       setImmediate(() => sock.ev.emit('connection.update', { connection: 'open' }));
     } else {
       setImmediate(() => sock.ev.emit('connection.update', { connection: 'connecting' }));
