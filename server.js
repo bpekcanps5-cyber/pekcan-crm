@@ -602,6 +602,177 @@ app.use(express.static(path.join(__dirname, 'public')));
 const sessions = new Map(); // token -> { username, displayName, role, ts }
 // BAĞIMSIZ OKUMA yan-rolü olan kullanıcı adları (bellek-içi; açılışta DB'den dolar, restart'a dayanıklı).
 let bagimsizOkumaKullanicilar = new Set();
+
+// ═══════════════════════════════════════════════════════════════════════
+//  OTOMATIK ETIKET ROLU
+//  ---------------------------------------------------------------------
+//  Yetkili biri belirli kalip mesajlari yazinca sohbete ilgili etiket
+//  KENDILIGINDEN duser. Mesaj panelden de gelse, kisinin kendi
+//  telefonundan da gelse ayni sekilde calisir; her grupta gecerlidir.
+//
+//  YETKI iki yoldan verilir:
+//    • panel kullanicisi  -> users.oto_etiket
+//    • WhatsApp numarasi  -> oto_etiket_numaralar tablosu
+//  Yetkisi olmayan ayni mesaji yazarsa HICBIR SEY olmaz (kullanici karari).
+//
+//  ETIKET DAVRANISI: yeni etiket EKLENIR, eskiler durur. Ayni etiket
+//  zaten varsa dokunulmaz. (kullanici karari)
+// ═══════════════════════════════════════════════════════════════════════
+let otoEtiketKullanicilar = new Set();  // yetkili panel kullanici adlari
+let otoEtiketNumaralar    = new Set();  // yetkili numaralar (sadece rakam)
+
+// Metni karsilastirmaya hazirla: emoji/noktalama/bosluk atilir, Turkce
+// harfler sadelestirilir, harf+rakam kalir. Boylece "❗2 AYLIK  KESİP
+// İLETELİM 🚨" ile "2 aylik kesip iletelim" ayni sayilir.
+// DIKKAT: rakamlar KORUNUR — "2 AYLIK" etiketi rakamiyla anlamli.
+function _otoNorm(x) {
+  return String(x || '')
+    .replace(/İ/g, 'I').replace(/ı/g, 'I').replace(/i/g, 'I')
+    .replace(/Ş/g, 'S').replace(/ş/g, 'S')
+    .replace(/Ğ/g, 'G').replace(/ğ/g, 'G')
+    .replace(/Ç/g, 'C').replace(/ç/g, 'C')
+    .replace(/Ö/g, 'O').replace(/ö/g, 'O')
+    .replace(/Ü/g, 'U').replace(/ü/g, 'U')
+    .toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+// TETIKLEYICILER: kalip metin -> hangi etiket dussun.
+// Eslesme "ICERIR" mantigiyla (kullanici karari): mesajin oncesinde/
+// sonrasinda baska yazi olabilir.
+// Etiket adlari da normallestirilerek aranir; panelde etiketin adi
+// "ZEYL" mi "ZEYİL" mi diye ugrasmaya gerek kalmaz.
+// 'ayrica': etiketin panelde yazilabilecek diger adlari. Yonetici etiketi
+// "ZEYL" yerine "ZEYİL" diye yazmis olabilir — ikisi de bulunur.
+const OTO_ETIKET_KURALLARI = [
+  { kalip: '2 AYLIK KESİP İLETELİM',     etiket: '2 AYLIK', ayrica: ['2AYLIK', 'IKI AYLIK'] },
+  { kalip: '2 AYLIK YENİLEME BAKALIM',   etiket: '2 AYLIK', ayrica: ['2AYLIK', 'IKI AYLIK'] },
+  { kalip: 'YILLIK KESELİM',             etiket: 'KALICI',  ayrica: ['YILLIK'] },
+  { kalip: 'YILLIK BAKALIM',             etiket: 'KALICI',  ayrica: ['YILLIK'] },
+  { kalip: 'İptal işleminiz alınmıştır', etiket: 'İPTAL',   ayrica: ['IPTAL'] },
+  { kalip: 'ZEYİL İŞLEMİ',               etiket: 'ZEYL',    ayrica: ['ZEYİL', 'ZEYIL', 'ZEYILNAME', 'ZEYİLNAME'] },
+].map((k) => ({
+  ...k,
+  _n: _otoNorm(k.kalip),
+  _e: _otoNorm(k.etiket),
+  // aranacak etiket adlari: once asil ad, sonra alternatifler
+  _adaylar: [k.etiket, ...(k.ayrica || [])].map(_otoNorm).filter((v, i, a) => v && a.indexOf(v) === i),
+}));
+
+// Ayni anda birden fazla kalip eslesebilir (mesajda iki cumle varsa) —
+// hepsinin etiketi eklenir.
+function _otoEtiketKurallariBul(text) {
+  if (!text) return [];
+  const n = _otoNorm(text);
+  if (n.length < 6) return [];
+  const cikan = [];
+  for (const k of OTO_ETIKET_KURALLARI) {
+    if (n.includes(k._n) && !cikan.some((x) => x._e === k._e)) cikan.push(k);
+  }
+  return cikan;
+}
+
+// Numarayi sadelestir: "+90 539 926 54 41" -> "905399265441"
+// Ayrica 10 haneli yerel yazimi (5399265441) 90'li hale getirir ki
+// yonetici nasil yazarsa yazsin eslesme tutsun.
+function _otoNumaraNorm(x) {
+  let d = String(x || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.length === 10 && d[0] === '5') d = '90' + d;        // 5xx... -> 905xx...
+  else if (d.length === 11 && d.startsWith('0')) d = '90' + d.slice(1); // 05xx -> 905xx
+  return d;
+}
+
+// Bu mesaji yazan kisi otomatik etiket yetkisine sahip mi?
+// Panelden gelen mesajda _otoPanelUser dolu olur; WhatsApp'tan gelende
+// gonderenin numarasina bakilir. LID (numarasi cozulememis kimlik)
+// durumunda numara bos gelebilir -> yetki verilmez (sessiz kalir).
+function _otoYetkiliMi(message, lineId) {
+  try {
+    // 1) Panelden gonderildi mi?
+    if (message._otoPanelUser) return otoEtiketKullanicilar.has(message._otoPanelUser);
+    // 2) WhatsApp'tan geldi
+    const adaylar = [];
+    if (message.senderJid) adaylar.push(message.senderJid);
+    if (message._otoParticipant) adaylar.push(message._otoParticipant);
+    if (message.fromMe) {
+      // Panel disindan, HATTIN KENDI telefonundan yazilmis olabilir.
+      const line = lines.get(lineId);
+      const kendi = lineId === 'ofis' ? myNumber : (line && line.myNumber);
+      if (kendi) adaylar.push(String(kendi));
+    }
+    for (const a of adaylar) {
+      const n = _otoNumaraNorm(String(a).split('@')[0].split(':')[0]);
+      if (n && otoEtiketNumaralar.has(n)) return true;
+    }
+    return false;
+  } catch (e) { return false; }
+}
+
+// Etiketi adindan bul. Sirayla: aday adlarla TAM eslesme -> aday adlarla
+// ICERIR eslesmesi. Once tam eslesmenin tamamini dener ki "2 AYLIK" ile
+// "2 AYLIK YENILEME" gibi benzer adlar birbirine karismasin.
+function _otoEtiketIdBul(adaylar) {
+  try {
+    if (!Array.isArray(labels) || !labels.length) return null;
+    const liste = Array.isArray(adaylar) ? adaylar : [adaylar];
+    for (const ad of liste) {
+      const t = labels.find((l) => _otoNorm(l.name) === ad);
+      if (t) return t.id;
+    }
+    for (const ad of liste) {
+      const t = labels.find((l) => {
+        const n = _otoNorm(l.name);
+        return n && (n.includes(ad) || ad.includes(n));
+      });
+      if (t) return t.id;
+    }
+    return null;
+  } catch (e) { return null; }
+}
+
+// ANA GIRIS — addMessage icinden cagrilir.
+function otoEtiketUygula(jid, message, lineId) {
+  try {
+    if (!jid || !message) return;
+    if (message.robot) return;                       // robotun kendi mesaji
+    if (!otoEtiketKullanicilar.size && !otoEtiketNumaralar.size) return; // rol kimseye verilmemis
+    const metin = message.text || message.caption || '';
+    const kurallar = _otoEtiketKurallariBul(metin);
+    if (!kurallar.length) return;
+    if (!_otoYetkiliMi(message, lineId)) return;     // yetkisiz -> hicbir sey olmaz
+
+    const mevcut = chatLabels.get(jid) || [];
+    const eklenecek = [];
+    for (const k of kurallar) {
+      const id = _otoEtiketIdBul(k._adaylar);
+      if (!id) { console.log(`🏷️  otomatik etiket: "${k.etiket}" adli etiket panelde YOK — atlandi`); continue; }
+      if (mevcut.includes(id) || eklenecek.includes(id)) continue; // zaten var -> dokunma
+      eklenecek.push(id);
+    }
+    if (!eklenecek.length) return;
+
+    const yeni = [...mevcut, ...eklenecek];
+    chatLabels.set(jid, yeni);
+    for (const id of eklenecek) db.addChatLabel(jid, id).catch(() => {});
+    broadcastHat(lineId, { type: 'chatLabelUpdate', jid, labelIds: yeni });
+    const adlar = eklenecek.map((id) => (labels.find((l) => l.id === id) || {}).name || id).join(', ');
+    console.log(`🏷️  OTOMATIK ETIKET: ${jid.split('@')[0]} -> ${adlar}`);
+  } catch (e) { console.log('⚠️  otomatik etiket hatasi: ' + e.message); }
+}
+
+// Rol listelerini veritabanindan bellege al (acilista + her degisiklikte).
+async function otoEtiketYukle() {
+  try {
+    const us = await db.listUsers();
+    otoEtiketKullanicilar = new Set(us.filter((u) => u.oto_etiket).map((u) => u.username));
+  } catch (e) { console.log('⚠️  oto etiket kullanicilari yuklenemedi: ' + e.message); }
+  try {
+    const ns = await db.listOtoEtiketNumaralar();
+    otoEtiketNumaralar = new Set(ns.map((n) => _otoNumaraNorm(n.numara)).filter(Boolean));
+  } catch (e) { console.log('⚠️  oto etiket numaralari yuklenemedi: ' + e.message); }
+  const t = otoEtiketKullanicilar.size + otoEtiketNumaralar.size;
+  if (t) console.log(`🏷️  Otomatik etiket rolu: ${otoEtiketKullanicilar.size} panel kullanicisi, ${otoEtiketNumaralar.size} numara`);
+}
 const profilFotolar = {}; // username -> data-url (panel profil fotograflari)
 
 // ══════════════════════════════════════════════════════════════════
@@ -2595,6 +2766,61 @@ app.post('/api/users/bagimsizokuma', express.json(), async (req, res) => {
   }
 });
 
+// ═══ OTOMATIK ETIKET ROLU — API UCLARI (hepsi sadece yonetici) ═══════════
+// 1) PANEL KULLANICISI icin ac/kapat
+app.post('/api/users/otoetiket', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  const val = !!req.body?.aktif;
+  try {
+    const users = await db.listUsers();
+    const u = users.find(x => String(x.id) === String(req.body?.id));
+    if (!u) return res.json({ ok: false, error: 'Kullanıcı bulunamadı' });
+    await db.setOtoEtiket(u.id, val);
+    if (val) otoEtiketKullanicilar.add(u.username); else otoEtiketKullanicilar.delete(u.username);
+    res.json({ ok: true });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+// 2) YETKILI NUMARALARI listele
+app.post('/api/otoetiket/numaralar', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  try {
+    const liste = await db.listOtoEtiketNumaralar();
+    // Kurallari da gonder ki panel "hangi mesaj hangi etikete duser" gosterebilsin
+    res.json({
+      ok: true,
+      numaralar: liste,
+      kurallar: OTO_ETIKET_KURALLARI.map(k => ({ kalip: k.kalip, etiket: k.etiket })),
+    });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+// 3) YETKILI NUMARA ekle
+app.post('/api/otoetiket/numara-ekle', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  const ham = String(req.body?.numara || '');
+  const num = _otoNumaraNorm(ham);
+  if (!num || num.length < 10) return res.json({ ok: false, error: 'Numara geçersiz. Örnek: 0539 926 54 41' });
+  try {
+    const s = sessions.get(req.body?.token);
+    const r = await db.addOtoEtiketNumara(num, String(req.body?.ad || '').slice(0, 60), s ? s.username : '');
+    if (!r.ok) return res.json(r);
+    otoEtiketNumaralar.add(num);
+    res.json({ ok: true, numara: num });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+// 4) YETKILI NUMARA sil
+app.post('/api/otoetiket/numara-sil', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  const num = _otoNumaraNorm(req.body?.numara);
+  try {
+    await db.delOtoEtiketNumara(num);
+    otoEtiketNumaralar.delete(num);
+    res.json({ ok: true });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
 // ═══ GOREV ETIKETI (2aylik / kalici / iptal) — yonetici atar, herkeste renkli gorunur ═══
 app.post('/api/users/gorev', express.json(), async (req, res) => {
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
@@ -3867,6 +4093,7 @@ wss.on('connection', (ws) => {
             raw: sent, // GONDERIM SONUCU: kendi mesajimizi sonradan YANITLAYINCA alinti icin gerekli
             fromMe: true, kind: 'text', text: msg.text,
             sender: msg.agent || 'Ben', time: nowTime(), replyTo,
+            _otoPanelUser: ws._username || null,   // otomatik etiket yetkisi icin
             durum: baslangicDurum,
             teamMentions: Array.isArray(msg.teamMentions) ? msg.teamMentions : undefined,
           }, _LID);
@@ -4045,6 +4272,7 @@ wss.on('connection', (ws) => {
               id: ncSent.key.id, key: ncSent.key, raw: ncSent,
               fromMe: true, kind: 'text', text: msg.text,
               sender: msg.agent || 'Ben', time: nowTime(), durum: 2,
+              _otoPanelUser: ws._username || null,
             }, { name: msg.name || num }, _LID);
           } catch (e) {
             console.error('⚠️  Yeni sohbet ilk mesaj gonderilemedi:', e.message);
@@ -4091,6 +4319,7 @@ wss.on('connection', (ws) => {
           addMessage(targetJid, {
             fromMe: true, kind: 'text', text: gonderilecekMetin,
             sender: msg.agent || 'Ben', time: nowTime(),
+            _otoPanelUser: ws._username || null,
             replyTo: { id: orig.id || null, sender: orig.sender, text: replyPreview(orig) },
           }, { name: orig.senderPush || targetJid.split('@')[0] }, _LID);
           ws.send(JSON.stringify({ type: 'openChat', jid: targetJid }));
@@ -6741,6 +6970,10 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
   if (!message.fromMe) { chat.unread++; chat.ozelUnread = (chat.ozelUnread || 0) + 1; chat.muhUnread = (chat.muhUnread || 0) + 1; }
   // beni etiketleyen okunmamis mesaj geldiyse isaretle
   if (meta.mentionsMe) chat.hasMention = true;
+  // ═══ OTOMATIK ETIKET ═══════════════════════════════════════════════
+  // Yetkili biri kalip mesaji yazdiysa sohbete ilgili etiketi ekle.
+  // TEK KANCA: panelden de telefondan da gelen her mesaj buradan gecer.
+  otoEtiketUygula(jid, message, lineId);
   // HAFIF YAYIN: 60 mesaj yerine sadece bu yeni mesaji gonder (trafik ~40x az -> aninda gider).
   broadcastYeniMesaj(lineId, jid, chat, message);
   // Supabase'e kaydet (arka planda, mesaji bekletmez)
@@ -6767,7 +7000,9 @@ function _aracBilgiCoz(v) {
   catch (e) { return null; }
 }
 function stripBirMesaj(m) {
-  const { raw, key, ...rest } = m;
+  // _oto* alanlari SADECE otomatik etiket yetkisi icin ic kullanimdir;
+  // panele gitmelerine gerek yok (senderJid/sender zaten var).
+  const { raw, key, _otoPanelUser, _otoParticipant, ...rest } = m;
   return rest;
 }
 // HAFIF YAYIN: tum sohbeti (60 mesaj) degil, SADECE tek yeni mesaji + sohbet ozetini gonderir.
@@ -8624,6 +8859,9 @@ async function _startWAIc(lineId = 'ofis') {
         contacts: info._contacts || null,
         sender: fromMe ? 'Ben' : senderName,
         senderJid,
+        // OTOMATIK ETIKET: LID cozulemezse yedek kimlik olarak ham
+        // participant/alternatif numara da tasinsin.
+        _otoParticipant: m.key.participantPn || m.key.participantAlt || m.key.participant || '',
         senderPush,
         senderOfis, // bu kisi ofis ekibi/kayitli mi (panelde rozet icin)
         time: nowTime(),
@@ -9252,6 +9490,7 @@ server.listen(PORT, async () => {
   db.init();
   const dbOk = await db.test();
   await bagimsizOkumaYukle(); // bağımsız okuma yan-rolü listesini belleğe al
+  await otoEtiketYukle();     // otomatik etiket rolü (panel kullanıcıları + numaralar)
   await robotAyarYukle();     // robot (iptal belgesi algilama) acik mi?
   if (robotAktif) { _ocrHazirla().catch(() => {}); }   // motoru ONCEDEN isit (ilk belge beklemesin)
   await gorevleriYukle();     // görev etiketlerini (2aylik/kalici/iptal) belleğe al

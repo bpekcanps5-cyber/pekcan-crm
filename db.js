@@ -72,6 +72,21 @@ async function test() {
       pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS bagimsiz_okuma BOOLEAN DEFAULT false')
         .then(() => console.log('   ✓ users.bagimsiz_okuma kolonu hazır (bağımsız okuma rolü)'))
         .catch((e) => console.log('   ⚠️ bagimsiz_okuma eklenemedi:', e.message));
+      // OTOMATIK ETIKET yan-rolu: bu rol ACIK olan kisi belirli kalip mesajlari
+      // yazinca sohbete ilgili etiket kendiliginden dusuyor.
+      pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS oto_etiket BOOLEAN DEFAULT false')
+        .then(() => console.log('   ✓ users.oto_etiket kolonu hazır (otomatik etiket rolü)'))
+        .catch((e) => console.log('   ⚠️ oto_etiket eklenemedi:', e.message));
+      // Ayni rolu PANEL KULLANICISI OLMAYAN kisilere de verebilmek icin: numara listesi.
+      // Mesaj normal WhatsApp'tan gelse bile bu numaralar yetkili sayilir.
+      pool.query(`CREATE TABLE IF NOT EXISTS oto_etiket_numaralar (
+                    numara TEXT PRIMARY KEY,
+                    ad TEXT DEFAULT '',
+                    ekleyen TEXT DEFAULT '',
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                  )`)
+        .then(() => console.log('   ✓ oto_etiket_numaralar tablosu hazır (numara bazlı rol)'))
+        .catch((e) => console.log('   ⚠️ oto_etiket_numaralar eklenemedi:', e.message));
       pool.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS muh_unread INTEGER DEFAULT 0')
         .then(() => console.log('   ✓ chats.muh_unread kolonu hazır (muhasebeci sessiz okuma)'))
         .catch((e) => console.log('   ⚠️ muh_unread eklenemedi:', e.message));
@@ -713,7 +728,8 @@ async function listUsers() {
     // kullanici tipini (ofis/pazarlama) de getir — kullanici_hatlari ile birlestir.
     // Eslesme yoksa varsayilan 'ofis'.
     const r = await pool.query(`
-      SELECT u.id, u.username, u.display_name, u.role, u.created_at, u.bagimsiz_okuma, COALESCE(u.gorev,'') AS gorev, u.gorev,
+      SELECT u.id, u.username, u.display_name, u.role, u.created_at, u.bagimsiz_okuma,
+             COALESCE(u.oto_etiket, false) AS oto_etiket, COALESCE(u.gorev,'') AS gorev, u.gorev,
              COALESCE(kh.tip, 'ofis') AS tip,
              COALESCE(kh.line_id, 'ofis') AS line_id
       FROM users u
@@ -1153,6 +1169,37 @@ async function setUserGorev(id, gorev) {
 async function setBagimsizOkuma(id, val) {
   if (!aktif) return { ok: false };
   try { await pool.query('UPDATE users SET bagimsiz_okuma=$1 WHERE id=$2', [!!val, id]); return { ok: true }; }
+  catch (e) { return { ok: false, error: e.message }; }
+}
+
+// ═══ OTOMATIK ETIKET ROLU ══════════════════════════════════════════════
+// Panel kullanicisi icin bayrak
+async function setOtoEtiket(id, val) {
+  if (!aktif) return { ok: false };
+  try { await pool.query('UPDATE users SET oto_etiket=$1 WHERE id=$2', [!!val, id]); return { ok: true }; }
+  catch (e) { return { ok: false, error: e.message }; }
+}
+// Panel kullanicisi OLMAYAN kisiler icin: yetkili numara listesi
+async function listOtoEtiketNumaralar() {
+  if (!aktif) return [];
+  try {
+    const r = await pool.query('SELECT numara, ad, ekleyen FROM oto_etiket_numaralar ORDER BY ad, numara');
+    return r.rows;
+  } catch (e) { return []; }
+}
+async function addOtoEtiketNumara(numara, ad, ekleyen) {
+  if (!aktif) return { ok: false, error: 'veritabani hazir degil' };
+  try {
+    await pool.query(
+      `INSERT INTO oto_etiket_numaralar (numara, ad, ekleyen) VALUES ($1,$2,$3)
+       ON CONFLICT (numara) DO UPDATE SET ad=EXCLUDED.ad`,
+      [String(numara), String(ad || ''), String(ekleyen || '')]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+async function delOtoEtiketNumara(numara) {
+  if (!aktif) return { ok: false };
+  try { await pool.query('DELETE FROM oto_etiket_numaralar WHERE numara=$1', [String(numara)]); return { ok: true }; }
   catch (e) { return { ok: false, error: e.message }; }
 }
 
@@ -1760,6 +1807,7 @@ module.exports = {
   loadAll, loadMessages, deleteMessage, wipeAll, wipeGroups, wipeLine, searchMessages,
   cleanupOld, startCleanup,
   ensureAdmin, checkLogin, addUser, listUsers, deleteUser, setUserRole, setBagimsizOkuma, updateUser,
+  setOtoEtiket, listOtoEtiketNumaralar, addOtoEtiketNumara, delOtoEtiketNumara,
   setUserAvatar, listUserAvatars, setUserGorev, GECERLI_GOREV,
   getOwnPassword, listUsersWithPasswords,
   saveInternalMessage, loadInternalConversation, listInternalConversations,

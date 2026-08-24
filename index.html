@@ -4157,6 +4157,37 @@
   </div>
 </div>
 
+<!-- ══ OTOMATIK ETIKET: yetkili numaralar + kural listesi ══ -->
+<div class="modal-bg" id="otoEtiketModal" data-kapanmaz="1">
+  <div class="modal" style="max-width:640px">
+    <h3 style="margin-bottom:6px">🏷️ Otomatik Etiket</h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+      Yetkili biri aşağıdaki kalıp mesajlardan birini yazınca, o sohbete ilgili etiket
+      kendiliğinden düşer. <b>Her grupta</b> geçerlidir; mesaj panelden de kişinin
+      kendi telefonundan da gönderilebilir. Yetkisi olmayan aynı mesajı yazarsa hiçbir şey olmaz.
+    </p>
+
+    <div class="um-section-title" style="margin-top:0">Kalıplar</div>
+    <div id="otoEtiketKurallar" style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px"></div>
+
+    <div class="um-section-title">Yetkili numaralar</div>
+    <p style="color:var(--muted);font-size:12.5px;margin:-4px 0 10px">
+      Panel kullanıcısı olmayan kişiler için. Panel kullanıcılarına yetkiyi
+      Kullanıcı Yönetimi ekranındaki <b>🏷️ Oto etiket</b> düğmesinden verirsin.
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <input type="text" id="otoEtiketAd" placeholder="İsim (örn. Ahmet)" class="um-input" style="flex:1;min-width:130px">
+      <input type="text" id="otoEtiketNumara" placeholder="Numara (örn. 0539 926 54 41)" class="um-input" style="flex:1.3;min-width:160px">
+      <button class="btn primary" onclick="otoEtiketNumaraEkle()" style="flex:0 0 auto">Ekle</button>
+    </div>
+    <div id="otoEtiketNumaraListe" style="display:flex;flex-direction:column;gap:8px;max-height:240px;overflow-y:auto"></div>
+
+    <div class="modal-btns" style="margin-top:18px">
+      <button class="btn ghost" onclick="document.getElementById('otoEtiketModal').classList.remove('show')">Kapat</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="userMgmtModal" data-kapanmaz="1">
   <div class="modal um-modal">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap">
@@ -4164,6 +4195,7 @@
         <h3 style="margin-bottom:6px">Kullanıcı Yönetimi</h3>
         <p style="color:var(--muted);font-size:13px;margin-bottom:18px">Ekibine kullanıcı aç, rol ver ya da sil. Herkes kendi kullanıcı adı ve şifresiyle girer.</p>
       </div>
+      <button class="btn ghost" onclick="otoEtiketAc()" style="white-space:nowrap;font-size:12.5px;flex:0 0 auto;padding:7px 13px;height:34px;align-self:flex-start">🏷️ Otomatik etiket</button>
       <button class="btn ghost" onclick="sifreListeAc()" style="white-space:nowrap;font-size:12.5px;flex:0 0 auto;padding:7px 13px;height:34px;align-self:flex-start">🔑 Şifre listesi</button>
     </div>
 
@@ -8442,6 +8474,8 @@ function userListeCiz(){
     else rozet='<span class="um-badge agent">Temsilci</span>';
     let actions='';
     const boToggle='<button class="um-btn'+(u.bagimsiz_okuma?' aktif':'')+'" onclick="bagimsizOkumaToggle('+u.id+','+(u.bagimsiz_okuma?'false':'true')+')" title="Bağımsız okuma: başkası açsa da mesajlar bu kişide okunmamış kalır; sadece kendisi açınca okundu olur">'+(u.bagimsiz_okuma?'👁️ Bağımsız ✓':'👁️ Bağımsız okuma')+'</button>';
+    // OTOMATIK ETIKET rolu: bu kisi kalip mesaj yazinca sohbete etiket kendiliginden duser
+    const oeToggle='<button class="um-btn'+(u.oto_etiket?' aktif':'')+'" onclick="otoEtiketToggle('+u.id+','+(u.oto_etiket?'false':'true')+')" title="Otomatik etiket: bu kişi ❗2 AYLIK KESİP İLETELİM 🚨 gibi kalıp mesajları yazınca sohbete ilgili etiket kendiliğinden düşer. Panelden de kendi telefonundan da geçerlidir.">'+(u.oto_etiket?'🏷️ Oto etiket ✓':'🏷️ Oto etiket')+'</button>';
     if(!benim){
       actions+='<button class="um-btn" onclick="userDuzenleAc('+u.id+',\''+esc(u.username).replace(/'/g,"\\'")+'\',\''+esc(u.display_name||'').replace(/'/g,"\\'")+'\')">Düzenle</button>';
       // ROL DEĞİŞTİR menüsü (yönetici / pazarlama yöneticisi / normal)
@@ -8452,9 +8486,10 @@ function userListeCiz(){
         +(_ugb?' style="color:'+_ugb.renk+';border-color:'+_ugb.renk+'55;background:'+_ugb.renk+'1a"':'')
         +'>🏷️ '+(_ugb?_ugb.ad:'Görev')+' ▾</button>';
       actions+=boToggle;
+      actions+=oeToggle;
       actions+='<button class="um-btn danger" onclick="delUser('+u.id+',\''+esc(u.username)+'\')">Sil</button>';
     } else {
-      actions='<button class="um-btn" onclick="userDuzenleAc('+u.id+',\''+esc(u.username).replace(/'/g,"\\'")+'\',\''+esc(u.display_name||'').replace(/'/g,"\\'")+'\')">Düzenle</button>'+boToggle+'<span style="font-size:11px;color:var(--faint);margin-left:6px">sen</span>';
+      actions='<button class="um-btn" onclick="userDuzenleAc('+u.id+',\''+esc(u.username).replace(/'/g,"\\'")+'\',\''+esc(u.display_name||'').replace(/'/g,"\\'")+'\')">Düzenle</button>'+boToggle+oeToggle+'<span style="font-size:11px;color:var(--faint);margin-left:6px">sen</span>';
     }
     return '<div class="um-row"><div class="um-info"><span class="um-name">'+esc(u.display_name||u.username)+' '+rozet+'</span><span class="um-meta">@'+esc(u.username)+'</span></div><div class="um-actions">'+actions+'</div></div>';
   }).join('');
@@ -8553,6 +8588,59 @@ async function addNewUser(){
   }catch(e){ msg.textContent='Sunucu hatası'; }
   btn.disabled=false; btn.textContent='Kullanıcı oluştur';
 }
+// ══ OTOMATIK ETIKET ROLU ══════════════════════════════════════════════
+function otoEtiketToggle(id,aktif){
+  fetch('/api/users/otoetiket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,id,aktif})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){ showToast(aktif?'🏷️ Otomatik etiket yetkisi verildi':'Otomatik etiket yetkisi kaldırıldı'); loadUserList(); }
+      else showToast(d.error||'İşlem başarısız');
+    }).catch(()=>showToast('Sunucu hatası'));
+}
+function otoEtiketAc(){
+  document.getElementById('otoEtiketModal').classList.add('show');
+  otoEtiketYukle();
+}
+function otoEtiketYukle(){
+  const kBox=document.getElementById('otoEtiketKurallar');
+  const nBox=document.getElementById('otoEtiketNumaraListe');
+  kBox.innerHTML='<div style="color:var(--muted);font-size:13px">Yükleniyor…</div>';
+  nBox.innerHTML='';
+  fetch('/api/otoetiket/numaralar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})})
+    .then(r=>r.json()).then(d=>{
+      if(!d.ok){ kBox.innerHTML='<div style="color:var(--muted);font-size:13px">'+esc(d.error||'Yüklenemedi')+'</div>'; return; }
+      kBox.innerHTML=(d.kurallar||[]).map(k=>
+        '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:8px 11px;background:var(--panel-2);border:1px solid var(--border-soft);border-radius:10px">'
+        +'<span style="font-size:12.5px;color:var(--text);flex:1;min-width:150px">'+esc(k.kalip)+'</span>'
+        +'<span style="font-size:11px;color:var(--muted)">→</span>'
+        +'<span class="um-badge">'+esc(k.etiket)+'</span></div>').join('')
+        || '<div style="color:var(--muted);font-size:13px">Kalıp tanımlı değil</div>';
+      const ns=d.numaralar||[];
+      nBox.innerHTML=ns.length? ns.map(n=>
+        '<div class="um-row" style="flex-direction:row;align-items:center;justify-content:space-between">'
+        +'<div class="um-info"><span class="um-name">'+esc(n.ad||'(isimsiz)')+'</span>'
+        +'<span class="um-meta">'+esc(n.numara)+'</span></div>'
+        +'<button class="um-btn danger" onclick="otoEtiketNumaraSil(\''+esc(n.numara)+'\')">Kaldır</button></div>').join('')
+        : '<div style="color:var(--muted);font-size:13px;padding:6px 2px">Henüz yetkili numara yok.</div>';
+    }).catch(()=>{ kBox.innerHTML='<div style="color:var(--muted);font-size:13px">Sunucu hatası</div>'; });
+}
+function otoEtiketNumaraEkle(){
+  const ad=document.getElementById('otoEtiketAd').value.trim();
+  const numara=document.getElementById('otoEtiketNumara').value.trim();
+  if(!numara){ showToast('Numara gir'); return; }
+  fetch('/api/otoetiket/numara-ekle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,ad,numara})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){ showToast('🏷️ Numara eklendi'); document.getElementById('otoEtiketAd').value=''; document.getElementById('otoEtiketNumara').value=''; otoEtiketYukle(); }
+      else showToast(d.error||'Eklenemedi');
+    }).catch(()=>showToast('Sunucu hatası'));
+}
+function otoEtiketNumaraSil(numara){
+  fetch('/api/otoetiket/numara-sil',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,numara})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){ showToast('Numara kaldırıldı'); otoEtiketYukle(); }
+      else showToast(d.error||'Kaldırılamadı');
+    }).catch(()=>showToast('Sunucu hatası'));
+}
+
 function bagimsizOkumaToggle(id,aktif){
   fetch('/api/users/bagimsizokuma',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,id,aktif})})
     .then(r=>r.json()).then(d=>{
