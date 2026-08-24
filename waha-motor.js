@@ -35,7 +35,7 @@ const WAHA_OTURUM = process.env.WAHA_OTURUM || 'default';
 // Kopru bu portta dinler; WAHA olaylari buraya gelir.
 // Hangi surumun calistigini logdan gorebilmek icin. Yeni dosya
 // yuklendiginde bu satir degisir; degismiyorsa deploy olmamistir.
-const MOTOR_SURUM = '2026-08-22 / hafif-otomatik-28';
+const MOTOR_SURUM = '2026-08-24 / anlik-cift-kanal-31';
 const WAHA_KANCA_PORT = Number(process.env.WAHA_KANCA_PORT) || 3210;
 // WAHA Docker KUTUSUNUN ICINDE calisiyor, bu sunucu DISINDA.
 // Kutunun icinden 'localhost' KUTUNUN KENDISI demek — bizim sunucuya
@@ -2090,6 +2090,8 @@ let _kancaSunucu = null;
 const _dinleyiciler = new Set();   // aktif soketler (olaylari dagitmak icin)
 let _olaySayaci = 0;               // WAHA'dan kac olay geldi
 let _oturumYenidenBaslatildi = false;   // onarim icin oturum bir kez yeniden baslatilir
+let _sonOlayZamani = 0;                 // en son ne zaman olay geldi
+let _kanalSayac = { kanca: 0, websoket: 0 };   // hangi kanal kac mesaj getirdi
 const _olayTipleri = new Map();
 
 // ═══ KANCA BEKCISI ══════════════════════════════════════════════════
@@ -2117,8 +2119,9 @@ function kancaBekcisi(sock) {
     catch (e) { log('   yazilamadi: ' + String(e.message).slice(0, 60)); }
   }, 120000);
 
-  // 'acik' modda beklemeden ac
-  if (WS_MOD === 'acik') websoketBaslat('ayar acik');
+  // 'acik' modda BEKLEMEDEN ac — kanca ile paralel calissin.
+  // Amac: mesaj hangi kanaldan once gelirse aninda panele dussun.
+  if (WS_MOD === 'acik') websoketBaslat('paralel kanal');
 
   // ── 1. ADIM (30sn): olay yoksa WEBSOKET yolunu ac ──
   // Bu, kanca yolunun tersi: baglantiyi BIZ kuruyoruz, yani guvenlik
@@ -2318,7 +2321,15 @@ async function grupBilgisiniGetir(sock, jid) {
 //  bu yuzden ayni isleyiciye veriyoruz — tekrar eden mesaj kimlige gore
 //  zaten eleniyor, iki yol ayni anda calissa bile sorun olmaz.
 // ═══════════════════════════════════════════════════════════════════
-const WS_MOD = (process.env.WAHA_WEBSOKET || 'yedek').toLowerCase();  // yedek | acik | kapali
+// ═══ WEBSOKET: VARSAYILAN ACIK (2026-08) ═══════════════════════════
+// Kanca (webhook) tek kanaldir ve WAHA bir olayi iletemezse o mesaj
+// ancak periyodik taramayla, saniyeler sonra gelir. Kullanicinin
+// istedigi ise ANLIK teslim (1 saniyenin altinda).
+// Bu yuzden websoket ARTIK YEDEK DEGIL, kanca ile PARALEL calisir:
+// mesaj hangi kanaldan once gelirse o kullanilir. Ayni mesaj iki
+// kanaldan da gelirse kimlige gore elenir, panelde tek gorunur.
+// Kapatmak icin .env: WAHA_WEBSOKET=kapali
+const WS_MOD = (process.env.WAHA_WEBSOKET || 'acik').toLowerCase();  // acik | yedek | kapali
 let _wsBaglanti = null;
 let _wsDenemeSayisi = 0;
 let _wsKapandi = false;
@@ -2361,6 +2372,8 @@ function websoketBaslat(sebep) {
     _olaySayaci++;
     const tip = String(olay.event || olay.type || '?');
     _olayTipleri.set(tip, (_olayTipleri.get(tip) || 0) + 1);
+    _sonOlayZamani = Date.now();
+    if (/^message/.test(tip)) _kanalSayac.websoket++;
     if (_olaySayaci === 1) log('✅ ilk olay geldi (websoket): "' + tip + '"');
     else if (_olaySayaci % 200 === 0) {
       log('olay ozeti (' + _olaySayaci + ' toplam): ' + [..._olayTipleri].map(([t, n]) => t + '=' + n).join(' '));
@@ -2562,6 +2575,7 @@ function kancaSunucusuAc() {
       // WAHA'dan hic olay gelmezse panel sessizce bos kalir ve sebebi
       // anlasilmaz. Ilk olayi ve sonra periyodik ozeti yaziyoruz.
       _olaySayaci++;
+      _sonOlayZamani = Date.now();
       const tip = String(olay.event || olay.type || '?');
       _olayTipleri.set(tip, (_olayTipleri.get(tip) || 0) + 1);
       if (_olaySayaci === 1) {
@@ -2918,8 +2932,14 @@ function qrTakibiBaslat(sock) {
 //  Kapatmak icin .env: WAHA_TARAYICI=kapali
 // ═══════════════════════════════════════════════════════════════════
 const TARAYICI_MOD = (process.env.WAHA_TARAYICI || 'acik').toLowerCase();
-const TARAYICI_ARALIK_MS = Number(process.env.WAHA_TARAYICI_ARALIK_MS) || 60000;
-const TARAYICI_SOHBET = 25;
+// ═══ TARAMA SIKLIGI (2026-08) ══════════════════════════════════════
+// 60 saniyeydi: kanca bir mesaji kacirirsa panele DUSMESI 1 DAKIKA
+// suruyordu — kullanicinin "gecikme var, hatta gelmeyen var" dedigi sey.
+// 15 saniyeye cektik: en kotu durumda gecikme 15 saniye.
+// Sohbet sayisi 25 -> 40: yogun saatlerde bir grup ilk 25'in disina
+// dusup taranmadan kalabiliyordu.
+const TARAYICI_ARALIK_MS = Number(process.env.WAHA_TARAYICI_ARALIK_MS) || 15000;
+const TARAYICI_SOHBET = 40;
 
 async function mesajTaramasi(sock) {
   if (sock._kapali || sock._taramaCalisiyor) return;
@@ -2954,7 +2974,7 @@ async function mesajTaramasi(sock) {
           eksikler.push(m);
         }
       } catch (_) { /* bu sohbet okunamadi, digerine gec */ }
-      await uyu(120);
+      await uyu(60);
     }
     if (eksikler.length) {
       sock.ev.emit('messages.upsert', { type: 'notify', messages: eksikler });
@@ -2969,7 +2989,7 @@ async function mesajTaramasi(sock) {
 function mesajTaramasiBaslat(sock) {
   if (TARAYICI_MOD === 'kapali' || sock._taramaTimer) return;
   sock._taramaTimer = setInterval(() => { mesajTaramasi(sock).catch(() => {}); }, TARAYICI_ARALIK_MS);
-  setTimeout(() => { mesajTaramasi(sock).catch(() => {}); }, 20000);   // ilk tur
+  setTimeout(() => { mesajTaramasi(sock).catch(() => {}); }, 5000);    // ilk tur
   log('mesaj tarayici kuruldu (' + Math.round(TARAYICI_ARALIK_MS / 1000) + 'sn) — kanca bir sey kacirirsa telafi eder');
 }
 function mesajTaramasiDurdur(sock) {
@@ -3164,7 +3184,10 @@ async function wahaBaglan() {
   // kendisini dinliyoruz — hangi yoldan acilirsa acilsin yakalanir.
   // ilkListeBaslat kendi icinde tek sefer korumali.
   sock.ev.on('connection.update', (u) => {
-    if (u && u.connection === 'open') { ilkListeBaslat(sock); kancaBekcisi(sock); isimTazelemeBaslat(sock); }
+    if (u && u.connection === 'open') {
+      ilkListeBaslat(sock); kancaBekcisi(sock); isimTazelemeBaslat(sock);
+      if (WS_MOD === 'acik') websoketBaslat('baglanti acildi');   // ANLIK kanal
+    }
   });
 
   // ── WAHA olayi -> Baileys olayi ──
@@ -3482,32 +3505,38 @@ async function wahaBaglan() {
   sock._sonMesajlar = new Set();
 
   // ── Oturumu hazirla ve durumu bildir ──
-  try {
-    const s = await oturumHazirla();
+  // ═══ QR TAKIBI ONCE BASLAR, AYAR ISI ARKADA (2026-08) ════════════
+  // ESKI SIRA: once 'await oturumHazirla()' — icinde NOWEB deposu
+  // kontrolu, gerekirse durdur/ayar-yaz/baslat ve 3 saniye bekleme var.
+  // QR takibi ancak BUNLAR BITTIKTEN SONRA basliyordu. Yani panelden
+  // cikis yapildiginda QR'i bekleten sey WhatsApp degil, KENDI ayar
+  // kontrolumuzdu (10-30 saniye).
+  // YENI SIRA: QR takibi HEMEN baslar (ilk sorgu 800 ms icinde), oturum
+  // hazirligi arka planda yurur. Oturum zaten WORKING ise QR takibi
+  // kendi kendini durdurur — bos calismaz.
+  setImmediate(() => sock.ev.emit('connection.update', { connection: 'connecting' }));
+  qrTakibiBaslat(sock);
+
+  oturumHazirla().then((s) => {
+    if (sock._kapali) return;
     const durum = String(s.status || s.state || '').toUpperCase();
     if (/WORKING|CONNECTED/.test(durum)) {
       const ben = s.me || s.user || {};
       sock.user = benKur(ben);
       sock.ws.isOpen = true;
+      qrTakibiDurdur(sock);           // bagliyiz, QR aramaya gerek yok
       durumBekcisiBaslat(sock);
       baglantiBasladiYaz();
       setTimeout(() => { kopuklukTelafisi(sock).catch(() => {}); }, 4000);
       mesajTaramasiBaslat(sock);
-      setImmediate(() => sock.ev.emit('connection.update', { connection: 'open' }));
-    } else {
-      setImmediate(() => sock.ev.emit('connection.update', { connection: 'connecting' }));
-      qrTakibiBaslat(sock);   // QR'i panele akitmaya basla
+      sock.ev.emit('connection.update', { connection: 'open' });
     }
-  } catch (e) {
-    // ═══ WAHA HENUZ AYAKTA DEGIL ════════════════════════════════════
-    // 'docker compose up' ile ayni komutta pm2 restart yapilinca WAHA
-    // birkac saniye gec aciliyor ve buraya 'fetch failed' ile duşuyoruz.
-    // Bu bir hata degil, sadece erken davranmisiz. QR takibi zaten
-    // oturumu bulamayinca kendisi kuracak (yukaridaki 404 dali).
-    log('oturum hazirlanamadi: ' + e.message + ' — WAHA henuz acilmamis olabilir, takip basliyor');
-    setImmediate(() => sock.ev.emit('connection.update', { connection: 'connecting' }));
-    qrTakibiBaslat(sock);
-  }
+    // WORKING degilse: QR takibi zaten calisiyor, o halleder.
+  }).catch((e) => {
+    // WAHA birkac saniye gec acilmis olabilir; QR takibi zaten donuyor
+    // ve oturum yoksa kendisi kuracak (404 dali).
+    log('oturum hazirlanamadi: ' + e.message + ' — QR takibi calismaya devam ediyor');
+  });
 
   return sock;
 }
@@ -3519,6 +3548,8 @@ function olcumler() {
     olayToplam: _olaySayaci,
     olayTipleri: Object.fromEntries(_olayTipleri),
     kayitliKancaAdresi: _kayitliKancalar.length,
+    sonOlaySn: _sonOlayZamani ? Math.round((Date.now() - _sonOlayZamani) / 1000) : null,
+    mesajKanali: { ..._kanalSayac },
     tekAdreseIndirildi: _adresSadelestirildi,
   };
 }
