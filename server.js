@@ -18,13 +18,10 @@ const https = require('https');
 const { WebSocketServer } = require('ws');
 const db = require('./db'); // Supabase (PostgreSQL) veri katmani
 
-// ═══ MOTOR SECIMI (2026-08) ═══════════════════════════════════════════
-// VARSAYILAN 'baileys' — canli sistem HIC ETKILENMEZ.
-// MOTOR=waha ile calistirilirsa WhatsApp katmani WAHA'ya gecer; panelin
-// ve sunucunun geri kalani (robot, satislar, odemeler, kullanicilar,
-// etiketler, veritabani) AYNEN calismaya devam eder.
-const MOTOR = (process.env.MOTOR || 'baileys').toLowerCase();
-const wahaMotor = (MOTOR === 'waha') ? require('./waha-motor') : null;
+// ═══ WHATSAPP MOTORU: BAILEYS (tek motor) ════════════════════════════
+// 2026-08'de WAHA denemesi yapildi ve BIRAKILDI (GOWS gruplarin %64'unun
+// adini vermiyordu, NOWEB'de de veri bicimi tutmadi). Tum WAHA kancalari
+// koddan temizlendi; geriye tek ve sade Baileys yolu kaldi.
 // ═══ MESAJ GUVENCE KATMANI ═══════════════════════════════════════════
 // Gelen mesaji once yerel gunluge yazar, sonra veritabanina yazmayi
 // GARANTI ALTINDA dener. Veritabani gecici olarak erisilemezse ya da
@@ -32,15 +29,6 @@ const wahaMotor = (MOTOR === 'waha') ? require('./waha-motor') : null;
 // devam eder. (Onceki davranis: db.saveMessage(...).catch(()=>{}) —
 // hata yutuluyordu, mesaj kalici olarak kayboluyordu.)
 const mesajGuvence = require('./mesaj-guvence');
-if (wahaMotor) {
-  console.log('');
-  console.log('╔══════════════════════════════════════════════════════════');
-  console.log('║  MOTOR: WAHA  (Baileys DEVRE DISI)');
-  console.log('║  WAHA   : ' + wahaMotor.WAHA_URL + '  (oturum: ' + wahaMotor.WAHA_OTURUM + ')');
-  console.log('║  Panelin ve sunucunun geri kalani AYNEN calisiyor.');
-  console.log('╚══════════════════════════════════════════════════════════');
-  console.log('');
-}
 
 // ============================================================
 // SUNUCU BAŞLANGIÇ KİMLİĞİ (boot id) — OTOMATİK PANEL YENİLEME
@@ -231,9 +219,9 @@ function createLine(lineId, label, ownerUser) {
 // ediyordu. Sonuc: ayni mesaj birden fazla islenmesi, bellek sismesi,
 // eski soketin "koptum" demesiyle sahte uyarilar ve ust uste yeniden
 // baglanma denemeleri (WhatsApp bunu cakisma sanip 440 veriyordu).
-// WAHA motorunda Baileys oturum dosyalari YOK; auth silme islemleri
-// anlamsiz ve zararli olur. Bu yardimci onu engeller.
-function authSilinebilirMi() { return !wahaMotor; }
+// Tek motor Baileys oldugu icin oturum dosyalari HER ZAMAN silinebilir.
+// (WAHA doneminde bu kilit vardi; motor kalkti, kilit serbest kaldi.)
+function authSilinebilirMi() { return true; }
 
 function soketiKapat(sock, sebep) {
   if (!sock) return;
@@ -578,11 +566,9 @@ app.get('/hazir', (req, res) => {
 app.get('/olcumler', (req, res) => {
   let g = {};
   try { g = mesajGuvence.olcumler(); } catch (e) { g = { hata: e.message }; }
-  let motor = {};
-  try { motor = (wahaMotor && wahaMotor.olcumler) ? wahaMotor.olcumler() : {}; } catch (_) {}
   res.json({
     zaman: new Date().toISOString(),
-    motor: MOTOR,
+    motor: 'baileys',
     whatsapp: {
       bagli: (() => { try { return !!CONNECTED; } catch (_) { return null; } })(),
       sonAktiviteSn: (() => {
@@ -592,7 +578,6 @@ app.get('/olcumler', (req, res) => {
     },
     veritabani: { hazir: (() => { try { return db.isReady(); } catch (_) { return false; } })() },
     mesajGuvence: g,
-    kopru: motor,
   });
 });
 
@@ -6410,10 +6395,8 @@ async function aciklamaMotorTur() {
 // Kullanici karari: "grup adi otomatik gelsin, ACIKLAMA ve NUMARALAR
 // tusla gelsin — otomatik cekmek bosa kurek, WhatsApp gucunu MESAJLARA
 // harcayalim". Aciklamanin zaten panelde 'Yenile' tusu var.
-// WAHA motorunda varsayilan KAPALI; Baileys'te eskisi gibi acik kalir.
-// Geri acmak icin .env:  ACIKLAMA_MOTORU=acik
-const _aciklamaMotorMod = (process.env.ACIKLAMA_MOTORU
-  || (String(process.env.MOTOR || '').toLowerCase() === 'waha' ? 'kapali' : 'acik')).toLowerCase();
+// Varsayilan ACIK. Kapatmak icin .env:  ACIKLAMA_MOTORU=kapali
+const _aciklamaMotorMod = (process.env.ACIKLAMA_MOTORU || 'acik').toLowerCase();
 if (_aciklamaMotorMod === 'kapali') {
   console.log('ℹ️  Otomatik aciklama taramasi KAPALI — aciklama panelden "Yenile" ile cekilir');
 } else {
@@ -7366,16 +7349,11 @@ setInterval(() => { if (!arkaPlanCalisabilirMi()) return; medyaKuyrukIsle(); }, 
 async function saveMedia(m, kind, sock = waSock) {
   const extMap = { image: 'jpg', video: 'mp4', audio: 'ogg', document: '', sticker: 'webp' };
   try {
-    // ═══ MOTOR AYRIMI ═══════════════════════════════════════════════
-    // Baileys medyayi kendi cozer. WAHA ise dosyayi kendi sunucusunda
-    // tutup adresini verir; oradan indiriyoruz. (WAHA tarafinda
-    // WHATSAPP_DOWNLOAD_MEDIA acik olmali.)
-    const downloadPromise = wahaMotor
-      ? wahaMotor.wahaMedyaIndir(m)
-      : downloadMediaMessage(
-          m, 'buffer', {},
-          { logger: silentLogger, reuploadRequest: (sock || waSock).updateMediaMessage }
-        );
+    // Baileys medyayi kendi cozer.
+    const downloadPromise = downloadMediaMessage(
+      m, 'buffer', {},
+      { logger: silentLogger, reuploadRequest: (sock || waSock).updateMediaMessage }
+    );
     // zaman asimi: 60 sn (30->60). Buyuk PDF'ler ve WhatsApp yogun oldugunda 30sn
     // yetmiyordu -> dosya inmiyordu. Artik daha sabirli.
     const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('indirme zaman asimi')), 60000));
@@ -7564,11 +7542,7 @@ async function _startWAIc(lineId = 'ofis') {
     console.log('   ⏩ Surum sorgusu atlandi (gomulu surumle hizli baglaniliyor)');
   }
 
-  // ═══ MOTOR SECIMI ═══════════════════════════════════════════════
-  // WAHA soketi Baileys ile AYNI arayuzu sunuyor; bu yuzden asagidaki
-  // TUM kod (olay dinleyicileri, gonderim, grup islemleri) degismeden
-  // calisiyor. Tek degisen: altta hangi motorun oldugu.
-  const sock = wahaMotor ? await wahaMotor.wahaBaglan() : makeWASocket({
+  const sock = makeWASocket({
     version, auth: state,
     logger: silentLogger,         // ÖNEMLI: Baileys'in JSON log selini sustur (terminal okunabilir kalsin)
     printQRInTerminal: false,

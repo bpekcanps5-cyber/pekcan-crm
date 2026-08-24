@@ -5,17 +5,11 @@
 // ============================================================
 require('dotenv').config();
 
-// ═══ HAT ONEKI (2026-08) ═══════════════════════════════════════════════
-// AMAC: Test surumunun (WAHA) verilerinin CANLI panele karismamasi.
-// Ayni Supabase kullanilir; test surumu hat kimliklerine onek ekler:
-//   'ofis' -> 'waha_ofis'
-// Butun sorgular line_id ile filtrelendigi icin iki taraf birbirini
-// HIC gormez.
-//
-// CANLI SISTEM: DB_HAT_ONEK bos oldugu icin HICBIR SEY DEGISMEZ.
-const DB_HAT_ONEK = process.env.DB_HAT_ONEK || '';
-function H(lineId) { return DB_HAT_ONEK + (lineId || 'ofis'); }
-if (DB_HAT_ONEK) console.log('🗄️  Veritabani hat oneki: "' + DB_HAT_ONEK + '" (test verileri canlidan AYRI)');
+// ═══ HAT KIMLIGI ══════════════════════════════════════════════════════
+// Butun sorgular line_id ile filtrelenir. Hat verilmezse 'ofis' kabul edilir.
+// (2026-08'de burada WAHA testi icin bir onek mekanizmasi vardi —
+//  deneme birakildi, onek kaldirildi.)
+function H(lineId) { return lineId || 'ofis'; }
 const { Pool } = require('pg');
 
 let pool = null;
