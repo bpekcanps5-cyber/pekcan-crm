@@ -25,6 +25,13 @@ const db = require('./db'); // Supabase (PostgreSQL) veri katmani
 // etiketler, veritabani) AYNEN calismaya devam eder.
 const MOTOR = (process.env.MOTOR || 'baileys').toLowerCase();
 const wahaMotor = (MOTOR === 'waha') ? require('./waha-motor') : null;
+// ═══ MESAJ GUVENCE KATMANI ═══════════════════════════════════════════
+// Gelen mesaji once yerel gunluge yazar, sonra veritabanina yazmayi
+// GARANTI ALTINDA dener. Veritabani gecici olarak erisilemezse ya da
+// surec cokerse mesaj kaybolmaz; yeniden baslatildiginda gunlukten
+// devam eder. (Onceki davranis: db.saveMessage(...).catch(()=>{}) —
+// hata yutuluyordu, mesaj kalici olarak kayboluyordu.)
+const mesajGuvence = require('./mesaj-guvence');
 if (wahaMotor) {
   console.log('');
   console.log('╔══════════════════════════════════════════════════════════');
@@ -532,6 +539,63 @@ const app = express();
 app.set('trust proxy', true);
 
 // Medya indirme: ?name= varsa o isimle indir (belgeler gercek adiyla insin)
+
+// ═══════════════════════════════════════════════════════════════════
+//  SAGLIK VE OLCUM UCLARI  (2026-08)
+//  -------------------------------------------------------------------
+//  Direktif geregi: baglanti durumu yesil/kirmizi degil OLCULEBILIR
+//  olmali. Bu uclar yetki gerektirmez ama HASSAS VERI ICERMEZ —
+//  mesaj icerigi, token, oturum anahtari doner.
+//
+//  /saglik    -> yasiyor mu (liveness)
+//  /hazir     -> is gorebilir mi (readiness): DB + WhatsApp baglantisi
+//  /olcumler  -> kuyruk derinligi, bekleyen, olu mektup, son kayit ...
+// ═══════════════════════════════════════════════════════════════════
+app.get('/saglik', (req, res) => {
+  res.json({ ayakta: true, zaman: new Date().toISOString(), surec: process.pid });
+});
+
+app.get('/hazir', (req, res) => {
+  let g = {};
+  try { g = mesajGuvence.olcumler(); } catch (_) {}
+  const dbTamam = (() => { try { return db.isReady(); } catch (_) { return false; } })();
+  const waTamam = (() => { try { return !!CONNECTED; } catch (_) { return false; } })();
+  // Kuyruk sismisse ya da olu mektup varsa "hazir" deme — sessizce
+  // saglikli gorunmek en tehlikeli durum.
+  const kuyrukIyi = (g.bekleyen || 0) < 500 && (g.enEskiBekleyenYasSn || 0) < 600;
+  const hazir = dbTamam && waTamam && kuyrukIyi;
+  res.status(hazir ? 200 : 503).json({
+    hazir,
+    veritabani: dbTamam,
+    whatsapp: waTamam,
+    kuyrukIyi,
+    bekleyen: g.bekleyen || 0,
+    enEskiBekleyenYasSn: g.enEskiBekleyenYasSn || 0,
+    oluMektup: g.oluKayit || 0,
+  });
+});
+
+app.get('/olcumler', (req, res) => {
+  let g = {};
+  try { g = mesajGuvence.olcumler(); } catch (e) { g = { hata: e.message }; }
+  let motor = {};
+  try { motor = (wahaMotor && wahaMotor.olcumler) ? wahaMotor.olcumler() : {}; } catch (_) {}
+  res.json({
+    zaman: new Date().toISOString(),
+    motor: MOTOR,
+    whatsapp: {
+      bagli: (() => { try { return !!CONNECTED; } catch (_) { return null; } })(),
+      sonAktiviteSn: (() => {
+        try { return _sonWaAktivite ? Math.round((Date.now() - _sonWaAktivite) / 1000) : null; }
+        catch (_) { return null; }
+      })(),
+    },
+    veritabani: { hazir: (() => { try { return db.isReady(); } catch (_) { return false; } })() },
+    mesajGuvence: g,
+    kopru: motor,
+  });
+});
+
 app.get('/media/:file', (req, res, next) => {
   const wanted = req.query.name;
   const filePath = path.join(MEDIA_DIR, req.params.file);
@@ -6701,7 +6765,14 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
   // (Kullanici silince veya yenileyince kaybolsun; DB'de "hayalet hata mesaji" kalmasin.)
   if (db.isReady() && message.durum !== -1 && !message.gonderilemedi) {
     db.saveChat(chat, lineId).catch((e) => { if (!global._saveChatHataLog) { global._saveChatHataLog = true; console.log('⚠️  saveChat HATASI (ilk): ' + e.message); } });
-    db.saveMessage(jid, message, lineId).catch((e) => { if (!global._saveMsgHataLog) { global._saveMsgHataLog = true; console.log('⚠️  saveMessage HATASI (ilk): ' + e.message); } });
+    // ═══ KAYIP GARANTISI (2026-08) ═══════════════════════════════════
+    // ESKIDEN: db.saveMessage(...).catch(...)  -> hata YUTULUYORDU.
+    // Supabase yavaslar/kisa sure duserse mesaj KALICI OLARAK
+    // kayboluyordu (bellekten de dusunce geri gelmiyordu).
+    // ARTIK: guvence katmani mesaji once yerel gunluge yazar, sonra
+    // veritabanina yazana kadar artan araliklarla tekrar dener; surec
+    // coker/yeniden baslarsa gunlukten devam eder.
+    mesajGuvence.mesajAlindi(jid, message, lineId);
   }
 }
 
@@ -9305,6 +9376,17 @@ async function loadFromDB() {
       if (labels.length) console.log(`🏷️  ${labels.length} etiket yuklendi`);
     } catch (e) {}
     console.log(`📂 Supabase'den yuklendi: ${n} sohbet, ${data.contacts.length} kayitli isim`);
+    // ═══ MESAJ GUVENCE KATMANINI BASLAT ══════════════════════════════
+    // Veritabani hazir; artik gelen mesajlar once yerel gunluge yazilip
+    // Supabase'e YAZILANA KADAR takip edilecek. Onceki calismadan kalan
+    // tamamlanmamis mesajlar varsa burada kurtarilir.
+    try {
+      mesajGuvence.baslat({
+        kaydedici: (j, m, h) => db.saveMessage(j, m, h),
+        hazirMi: () => db.isReady(),
+        log: console.log,
+      });
+    } catch (e) { console.log('⚠️  mesaj guvence baslatilamadi: ' + e.message); }
   } catch (e) {
     console.error('⚠️  DB yukleme hatasi:', e.message);
   }

@@ -3512,7 +3512,19 @@ async function wahaBaglan() {
   return sock;
 }
 
+// Kopru olcumleri — /olcumler ucundan okunur
+function olcumler() {
+  return {
+    surum: MOTOR_SURUM,
+    olayToplam: _olaySayaci,
+    olayTipleri: Object.fromEntries(_olayTipleri),
+    kayitliKancaAdresi: _kayitliKancalar.length,
+    tekAdreseIndirildi: _adresSadelestirildi,
+  };
+}
+
 module.exports = {
+  olcumler,
   WAHA_URL, WAHA_API_KEY, WAHA_OTURUM, WAHA_KANCA_PORT, WAHA_KANCA_URL,
   istek, wahaSoketYap, baileysMesaji, baileysGrup, wahaMedyaIndir, qrAl,
   wahaBaglan, oturumHazirla,
