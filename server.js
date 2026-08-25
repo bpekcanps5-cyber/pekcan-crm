@@ -9088,6 +9088,16 @@ function policeRobotAdi(tur, gelenAd) {
 const POLICE_HAT = 'ofis';                    // hangi hattan gonderilecek
 const POLICE_TEKRAR_SURESI = 24 * 60 * 60 * 1000;  // ayni gruba 24 saat icinde ikinci mesaj yok
 
+// ═══ DOSYA BOYUTU ══════════════════════════════════════════════════════
+// Panel video 64 MB'a kadar kabul ediyor. base64 dosyayi ~%33 sisirdigi
+// icin GOVDE siniri dosya sinirindan buyuk olmali (64 MB -> ~85 MB govde).
+// DIKKAT (BELLEK): buyuk dosyada istek sirasinda gecici olarak dosya
+// boyutunun ~3 katina kadar RAM kullanilir (base64 metin + cozulmus
+// tampon). Sunucunun RAM'i darsa .env'den kucultun:
+//     POLICE_DOSYA_MB=24
+const POLICE_DOSYA_SINIRI = Math.max(1, Number(process.env.POLICE_DOSYA_MB) || 64) * 1024 * 1024;
+const POLICE_GOVDE_SINIRI = Math.ceil((POLICE_DOSYA_SINIRI / 1048576) * 1.4) + 'mb';
+
 let policeGrupCache = { zaman: null, liste: [] };
 const _policeGonderilen = new Map();   // "jid|ref" -> zaman  (tekrar korumasi)
 
@@ -9143,6 +9153,25 @@ app.use((req, res, next) => {
 });
 
 // --- 4) Durum ------------------------------------------------------------
+// GOVDE COK BUYUK (413): express.json varsayilan olarak HTML hata sayfasi
+// dondurur, panel bunu okuyamaz. Bu ara katman JSON'a cevirir ki panelde
+// "neden gitmedi" anlasilsin.
+app.use('/api/police/wa/', (err, req, res, next) => {
+  if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+    policeCors(res);
+    const mb = Math.round(POLICE_DOSYA_SINIRI / 1048576);
+    console.error('[POLICE] govde cok buyuk — istek reddedildi');
+    return res.status(413).json({ ok: false, cokBuyuk: true,
+      error: `Dosya sunucu sinirini asti (en fazla ~${mb} MB). `
+           + `Daha kucuk gonderin ya da sunucuda POLICE_DOSYA_MB degerini yukseltin.` });
+  }
+  if (err && err.type === 'entity.parse.failed') {
+    policeCors(res);
+    return res.status(400).json({ ok: false, error: 'Gonderilen veri okunamadi (bozuk JSON)' });
+  }
+  return next(err);
+});
+
 app.post('/api/police/wa/durum', express.json(), (req, res) => {
   policeCors(res);
   if (!policeYetki(req, res)) return;
@@ -9203,19 +9232,61 @@ app.post('/api/police/wa/gruplar', express.json(), async (req, res) => {
 // --- 6) CRM sohbet gecmisine yaz ("Yenileme Robotu" adiyla) -------------
 // Iptal Robotu ile AYNI mantik: addMessage hem bellege yazar hem tum
 // panellere anlik yayinlar hem veritabanina kaydeder.
+// ═══ MEDYA TURU COZUMLEME ══════════════════════════════════════════════
+// Panel turu UC ayri alanda bildiriyor (medya / tip / type) ve ayrica
+// dosya nesnesinin icinde TEKRAR ediyor. Hangisi dolu gelirse gelsin
+// tek bir degere indiriyoruz. Hicbiri yoksa mimetype'a, o da yoksa
+// dosya uzantisina bakiyoruz — yani panel hic tur gondermese bile
+// mp4 video, jpg fotograf olarak gider.
+function _policeMedyaTuru(govde, dosya) {
+  const d = dosya || {};
+  const ham = String(govde.medya || govde.tip || govde.type
+    || d.medya || d.tip || d.type || '').toLowerCase().trim();
+  const SOZLUK = {
+    gorsel: 'image', 'görsel': 'image', image: 'image', foto: 'image',
+    fotograf: 'image', 'fotoğraf': 'image', resim: 'image', jpeg: 'image', jpg: 'image', png: 'image',
+    video: 'video', mp4: 'video', film: 'video',
+    ses: 'audio', audio: 'audio', mp3: 'audio', voice: 'audio', sesli: 'audio',
+    belge: 'document', dokuman: 'document', 'doküman': 'document',
+    document: 'document', dosya: 'document', pdf: 'document',
+  };
+  if (SOZLUK[ham]) return SOZLUK[ham];
+  const mime = String(d.mimetype || d.tur || govde.mimetype || '').toLowerCase();
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  const ext = (String(d.ad || '').split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'heic'].includes(ext)) return 'image';
+  if (['mp4', 'mov', 'webm', 'mkv', 'avi', '3gp', 'm4v'].includes(ext)) return 'video';
+  if (['mp3', 'ogg', 'oga', 'm4a', 'aac', 'wav', 'opus'].includes(ext)) return 'audio';
+  return 'document';
+}
+
+// Tur basina varsayilan mimetype ve uzanti (panel bildirmediyse kullanilir)
+const _POLICE_VARSAYILAN = {
+  image:    { mime: 'image/jpeg',       ext: 'jpg' },
+  video:    { mime: 'video/mp4',        ext: 'mp4' },
+  audio:    { mime: 'audio/mpeg',       ext: 'mp3' },
+  document: { mime: 'application/pdf',  ext: 'pdf' },
+};
+
 async function policeCrmKaydet({ jid, text, robot, msgId, test, ref, kim, tur,
                                  kind, fileName, mime, mediaUrl }) {
+  // BELGE ile GORSEL/VIDEO/SES farkli gorunur:
+  //  • belge   -> baslik DOSYA ADI, metin altinda aciklama (panelden
+  //               yuklenen dosyalarla ayni duzen)
+  //  • gorsel/video/ses -> medyanin kendisi gosterilir, metin altyazi olur
+  //               (WhatsApp'tan GELEN medyalarla ayni duzen)
   const belgeMi = kind === 'document' && fileName;
+  const medyaMi = (kind === 'image' || kind === 'video' || kind === 'audio');
   addMessage(jid, {
     id: msgId,
-    // Belge gonderiminde panelde DOSYA ADI baslik olur, mesaj metni ACIKLAMA
-    // olarak altinda gorunur (panelden yuklenen dosyalarla ayni duzen).
     text: belgeMi ? fileName : text,
-    caption: belgeMi ? text : '',
-    kind: belgeMi ? 'document' : 'text',
-    fileName: belgeMi ? fileName : undefined,
-    mime: belgeMi ? (mime || 'application/pdf') : undefined,
-    mediaUrl: belgeMi ? (mediaUrl || '') : undefined,
+    caption: (belgeMi || medyaMi) ? text : '',
+    kind: (belgeMi || medyaMi) ? kind : 'text',
+    fileName: (belgeMi || medyaMi) ? fileName : undefined,
+    mime: (belgeMi || medyaMi) ? (mime || undefined) : undefined,
+    mediaUrl: (belgeMi || medyaMi) ? (mediaUrl || '') : undefined,
     fromMe: true,
     sender: robot || POLICE_ROBOT_ADI,
     robot: true,                       // panelde robot rozetiyle gorunsun
@@ -9307,7 +9378,7 @@ function policeKilidiAc() {
 }
 
 // NOT: base64 PDF gelebildigi icin govde siniri yukseltildi (8 MB dosya ~11 MB base64).
-app.post('/api/police/wa/gonder', express.json({ limit: '15mb' }), async (req, res) => {
+app.post('/api/police/wa/gonder', express.json({ limit: POLICE_GOVDE_SINIRI }), async (req, res) => {
   policeCors(res);
   if (!policeYetki(req, res)) return;
 
@@ -9323,7 +9394,10 @@ app.post('/api/police/wa/gonder', express.json({ limit: '15mb' }), async (req, r
   // Panel hem 'zorla' hem 'force' gonderebiliyor; ikisini de kabul ediyoruz.
   const zorla = !!(req.body && (req.body.zorla || req.body.force));
 
-  if (!jid || !text) return res.status(400).json({ ok: false, error: 'jid ve text zorunlu' });
+  // Dosya varsa metin ZORUNLU DEGIL (altyazisiz fotograf/video gonderilebilir).
+  const _dosyaVar = !!(dosya && dosya.veri);
+  if (!jid) return res.status(400).json({ ok: false, error: 'jid zorunlu' });
+  if (!text && !_dosyaVar) return res.status(400).json({ ok: false, error: 'text veya dosya zorunlu' });
   if (!policeBagliMi()) return res.status(409).json({ ok: false, error: 'WhatsApp baglantisi kopuk' });
 
   // ── HIZ SINIRI: WhatsApp yavasla dediyse panel BEKLESIN ──
@@ -9339,7 +9413,9 @@ app.post('/api/police/wa/gonder', express.json({ limit: '15mb' }), async (req, r
   // Engellenen tek sey: AYNI police icin 24 saat icinde ikinci mesaj.
   // ref yoksa metnin tamamindan kisa bir imza uretiriz (ilk 40 karakter
   // yetmiyordu: ayni sablonla farkli araclar ayni gorunebiliyordu).
-  const _imza = ref || ('t' + text.length + '_' + Array.from(text).reduce((a, c) => ((a * 31 + c.charCodeAt(0)) | 0), 7).toString(36));
+  // Metin bos olabilir (altyazisiz medya) -> imzayi dosya adiyla uret.
+  const _imzaKaynak = text || ((dosya && dosya.ad) ? 'd:' + dosya.ad : 'bos');
+  const _imza = ref || ('t' + _imzaKaynak.length + '_' + Array.from(_imzaKaynak).reduce((a, c) => ((a * 31 + c.charCodeAt(0)) | 0), 7).toString(36));
   const anahtar = jid + '|' + _imza;
   if (!test) {
     const oncekiZaman = _policeGonderilen.get(anahtar);
@@ -9364,11 +9440,15 @@ app.post('/api/police/wa/gonder', express.json({ limit: '15mb' }), async (req, r
       error: 'Onceki gonderim henuz bitmedi — birazdan tekrar deneyin' });
   }
   policeMesgul = true;
-  // EMNIYET: her ihtimale karsi 90 saniye sonra kilit kendiliginden acilir
+  // EMNIYET: kilit kendiliginden acilir. SURE DOSYAYLA ORANTILI olmali —
+  // eskiden sabit 90 sn'ydi, buyuk bir video daha yuklenirken kilit acilip
+  // ikinci gonderimin araya girmesine izin veriyordu.
+  const _tahminiMB = _dosyaVar ? (String(dosya.veri).length * 0.75) / 1048576 : 0;
+  const _kilitSuresi = Math.min(420000, 90000 + Math.round(_tahminiMB) * 8000);
   policeMesgulSayaci = setTimeout(() => {
-    console.error('[POLICE] UYARI: kilit 90 sn acik kaldi, zorla acildi');
+    console.error(`[POLICE] UYARI: kilit ${Math.round(_kilitSuresi / 1000)} sn acik kaldi, zorla acildi`);
     policeMesgul = false;
-  }, 90000);
+  }, _kilitSuresi);
 
   try {
     const sock = policeSock();
@@ -9390,54 +9470,111 @@ app.post('/api/police/wa/gonder', express.json({ limit: '15mb' }), async (req, r
       if (!yonetici) throw new Error('Grup sadece yoneticilere yazma izni veriyor');
     }
 
-    // ── ICERIK: dosya varsa BELGE (PDF), yoksa duz metin ──
-    // Dosya geldiginde mesaj metni belgenin ACIKLAMASI (caption) olur;
-    // WhatsApp'ta tek mesaj olarak, PDF'in altinda gorunur.
+    // ── ICERIK: dosya varsa TURUNE GORE medya, yoksa duz metin ──
+    // ESKIDEN: dosya ne olursa olsun 'document' gonderiliyordu — mp4'ler
+    // WhatsApp'ta oynatilamayan belge, jpeg'ler onizlemesiz dosya olarak
+    // dusuyordu. ARTIK panelin bildirdigi tur (veya mimetype/uzanti)
+    // dikkate aliniyor: video -> video, fotograf -> fotograf, ses -> ses,
+    // geri kalani -> belge.
     let icerik = { text };
     let kind = 'text';
     let dosyaBuf = null, dosyaAd = '', dosyaMime = '', webPath = '';
+    let ayriMetin = '';   // sadece SES icin: WhatsApp seste altyazi desteklemiyor
     if (dosya && dosya.veri) {
       try {
         dosyaBuf = Buffer.from(String(dosya.veri), 'base64');
       } catch (_) { throw new Error('Dosya okunamadi (base64 bozuk)'); }
       if (!dosyaBuf || !dosyaBuf.length) throw new Error('Dosya bos geldi');
-      if (dosyaBuf.length > 16 * 1024 * 1024) throw new Error('Dosya cok buyuk (en fazla 16 MB)');
-      dosyaAd = (dosya.ad || 'belge.pdf').replace(/[\\/:*?"<>|]/g, '_');
-      if (!dosyaAd.includes('.')) dosyaAd += '.pdf';
-      dosyaMime = dosya.tur || 'application/pdf';
-      kind = 'document';
-      icerik = { document: dosyaBuf, mimetype: dosyaMime, fileName: dosyaAd, caption: text };
-      // Diske kaydet ki CRM panelinde de gorunup indirilebilsin
+      if (dosyaBuf.length > POLICE_DOSYA_SINIRI) {
+        throw new Error(`Dosya cok buyuk: ${(dosyaBuf.length / 1048576).toFixed(1)} MB `
+          + `(en fazla ${Math.round(POLICE_DOSYA_SINIRI / 1048576)} MB)`);
+      }
+
+      kind = _policeMedyaTuru(req.body || {}, dosya);
+      const V = _POLICE_VARSAYILAN[kind] || _POLICE_VARSAYILAN.document;
+
+      // Dosya adi: isaretleri temizle, uzantisi yoksa TURUNE uygun uzanti ekle
+      // (eskiden her seye .pdf ekleniyordu — videolar 'video.pdf' oluyordu).
+      dosyaAd = String(dosya.ad || ('dosya.' + V.ext)).replace(/[\\/:*?"<>|]/g, '_');
+      if (!dosyaAd.includes('.')) dosyaAd += '.' + V.ext;
+      dosyaMime = dosya.mimetype || dosya.tur || (req.body && req.body.mimetype) || V.mime;
+
+      if (kind === 'video') {
+        // VIDEO: mimetype ZORUNLU — Baileys mimetype'siz videoyu belge sayabiliyor.
+        icerik = { video: dosyaBuf, mimetype: dosyaMime || 'video/mp4', caption: text || '' };
+      } else if (kind === 'image') {
+        // FOTOGRAF: mimetype VERMIYORUZ — Baileys goruntuyu kendi isliyor,
+        // elle verilen mimetype onizlemeyi bozabiliyor.
+        icerik = { image: dosyaBuf, caption: text || '' };
+      } else if (kind === 'audio') {
+        // SES: WhatsApp ses mesajinda ALTYAZI DESTEKLEMIYOR. Metni kaybetmemek
+        // icin sesten sonra AYRI mesaj olarak gonderiyoruz (sadece bu turde).
+        icerik = { audio: dosyaBuf, mimetype: dosyaMime || 'audio/mpeg', ptt: false };
+        ayriMetin = text || '';
+      } else {
+        kind = 'document';
+        icerik = { document: dosyaBuf, mimetype: dosyaMime || 'application/pdf',
+                   fileName: dosyaAd, caption: text || '' };
+      }
+
+      // Diske kaydet ki CRM panelinde de gorunup oynatilabilsin/indirilebilsin
       // (panelden yuklenen dosyalarla ayni yol).
       try {
-        // DISKE YAZILAN UZANTI: sadece bilinen belge/gorsel turleri.
+        // DISKE YAZILAN UZANTI: sadece bilinen medya/belge turleri.
         // MEDIA_DIR web'den servis ediliyor; .html/.js gibi bir uzantiyla
         // dosya birakilabilmesi istenmez. WhatsApp'a giden dosya adi bundan
         // etkilenmez (o ayri alanda, oldugu gibi gidiyor).
-        const GUVENLI_UZANTI = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'xlsx', 'xls', 'docx', 'doc', 'csv', 'txt', 'zip'];
+        const GUVENLI_UZANTI = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'heic',
+          'mp4', 'mov', 'webm', 'mkv', 'm4v', '3gp',
+          'mp3', 'ogg', 'oga', 'm4a', 'aac', 'wav', 'opus',
+          'xlsx', 'xls', 'docx', 'doc', 'csv', 'txt', 'zip'];
         const hamExt = (dosyaAd.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const ext = GUVENLI_UZANTI.includes(hamExt) ? hamExt : 'bin';
+        // Uzanti taninmiyorsa TURE gore varsayilani kullan ki panelde
+        // yine de oynatilabilsin ('.bin' hicbir yerde acilmiyordu).
+        const ext = GUVENLI_UZANTI.includes(hamExt) ? hamExt : V.ext;
         const savedName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
         fs.writeFileSync(path.join(MEDIA_DIR, savedName), dosyaBuf);
         webPath = '/media/' + savedName;
       } catch (yazHatasi) {
         console.error('[POLICE] dosya diske yazilamadi:', yazHatasi.message);
       }
-      console.log(`[POLICE] belge hazir: ${dosyaAd} (${(dosyaBuf.length / 1048576).toFixed(2)} MB)`);
+      const TR = { image: 'fotograf', video: 'video', audio: 'ses', document: 'belge' };
+      console.log(`[POLICE] ${TR[kind]} hazir: ${dosyaAd} (${(dosyaBuf.length / 1048576).toFixed(2)} MB, ${dosyaMime})`);
     }
 
     // ── GONDER ──
-    // Belge gonderimi WhatsApp'a YUKLEME gerektirir; duz metinden cok daha uzun
-    // surer. Bu yuzden dosyada 90 saniye, metinde 45 saniye taniyoruz.
-    const sure = dosyaBuf ? 90000 : 45000;
+    // Yukleme suresi dosya boyutuyla artar. Video/ses genelde fotograf ve
+    // PDF'ten cok daha buyuk oldugu icin sabit 90 saniye yetmiyordu.
+    // Taban 90 sn + her MB icin 8 sn, tavan 6 dakika. (Emniyet kilidi
+    // bundan hep bir tik daha uzun, boylece once gonderim zaman asimina
+    // ugrar ve panel duzgun hata alir.)
+    const _mb = dosyaBuf ? dosyaBuf.length / 1048576 : 0;
+    const sure = dosyaBuf ? Math.min(360000, 90000 + Math.round(_mb) * 8000) : 45000;
     const gonderilen = await Promise.race([
       sock.sendMessage(jid, icerik),
       new Promise((_, rej) => setTimeout(() => rej(new Error(
-        dosyaBuf ? 'Dosya 90 saniyede yuklenemedi (cok buyuk olabilir)' : 'WhatsApp 45 saniyede yanit vermedi')), sure)),
+        dosyaBuf
+          ? `Dosya ${Math.round(sure / 1000)} saniyede yuklenemedi (${_mb.toFixed(1)} MB — cok buyuk olabilir)`
+          : 'WhatsApp 45 saniyede yanit vermedi')), sure)),
     ]);
 
     if (!gonderilen || !gonderilen.key || !gonderilen.key.id) {
       throw new Error('WhatsApp mesaj kimligi dondurmedi');
+    }
+
+    // SES + METIN: WhatsApp ses mesajinda altyazi desteklemedigi icin metin
+    // ayri mesaj olarak gider. SADECE ses turunde olur; fotograf/video/belge
+    // tek mesaj halinde (altyazili) gonderilir.
+    if (ayriMetin) {
+      try {
+        await Promise.race([
+          sock.sendMessage(jid, { text: ayriMetin }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('metin gonderilemedi')), 30000)),
+        ]);
+      } catch (metinHatasi) {
+        // Ses GITTI; metin gitmediyse islemi basarisiz sayma, sadece bildir.
+        console.error('[POLICE] ses gonderildi ama metin gonderilemedi:', metinHatasi.message);
+      }
     }
 
     policeSonMesajZaman = Date.now();
