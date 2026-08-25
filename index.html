@@ -4183,7 +4183,67 @@
     <div id="otoEtiketNumaraListe" style="display:flex;flex-direction:column;gap:8px;max-height:240px;overflow-y:auto"></div>
 
     <div class="modal-btns" style="margin-top:18px">
+      <button class="btn ghost" onclick="algiAc()">🔎 Niyet Algılama…</button>
       <button class="btn ghost" onclick="document.getElementById('otoEtiketModal').classList.remove('show')">Kapat</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ NIYET ALGILAMA ══ -->
+<div class="modal-bg" id="algiModal" data-kapanmaz="1">
+  <div class="modal" style="max-width:760px">
+    <h3 style="margin-bottom:6px">🔎 Niyet Algılama</h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
+      Müşteri ruhsat/kimlik atıp bir şey yazdığında ne istediğini anlayıp sohbete
+      etiket koyar. <b>Gruba hiçbir mesaj yazmaz.</b> Mevcut etiketler asla kaldırılmaz.
+    </p>
+
+    <!-- DURUM -->
+    <div id="algiDurumKutu" style="padding:12px 14px;border-radius:12px;border:1px solid var(--border-soft);background:var(--panel-2);margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button class="um-btn" id="algiAcKapa" onclick="algiAcKapa()">Yükleniyor…</button>
+        <button class="um-btn" id="algiIzlemeBtn" onclick="algiIzlemeDegis()">…</button>
+        <span id="algiDurumYazi" style="font-size:12.5px;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <!-- PROVA -->
+    <div class="um-section-title" style="margin-top:0">Prova</div>
+    <p style="color:var(--muted);font-size:12.5px;margin:-4px 0 8px">
+      Bir cümle yaz, ne yapacağını <b>etiketlemeden</b> gör.
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <input type="text" id="algiDeneMetin" placeholder="örn. yıllık fiyat alabilir miyiz" class="um-input" style="flex:1;min-width:200px" onkeydown="if(event.key==='Enter')algiDene()">
+      <label class="um-check" style="flex:0 0 auto"><input type="checkbox" id="algiDeneMedya" checked> Ruhsat/foto var</label>
+      <button class="btn primary" onclick="algiDene()" style="flex:0 0 auto">Dene</button>
+    </div>
+    <div id="algiDeneSonuc" style="font-size:13px;min-height:20px;margin-bottom:16px"></div>
+
+    <!-- KELIMELER -->
+    <div class="um-section-title">Kelimeler</div>
+    <p style="color:var(--muted);font-size:12.5px;margin:-4px 0 8px">
+      <b>Kesin</b> = tek başına yeter. <b>Destek</b> = tek başına yetmez, başka
+      işaretle birleşince sayar. <b>Engel</b> = geçerse o etiket hiç konmaz.
+    </p>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px">
+      <select id="algiKat" class="um-input" style="flex:0 0 auto"><option value="2aylik">2 AYLIK</option><option value="kalici">KALICI</option></select>
+      <select id="algiTip" class="um-input" style="flex:0 0 auto"><option value="kesin">Kesin</option><option value="destek">Destek</option><option value="engel">Engel</option></select>
+      <input type="text" id="algiKelime" placeholder="kelime ya da kalıp" class="um-input" style="flex:1;min-width:150px" onkeydown="if(event.key==='Enter')algiKelimeEkle()">
+      <button class="btn primary" onclick="algiKelimeEkle()" style="flex:0 0 auto">Ekle</button>
+    </div>
+    <div id="algiKelimeListe" style="max-height:200px;overflow-y:auto;margin-bottom:16px"></div>
+
+    <!-- GUNLUK -->
+    <div class="um-section-title">Son kararlar</div>
+    <p style="color:var(--muted);font-size:12.5px;margin:-4px 0 8px">
+      İzleme modundayken burada "ne yapardı"yı görürsün. Doğru çalıştığına
+      ikna olunca izlemeyi kapatıp gerçek moda al.
+    </p>
+    <div id="algiGunluk" style="max-height:260px;overflow-y:auto"></div>
+
+    <div class="modal-btns" style="margin-top:18px">
+      <button class="btn ghost" onclick="algiYukle()">Yenile</button>
+      <button class="btn ghost" onclick="document.getElementById('algiModal').classList.remove('show')">Kapat</button>
     </div>
   </div>
 </div>
@@ -8588,6 +8648,124 @@ async function addNewUser(){
   }catch(e){ msg.textContent='Sunucu hatası'; }
   btn.disabled=false; btn.textContent='Kullanıcı oluştur';
 }
+// ══ NIYET ALGILAMA ════════════════════════════════════════════════════
+let _algiSon = { ayar: null, ek: null, varsayilan: null };
+function algiAc(){ document.getElementById('algiModal').classList.add('show'); algiYukle(); }
+function algiYukle(){
+  fetch('/api/algi/durum',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken})})
+    .then(r=>r.json()).then(d=>{
+      if(!d.ok){ showToast(d.error||'Yüklenemedi'); return; }
+      _algiSon={ayar:d.ayar,ek:d.ek,varsayilan:d.varsayilan};
+      algiDurumCiz(); algiKelimeCiz(); algiGunlukCiz(d.gunluk||[]);
+    }).catch(()=>showToast('Sunucu hatası'));
+}
+function algiDurumCiz(){
+  const a=_algiSon.ayar||{};
+  const b1=document.getElementById('algiAcKapa');
+  const b2=document.getElementById('algiIzlemeBtn');
+  const y=document.getElementById('algiDurumYazi');
+  b1.textContent=a.acik?'🟢 Açık':'⚪ Kapalı';
+  b1.className='um-btn'+(a.acik?' aktif':'');
+  b2.textContent=a.izleme?'👁️ İzleme modu':'🏷️ Gerçek mod';
+  b2.className='um-btn'+(!a.izleme&&a.acik?' aktif':'');
+  b2.style.display=a.acik?'':'none';
+  if(!a.acik) y.textContent='Kapalı — hiçbir mesaj değerlendirilmiyor.';
+  else if(a.izleme) y.textContent='Karar veriyor ama ETİKET KOYMUYOR. Aşağıdan kontrol et.';
+  else y.textContent='Etiketleri gerçekten koyuyor.';
+}
+function algiAyarGonder(g,mesaj){
+  fetch('/api/algi/ayar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({token:authToken},g))})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){ _algiSon.ayar=d.ayar; algiDurumCiz(); showToast(mesaj); }
+      else showToast(d.error||'İşlem başarısız');
+    }).catch(()=>showToast('Sunucu hatası'));
+}
+function algiAcKapa(){
+  const yeni=!((_algiSon.ayar||{}).acik);
+  algiAyarGonder({acik:yeni}, yeni?'🔎 Niyet algılama açıldı':'Niyet algılama kapatıldı');
+}
+function algiIzlemeDegis(){
+  const yeni=!((_algiSon.ayar||{}).izleme);
+  algiAyarGonder({izleme:yeni}, yeni?'👁️ İzleme moduna alındı (etiket koymaz)':'🏷️ Gerçek mod — artık etiket koyacak');
+}
+function algiDene(){
+  const metin=document.getElementById('algiDeneMetin').value.trim();
+  const medya=document.getElementById('algiDeneMedya').checked;
+  const kutu=document.getElementById('algiDeneSonuc');
+  if(!metin){ kutu.innerHTML=''; return; }
+  kutu.innerHTML='<span style="color:var(--muted)">Deneniyor…</span>';
+  fetch('/api/algi/dene',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,metin,medya})})
+    .then(r=>r.json()).then(d=>{
+      if(!d.ok){ kutu.innerHTML='<span style="color:#ef4444">'+esc(d.error||'Hata')+'</span>'; return; }
+      const a=d.puanlar['2aylik'], k=d.puanlar.kalici;
+      const rozet=d.etiket
+        ? '<span class="um-badge" style="background:#16a34a22;color:#16a34a;border-color:#16a34a55">→ '+esc(d.etiket)+'</span>'
+        : '<span class="um-badge">→ etiket YOK</span>';
+      kutu.innerHTML=rozet+' <span style="color:var(--muted);font-size:12px">'+esc(d.karar.sebep)+'</span>'
+        +'<div style="margin-top:6px;font-size:12px;color:var(--muted)">'
+        +'2 AYLIK: <b>'+a.puan+'</b> '+(a.engel?'<i>(engel: '+esc(a.engel)+')</i>':esc((a.bulunan||[]).join(', ')||'—'))
+        +' &nbsp;|&nbsp; KALICI: <b>'+k.puan+'</b> '+(k.engel?'<i>(engel: '+esc(k.engel)+')</i>':esc((k.bulunan||[]).join(', ')||'—'))
+        +'<br>eşik: '+d.esik+'</div>';
+    }).catch(()=>{ kutu.innerHTML='<span style="color:#ef4444">Sunucu hatası</span>'; });
+}
+function algiKelimeCiz(){
+  const kutu=document.getElementById('algiKelimeListe');
+  const V=_algiSon.varsayilan||{}, E=_algiSon.ek||{};
+  const KAT={'2aylik':'2 AYLIK',kalici:'KALICI'};
+  const TIP={kesin:'Kesin',destek:'Destek',engel:'Engel'};
+  let h='';
+  for(const kat of ['2aylik','kalici']){
+    h+='<div style="font-size:12.5px;font-weight:700;margin:8px 0 4px">'+KAT[kat]+'</div>';
+    for(const tip of ['kesin','destek','engel']){
+      const yerlesik=((V[kat]||{})[tip])||[];
+      const eklenen=((E[kat]||{})[tip])||[];
+      if(!yerlesik.length && !eklenen.length) continue;
+      h+='<div style="margin:0 0 6px"><span style="font-size:11.5px;color:var(--muted)">'+TIP[tip]+':</span> ';
+      h+=yerlesik.map(k=>'<span class="um-badge" style="margin:2px" title="Yerleşik — silinemez">'+esc(k)+'</span>').join('');
+      h+=eklenen.map(k=>'<span class="um-badge" style="margin:2px;background:var(--brand)22;border-color:var(--brand)55;cursor:pointer" title="Kaldır" onclick="algiKelimeSil(\''+kat+'\',\''+tip+'\',\''+esc(k).replace(/'/g,"\\'")+'\')">'+esc(k)+' ✕</span>').join('');
+      h+='</div>';
+    }
+  }
+  kutu.innerHTML=h||'<div style="color:var(--muted);font-size:13px">Kelime yok</div>';
+}
+function algiKelimeEkle(){
+  const kategori=document.getElementById('algiKat').value;
+  const tip=document.getElementById('algiTip').value;
+  const kelime=document.getElementById('algiKelime').value.trim();
+  if(!kelime){ showToast('Kelime gir'); return; }
+  fetch('/api/algi/kelime',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,kategori,tip,kelime,islem:'ekle'})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){ _algiSon.ek=d.ek; document.getElementById('algiKelime').value=''; algiKelimeCiz(); showToast('Kelime eklendi'); }
+      else showToast(d.error||'Eklenemedi');
+    }).catch(()=>showToast('Sunucu hatası'));
+}
+function algiKelimeSil(kategori,tip,kelime){
+  fetch('/api/algi/kelime',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,kategori,tip,kelime,islem:'sil'})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){ _algiSon.ek=d.ek; algiKelimeCiz(); showToast('Kelime kaldırıldı'); }
+      else showToast(d.error||'Kaldırılamadı');
+    }).catch(()=>showToast('Sunucu hatası'));
+}
+function algiGunlukCiz(liste){
+  const kutu=document.getElementById('algiGunluk');
+  if(!liste.length){ kutu.innerHTML='<div style="color:var(--muted);font-size:13px">Henüz karar yok.</div>'; return; }
+  const RENK={'etiketlendi':'#16a34a','IZLEME — etiketlenmedi':'#d97706','zaten var':'#6b7280','karar yok':'#6b7280','etiket panelde yok':'#ef4444'};
+  kutu.innerHTML=liste.map(g=>{
+    const s=new Date(g.zaman).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const renk=RENK[g.durum]||'#6b7280';
+    return '<div style="padding:8px 10px;border-bottom:1px solid var(--border-soft);font-size:12.5px">'
+      +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+      +'<span style="color:var(--muted);font-size:11px">'+s+'</span>'
+      +'<b>'+esc(g.grup||'')+'</b>'
+      +(g.kisi?'<span style="color:var(--muted);font-size:11px">'+esc(g.kisi)+'</span>':'')
+      +'<span class="um-badge" style="color:'+renk+';border-color:'+renk+'55;background:'+renk+'1a">'
+      +esc(g.etiket||g.hedef||'—')+' · '+esc(g.durum)+'</span></div>'
+      +'<div style="color:var(--muted);margin-top:3px">'+esc((g.metin||'').slice(0,160))+'</div>'
+      +'<div style="color:var(--faint);font-size:11px;margin-top:2px">'
+      +'2 AYLIK '+g.puanlar['2aylik']+' | KALICI '+g.puanlar.kalici+(g.medya?' | 📎':'')+' — '+esc(g.sebep||'')+'</div></div>';
+  }).join('');
+}
+
 // ══ OTOMATIK ETIKET ROLU ══════════════════════════════════════════════
 function otoEtiketToggle(id,aktif){
   fetch('/api/users/otoetiket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:authToken,id,aktif})})
