@@ -33,7 +33,7 @@ function hedefCoz(jid) {
   return grupMu(jid) ? String(jid) : jidNumara(jid);
 }
 
-function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log, adKaydet = null }) {
+function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log, adKaydet = null, gonderimOnaylandi = null }) {
   if (!token) throw new Error('whapi-adapter: token yok');
   const U = String(taban).replace(/\/+$/, '');
   // Token'i her ciktidan sil — kaza ile loglanmasin.
@@ -148,6 +148,13 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
   }
 
   function baileysCevabi(id, jid, cevap) {
+    // GONDERIM ONAYI: Whapi istegi kabul edip GERCEK mesaj kimligi dondurdu.
+    // server.js grup mesajlarina baslangicta durum=1 (saat ikonu) veriyor;
+    // bu kanca panele "gonderildi" (tek tik) bildirir. Cift tik ve mavi tik
+    // daha sonra 'statuses' webhook'undan gelir.
+    if (gonderimOnaylandi) {
+      try { gonderimOnaylandi(String(jid), String(id), kimlikAdaylari(cevap)); } catch (_) {}
+    }
     return {
       key: { id: String(id), remoteJid: String(jid), fromMe: true },
       _kimlikAdaylari: kimlikAdaylari(cevap),

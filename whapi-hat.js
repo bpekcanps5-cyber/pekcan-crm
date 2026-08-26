@@ -257,6 +257,30 @@ function gonderenZenginlestir(message) {
   }
 }
 
+// ── GONDERIM ONAYI -> ANINDA TEK TIK ────────────────────────
+// server.js grup mesajlarina baslangic durumu 1 (saat ikonu) veriyor;
+// gercek makbuz gelene kadar mesaj "gitmemis" gibi gorunuyordu.
+// Whapi istegi kabul edip GERCEK kimlik dondurdugunde durum 2 (tek tik) olur.
+// NOT: server.js mesaji sendMessage DONDUKTEN SONRA ekliyor, o yuzden
+// mesaj bellege dusene kadar kisa araliklarla birkac kez deniyoruz.
+function gonderimTekTik(jid, id, adaylar, deneme = 0) {
+  // Webhook yansimasi bu kimliklerden biriyle gelirse mukerrer sayilsin
+  try {
+    for (const a of (adaylar || [])) { if (a && a !== id) esiKimlikBagla(id, a); }
+  } catch (_) {}
+
+  const { mesaj } = hedefMesajBul(jid, id);
+  if (!mesaj) {
+    if (deneme < 4) setTimeout(() => gonderimTekTik(jid, id, adaylar, deneme + 1), [250, 500, 1200, 3000][deneme]);
+    return;
+  }
+  if (!mesaj.fromMe) return;
+  if ((mesaj.durum || 0) >= 2) return;          // zaten tek tik veya ustu
+  mesaj.durum = 2;
+  B.broadcastHat(LINE_ID, { type: 'msgStatus', jid, id, durum: 2 });
+  if (B.db.isReady()) B.db.saveMessage(jid, mesaj, LINE_ID).catch(() => {});
+}
+
 // ── DURUM (TIK) UYGULA ──────────────────────────────────────
 // Baileys'te bu is messages.update + message-receipt.update ile oluyordu.
 // Whapi'de 'statuses' zarfi geliyor. Panelin bekledigi yayin: msgStatus.
@@ -287,8 +311,9 @@ const grupSonCekim = new Map();   // jid -> zaman
 const GRUP_TAZELIK = 30 * 60 * 1000;
 const grupKuyruk = [];            // sirada bekleyen jid'ler
 const grupKuyruktakiler = new Set();
-let grupIsliyor = false;
-const GRUP_ARALIK = 1200;         // iki sorgu arasi bekleme (Whapi'yi bogmayalim)
+const GRUP_PARALEL = 3;           // ayni anda en fazla 3 sorgu
+const GRUP_ARALIK = 150;          // sorgular arasi kisa nefes
+let grupCalisan = 0;
 
 // Grubu SIRAYA al. Yuzlerce grup ayni anda sorgulanirsa Whapi 429/404 veriyor
 // ("specified group not found" satirlarinin sebebi buydu).
@@ -303,18 +328,22 @@ function grupBilgisiTazele(jid, zorla = false) {
   grupKuyruguIsle();
 }
 
-async function grupKuyruguIsle() {
-  if (grupIsliyor) return;
-  grupIsliyor = true;
-  try {
-    while (grupKuyruk.length) {
-      const jid = grupKuyruk.shift();
-      grupKuyruktakiler.delete(jid);
-      grupSonCekim.set(jid, Date.now());
-      try { await grupBilgisiCek(jid); } catch (_) {}
-      await new Promise((c) => setTimeout(c, GRUP_ARALIK));
-    }
-  } finally { grupIsliyor = false; }
+// 3 paralel isci. Ad/aciklama/foto TEK sorguda gelir; uye listesi
+// ARTIK otomatik cekilmiyor (panel dugmesine baglandi), o yuzden
+// grup basina 1 istek yeterli ve hizli.
+function grupKuyruguIsle() {
+  while (grupCalisan < GRUP_PARALEL && grupKuyruk.length) {
+    const jid = grupKuyruk.shift();
+    grupKuyruktakiler.delete(jid);
+    grupSonCekim.set(jid, Date.now());
+    grupCalisan += 1;
+    grupBilgisiCek(jid)
+      .catch(() => {})
+      .then(() => {
+        grupCalisan -= 1;
+        if (grupKuyruk.length) setTimeout(grupKuyruguIsle, GRUP_ARALIK);
+      });
+  }
 }
 
 async function grupBilgisiCek(jid) {
@@ -342,16 +371,12 @@ async function grupBilgisiCek(jid) {
   if (meta.uyeSayisi && chat.memberCount !== meta.uyeSayisi) {
     chat.memberCount = meta.uyeSayisi; degisti = true;
   }
-  // UYE LISTESI: tekil ucta bos gelirse alternatif uclari dene
-  let uyeler = meta.participants || [];
-  if (!uyeler.length && meta.uyeSayisi && sock._uyeleriCek) {
-    const r = await sock._uyeleriCek(jid).catch(() => ({ uyeler: [] }));
-    uyeler = r.uyeler || [];
-    if (uyeler.length && !global._whapiUyeUcu) {
-      global._whapiUyeUcu = r.uc;
-      log('uye listesi su uctan geliyor: ' + r.uc);
-    }
-  }
+  // UYE LISTESI: OTOMATIK CEKILMIYOR.
+  // Sebep: bos gelince 3 ayri uc deneniyor, grup basina 4 istek ediyordu ve
+  // ad/aciklama/foto'nun gelmesini geciktiriyordu. Kullanici uye listesini
+  // panelin "Uyeleri ve numaralari cek" dugmesiyle ANLIK cekiyor
+  // (server.js -> SOCK.groupMetadata(jid, true) -> adaptor uyeleriCek).
+  const uyeler = meta.participants || [];   // tekil uc zaten verdiyse kullan
   if (uyeler.length) {
     chat.members = uyeler.map((p) => {
       const numara = p.phoneNumber || String(p.id).split('@')[0];
@@ -523,6 +548,7 @@ async function hattiBaslat() {
     // kendi uye eslemesi (getGroupMembers) contactNames'ten okuyor;
     // bunu doldurmazsak panelde isim yerine NUMARA gorunur.
     adKaydet: (jid, ad) => { try { if (B.kisiAdiKaydet) B.kisiAdiKaydet(jid, ad); } catch (_) {} },
+    gonderimOnaylandi: (jid, id, adaylar) => { gonderimTekTik(jid, id, adaylar); },
   });
   line.sock = sock;              // KRITIK: panelin gonderme kodu bunu kullanir
 
