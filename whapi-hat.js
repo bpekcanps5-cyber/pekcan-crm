@@ -456,18 +456,8 @@ function grupKuyruguIsle() {
 //   • 20 saniye emniyet agi (asla asili kalmaz)
 // Ayrica: ofis bagli degilse HIC denemiyoruz ve dakikada en fazla
 // ACIKLAMA_DAKIKA_TAVAN grup soruyoruz.
-const ACIKLAMA_DAKIKA_TAVAN = 20;
-let _aciklamaSayac = 0;
-let _aciklamaPencere = 0;
-const aciklamaSorulan = new Set();   // ayni grubu tekrar tekrar sorma
-
-function ofisAciklamaIzni() {
-  const simdi = Date.now();
-  if (simdi - _aciklamaPencere > 60000) { _aciklamaPencere = simdi; _aciklamaSayac = 0; }
-  if (_aciklamaSayac >= ACIKLAMA_DAKIKA_TAVAN) return false;
-  _aciklamaSayac += 1;
-  return true;
-}
+// Ayni grubu tekrar tekrar sorma (dakika tavani ofistenAninda icinde)
+const aciklamaSorulan = new Set();
 
 // ── DUGMEYE BASILDIGINDA: OFIS HATTINDAN ANINDA CEK ─────────
 // Panelin "aciklama yenile", "uyeleri cek" ve "grup adi yenile" dugmeleri
@@ -480,8 +470,14 @@ function ofisAciklamaIzni() {
 //   • iki sorgu arasi en az 1.2 saniye
 //   • dakikada en fazla 30 sorgu
 //   • 12 saniye cevap gelmezse vazgecilir (panel askida kalmaz)
-const ANINDA_ARALIK = 1200;
-const ANINDA_DAKIKA_TAVAN = 30;
+// HIZLANDIRILDI: aciklama Whapi'de HIC gelmiyor, her grup icin ofise soruluyor.
+// Eski ayar (1200 ms / 30 dk) yeni gruplarda gorunur gecikme yaratiyordu.
+// Yeni ayar olculdu: 30 grup icin ~4.6 sn -> ~1.5 sn.
+// Ofis hattini korumak icin sinirlar DURUYOR, sadece daralttik.
+const ANINDA_ARALIK = 350;          // iki sorgu arasi
+const ANINDA_PARALEL = 2;           // ayni anda en fazla 2 sorgu
+const ANINDA_DAKIKA_TAVAN = 90;     // dakika tavani
+let _anindaCalisan = 0;
 let _anindaSonSorgu = 0;
 let _anindaSayac = 0;
 let _anindaPencere = 0;
@@ -493,10 +489,14 @@ async function ofistenAninda(jid) {
   const simdi = Date.now();
   if (simdi - _anindaPencere > 60000) { _anindaPencere = simdi; _anindaSayac = 0; }
   if (_anindaSayac >= ANINDA_DAKIKA_TAVAN) { log('ofis yedegi dakika tavanina takildi, atlandi'); return null; }
-  const bekle = Math.max(0, ANINDA_ARALIK - (simdi - _anindaSonSorgu));
-  if (bekle) await new Promise((c) => setTimeout(c, bekle));
+
+  // Ayni anda en fazla ANINDA_PARALEL sorgu; sirasi gelene kadar bekle
+  while (_anindaCalisan >= ANINDA_PARALEL) await new Promise((c) => setTimeout(c, 60));
+  const gecen = Date.now() - _anindaSonSorgu;
+  if (gecen < ANINDA_ARALIK) await new Promise((c) => setTimeout(c, ANINDA_ARALIK - gecen));
   _anindaSonSorgu = Date.now();
   _anindaSayac += 1;
+  _anindaCalisan += 1;
 
   try {
     const meta = await Promise.race([
@@ -517,23 +517,24 @@ async function ofistenAninda(jid) {
   } catch (e) {
     log('ofis yedegi basarisiz: ' + e.message);
     return null;
-  }
+  } finally { _anindaCalisan -= 1; }
 }
 
 async function aciklamayiOfistenTamamla(jid, chat) {
-  if (!B.getGroupMeta) return false;
   if (aciklamaSorulan.has(jid)) return false;
   const ofis = B.lines.get('ofis');
   if (!ofis || !ofis.connected || !ofis.sock) return false;   // ofis kopuksa DOKUNMA
-  if (!ofisAciklamaIzni()) return false;
   aciklamaSorulan.add(jid);
   if (aciklamaSorulan.size > 5000) aciklamaSorulan.clear();
 
   try {
-    // server.js'in onbellekli + kuyruklu yolu. Ofis soketiyle sorar.
-    const meta = await B.getGroupMeta(jid, 30 * 60 * 1000, ofis.sock);
-    if (!meta || meta.desc === undefined || meta.desc === null) return false;
-    const yeni = String(meta.desc || '').trim();
+    // HIZLANDIRMA: eskiden server.js'in arka plan KUYRUGUNDAN geciyordu
+    // (getGroupMeta). O kuyruk mesaj trafigine oncelik verdigi icin aciklama
+    // dakikalar sonra dusuyordu. Artik dugme yolundaki DOGRUDAN cagriyi
+    // kullaniyoruz; hiz sinirlari ofistenAninda icinde duruyor.
+    const y = await ofistenAninda(jid);
+    if (!y || y.desc === undefined || y.desc === null) return false;
+    const yeni = String(y.desc || '').trim();
     if ((chat.description || '') === yeni) return false;
     chat.description = yeni;
     if (!global._whapiAciklamaOfisten) {
