@@ -62,6 +62,17 @@ const KOY3 = `
   box-shadow:0 1px 3px rgba(37,99,235,.10);
 }
 .msg.panel-msg .msg-text{color:inherit}
+/* Panel kullanicisi isim hapi — panelden gonderilen mesajlarla AYNI gorunum */
+.msg.panel-msg .sender-name.team-name{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:2px 9px 2px 4px;border-radius:999px;
+  background:rgba(37,99,235,.16);border:1px solid rgba(37,99,235,.45);
+  font-weight:600;letter-spacing:.1px;
+}
+body.dark .msg.panel-msg .sender-name.team-name,
+.dark .msg.panel-msg .sender-name.team-name{
+  background:rgba(96,165,250,.20);border-color:rgba(96,165,250,.55);
+}
 .msg.panel-msg .meta{opacity:.75}
 body.dark .msg.panel-msg, .dark .msg.panel-msg{
   background:linear-gradient(0deg,rgba(96,165,250,.16),rgba(96,165,250,.16)),var(--balon,#1f2937);
@@ -69,6 +80,25 @@ body.dark .msg.panel-msg, .dark .msg.panel-msg{
   box-shadow:0 1px 3px rgba(0,0,0,.25);
 }
 </style>`;
+
+
+// ── UCUNCU YAMA: ayni numaradan gelen FARKLI kisileri ayir ──
+// SORUN: ofis hattindan gelen TUM mesajlarin senderJid'i AYNI (hattin numarasi).
+// Panel bunlari "ayni gonderen" sayip ismi sadece ILKINE yaziyordu; Ertan'in ve
+// Emrecan'in mesajlari en ustteki "Efe Riza" basliginin altinda gorunuyordu.
+// COZUM: numara ayni olsa bile COZULMUS ISIM farkliysa AYRI gonderen say.
+const ARA4 = `      const pj=prev.senderJid||'', mj=m.senderJid||'';
+      if(pj && mj){
+        ayniGonderen = (pj===mj);
+      } else {`;
+const KOY4 = `      const pj=prev.senderJid||'', mj=m.senderJid||'';
+      if(pj && mj){
+        ${ISARET}
+        // Ayni numara AMA farkli panel kullanicisi -> AYRI gonderen (isim gorunsun)
+        const _pAd=(prev.sender||''), _mAd=(m.sender||'');
+        ayniGonderen = (pj===mj) && (!_pAd || !_mAd || _pAd===_mAd);
+        /* WHAPI PANEL GORUNUMU SONU */
+      } else {`;
 
 function geriAl() {
   if (!fs.existsSync(YEDEK)) { console.log('✗ yedek yok'); process.exit(1); }
@@ -82,7 +112,7 @@ function kur() {
   let s = fs.readFileSync(HEDEF, 'utf8');
   if (s.includes(ISARET)) { console.log('• Zaten kurulu, hicbir sey yapilmadi.'); return; }
   const say = (t) => s.split(t).length - 1;
-  const kontrol = [['isim etiketi', ARA], ['balon sinifi', ARA2], ['stil blogu', ARA3]];
+  const kontrol = [['isim etiketi', ARA], ['balon sinifi', ARA2], ['stil blogu', ARA3], ['gruplama', ARA4]];
   for (const [ad, t] of kontrol) {
     const n = say(t);
     if (ad === 'stil blogu' ? n < 1 : n !== 1) {
@@ -91,13 +121,13 @@ function kur() {
     }
   }
   if (!fs.existsSync(YEDEK)) fs.copyFileSync(HEDEF, YEDEK);
-  s = s.replace(ARA, KOY).replace(ARA2, KOY2);
+  s = s.replace(ARA, KOY).replace(ARA2, KOY2).replace(ARA4, KOY4);
   // stil: SON </style> etiketine ekle
   const sonStil = s.lastIndexOf(ARA3);
   s = s.slice(0, sonStil) + KOY3 + s.slice(sonStil + ARA3.length);
   fs.writeFileSync(HEDEF, s, 'utf8');
   console.log('✔ yedek: index.html.whapi-oncesi');
-  console.log('✔ isim etiketi + balon rengi + stil eklendi');
+  console.log('✔ isim etiketi + balon rengi + gruplama ayrimi + stil eklendi');
   console.log('');
   console.log('Sonraki: pm2 restart pekcan  ->  panelde CTRL+F5');
   console.log('Geri alma: node panel-kur.js --geri');
