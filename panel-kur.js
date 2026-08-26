@@ -44,6 +44,32 @@ const KOY = `        ${ISARET}
         }
         /* WHAPI PANEL GORUNUMU SONU */`;
 
+
+// ── IKINCI YAMA: balonun tamami farkli renkte ───────────────
+const ARA2 = `    return sep+'<div class="msg '+cls+grpCls+selCls+menCls+failCls+acilCls+(secimModu?' secim-modu':'')+'" data-mid="'+esc(m.id||'')+'">'`;
+const KOY2 = `    ${ISARET}
+    // Panel kullanicisinin yazdigi mesaj: balonun TAMAMI farkli renkte.
+    const _pnlCls = (m.panelKullanicisi || (typeof panelProfilFoto === 'function' && panelProfilFoto(m.sender || ''))) ? ' panel-msg' : '';
+    /* WHAPI PANEL GORUNUMU SONU */
+    return sep+'<div class="msg '+cls+grpCls+selCls+menCls+failCls+acilCls+_pnlCls+(secimModu?' secim-modu':'')+'" data-mid="'+esc(m.id||'')+'">'`;
+
+const ARA3 = `</style>`;
+const KOY3 = `
+/* WHAPI PANEL GORUNUMU — panel kullanicisi mesaj balonu */
+.msg.panel-msg{
+  background:linear-gradient(0deg,rgba(37,99,235,.10),rgba(37,99,235,.10)),var(--balon,#fff);
+  border:1px solid rgba(37,99,235,.32);
+  box-shadow:0 1px 3px rgba(37,99,235,.10);
+}
+.msg.panel-msg .msg-text{color:inherit}
+.msg.panel-msg .meta{opacity:.75}
+body.dark .msg.panel-msg, .dark .msg.panel-msg{
+  background:linear-gradient(0deg,rgba(96,165,250,.16),rgba(96,165,250,.16)),var(--balon,#1f2937);
+  border-color:rgba(96,165,250,.42);
+  box-shadow:0 1px 3px rgba(0,0,0,.25);
+}
+</style>`;
+
 function geriAl() {
   if (!fs.existsSync(YEDEK)) { console.log('✗ yedek yok'); process.exit(1); }
   fs.copyFileSync(YEDEK, HEDEF);
@@ -55,13 +81,23 @@ function kur() {
   if (!fs.existsSync(HEDEF)) { console.log('✗ index.html bulunamadi'); process.exit(1); }
   let s = fs.readFileSync(HEDEF, 'utf8');
   if (s.includes(ISARET)) { console.log('• Zaten kurulu, hicbir sey yapilmadi.'); return; }
-  const n = s.split(ARA).length - 1;
-  if (n !== 1) { console.log('✗ hedef satir ' + n + ' kez bulundu (1 olmaliydi). DOKUNULMADI.'); process.exit(1); }
+  const say = (t) => s.split(t).length - 1;
+  const kontrol = [['isim etiketi', ARA], ['balon sinifi', ARA2], ['stil blogu', ARA3]];
+  for (const [ad, t] of kontrol) {
+    const n = say(t);
+    if (ad === 'stil blogu' ? n < 1 : n !== 1) {
+      console.log('✗ ' + ad + ' ' + n + ' kez bulundu. DOKUNULMADI.');
+      process.exit(1);
+    }
+  }
   if (!fs.existsSync(YEDEK)) fs.copyFileSync(HEDEF, YEDEK);
-  s = s.replace(ARA, KOY);
+  s = s.replace(ARA, KOY).replace(ARA2, KOY2);
+  // stil: SON </style> etiketine ekle
+  const sonStil = s.lastIndexOf(ARA3);
+  s = s.slice(0, sonStil) + KOY3 + s.slice(sonStil + ARA3.length);
   fs.writeFileSync(HEDEF, s, 'utf8');
   console.log('✔ yedek: index.html.whapi-oncesi');
-  console.log('✔ gorsel kanca eklendi');
+  console.log('✔ isim etiketi + balon rengi + stil eklendi');
   console.log('');
   console.log('Sonraki: pm2 restart pekcan  ->  panelde CTRL+F5');
   console.log('Geri alma: node panel-kur.js --geri');
