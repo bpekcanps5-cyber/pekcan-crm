@@ -244,7 +244,18 @@ function kendiHatlarimiz() {
 // Yanlis eslesme icin ayni grupta ayni saniyede AYNI metnin iki kez atilmasi
 // gerekir; o da zaten ayni mesajdir. Yanlis eslesse bile bedeli KOZMETIKTIR
 // (isim etiketi), mesaj kaybi veya cogalmasi DEGILDIR.
-const ES_ZAMAN_PENCERESI = 8000;   // ms
+// Olculen gercek fark 638-662 ms. Pencereyi DAR tutuyoruz, cunku bu
+// gruplarda herkes ayni cizgiyi (-------) cekiyor; genis pencerede yanlis
+// kisiye eslesiyordu (Ertan'in mesaji Efe Riza gorunuyordu).
+// Whapi zaman damgasini SANIYE cinsinden veriyor -> ms hassasiyeti kayboluyor
+// (en fazla 999 ms sapma). Olculen gercek hat farki 638-662 ms. Ikisi ust uste
+// binince en kotu durum ~1.7 sn. Pencere 3 sn.
+// KARISMAYI onleyen asil iki kural:
+//   1) EN YAKIN zamanli aday kazanir (ilk bulunan degil)
+//   2) Bir ofis mesaji SADECE BIR whapi mesajina eslesir
+const ES_ZAMAN_PENCERESI = 3000;   // ms
+// Bir ofis mesaji SADECE BIR whapi mesajina eslesebilir.
+const esKullanilan = new Map();    // ofisMesajId -> whapiMesajId
 
 function panelKullanicisiBul(jid, message) {
   const metin = String(message.text || '');
@@ -258,12 +269,24 @@ function panelKullanicisiBul(jid, message) {
       if (!c || !c.messages) continue;
       // Sondan basa: yeni mesaj sonda, en fazla 80 kayit geriye bak
       const ms = c.messages;
-      for (let i = ms.length - 1, n = 0; i >= 0 && n < 80; i--, n++) {
+      // EN YAKIN ZAMANLI adayi sec — ilk bulunani DEGIL.
+      let enIyi = null, enIyiFark = Infinity;
+      for (let i = ms.length - 1, n = 0; i >= 0 && n < 120; i--, n++) {
         const m = ms[i];
         if (!m || !m.fromMe) continue;
         if (String(m.text || '') !== metin) continue;
-        if (Math.abs(Number(m.ts || 0) - ts) > ES_ZAMAN_PENCERESI) continue;
-        if (m.sender && m.sender !== 'Ben') return m.sender;
+        const fark = Math.abs(Number(m.ts || 0) - ts);
+        if (fark > ES_ZAMAN_PENCERESI) continue;
+        if (!m.sender || m.sender === 'Ben') continue;
+        // Bu ofis mesaji BASKA bir whapi mesajina zaten eslendiyse atla
+        const sahip = esKullanilan.get(m.id);
+        if (sahip && sahip !== message.id) continue;
+        if (fark < enIyiFark) { enIyiFark = fark; enIyi = m; }
+      }
+      if (enIyi) {
+        esKullanilan.set(enIyi.id, message.id);
+        if (esKullanilan.size > 4000) esKullanilan.clear();
+        return enIyi.sender;
       }
     }
   } catch (_) {}

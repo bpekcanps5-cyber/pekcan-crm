@@ -222,6 +222,12 @@ function mesajCevir(m, benimNumaram) {
 
   const message = {
     id: m.id,
+    // KEY: server.js'in SILME ve DUZENLEME kodu bu alani ariyor.
+    //   silme    -> SOCK.sendMessage(jid, { delete: orig.key })
+    //   duzenleme-> if (orig?.key) ... { text, edit: orig.key }
+    // Bu alan olmayinca duzenleme HIC calismiyordu, silme de sadece
+    // panelden siliyor WhatsApp'a gitmiyordu.
+    key: { id: m.id, remoteJid: jid, fromMe },
     fromMe,
     kind,
     text: kind === 'undecryptable'
