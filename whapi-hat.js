@@ -264,9 +264,15 @@ function gonderenZenginlestir(message) {
 // NOT: server.js mesaji sendMessage DONDUKTEN SONRA ekliyor, o yuzden
 // mesaj bellege dusene kadar kisa araliklarla birkac kez deniyoruz.
 function gonderimTekTik(jid, id, adaylar, deneme = 0) {
-  // Webhook yansimasi bu kimliklerden biriyle gelirse mukerrer sayilsin
+  // Webhook yansimasi bu kimliklerden biriyle gelirse MUKERRER sayilsin.
+  // Kimlige dayali, metne DEGIL — ayni metni iki kez yazmak guvenli kalir.
   try {
-    for (const a of (adaylar || [])) { if (a && a !== id) esiKimlikBagla(id, a); }
+    if (deneme === 0) {
+      gorulenEkle(id);
+      for (const a of (adaylar || [])) {
+        if (a && a !== id) { gorulenEkle(a); esiKimlikBagla(id, a); }
+      }
+    }
   } catch (_) {}
 
   const { mesaj } = hedefMesajBul(jid, id);
@@ -376,7 +382,7 @@ async function grupBilgisiCek(jid) {
   // ad/aciklama/foto'nun gelmesini geciktiriyordu. Kullanici uye listesini
   // panelin "Uyeleri ve numaralari cek" dugmesiyle ANLIK cekiyor
   // (server.js -> SOCK.groupMetadata(jid, true) -> adaptor uyeleriCek).
-  const uyeler = meta.participants || [];   // tekil uc zaten verdiyse kullan
+  const uyeler = meta.participants || [];   // tekil uc zaten verdiyse kullan (yoksa undefined gelir)
   if (uyeler.length) {
     chat.members = uyeler.map((p) => {
       const numara = p.phoneNumber || String(p.id).split('@')[0];

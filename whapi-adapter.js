@@ -245,13 +245,22 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
     return {
       id: g.id || '',
       subject: g.name || g.subject || '',
-      desc: g.description || g.desc || '',
+      // KRITIK: alan YOKSA undefined birak, '' DONME.
+      // Whapi'nin LISTE ucu (/groups) aciklama vermiyor. '' donersek
+      // server.js bunu "aciklama silinmis" sanip DOLU aciklamayi EZIYOR.
+      // undefined = "bilinmiyor, dokunma" (Baileys tarafinda da ayni mantik var).
+      desc: (g.description !== undefined ? (g.description || '')
+           : (g.desc !== undefined ? (g.desc || '') : undefined)),
       // Grup fotografi: SADECE tekil /groups/{id} ucunda gelir, listede gelmez.
       chatPic: g.chat_pic_full || g.chat_pic || null,
       // participants dizisi BOS gelse bile gercek uye sayisi bu alanda
       uyeSayisi: Number(g.participants_count || (Array.isArray(uyeler) ? uyeler.length : 0)) || 0,
       owner: g.owner || g.created_by || undefined,
-      participants: (Array.isArray(uyeler) ? uyeler : []).map((p) => {
+      // AYNI KORUMA: liste ucunda participants BOS geliyor. Bos dizi donersek
+      // server.js memberCount'u 0'a duseruyor ve panelde "0 uye" gorunuyor.
+      // Kaynak dizi bossa undefined birak -> mevcut sayi korunur.
+      participants: (!Array.isArray(uyeler) || !uyeler.length) ? undefined
+        : uyeler.map((p) => {
         const kimlik = typeof p === 'string' ? p : (p.id || p.phone || '');
         const rol = (typeof p === 'object' && (p.rank || p.role || p.admin)) || '';
         const yonetici = /admin|superadmin|creator|owner/i.test(String(rol)) ? 'admin' : null;
@@ -269,20 +278,23 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
   // tam=true: panelin "Uyeleri ve numaralari cek" dugmesi bunu ister.
   // server.js: SOCK.groupMetadata(jid, true)
   async function groupMetadata(jid, tam = false) {
-    const g = await istek('/groups/' + encodeURIComponent(String(jid)));
+    // OLCULDU (2026-08): duz /groups/{id} participants BOS donuyor
+    // (participants_count 25 iken dizi bos). '?participants=true' eklenince
+    // ad + aciklama + chat_pic + 25 uye TEK istekte geliyor. Ekstra sorgu YOK.
+    const g = await istek('/groups/' + encodeURIComponent(String(jid)) + '?participants=true');
     const cevrilen = grupCevir(g);
     if (!cevrilen) throw new Error('grup bulunamadi');
     if (!cevrilen.id) cevrilen.id = String(jid);
     // Whapi tekil ucta participants BOS gelebiliyor (count 25 iken dizi bos).
     // Panel uye listesi istiyorsa alternatif uclari dene.
-    if (tam && !cevrilen.participants.length && cevrilen.uyeSayisi) {
+    if (tam && !(cevrilen.participants || []).length && cevrilen.uyeSayisi) {
       const r = await uyeleriCek(jid).catch(() => ({ uyeler: [] }));
       if (r.uyeler.length) cevrilen.participants = r.uyeler;
     }
     // Uye adlarini CRM rehberine yaz — server.js'in kendi eslemesi
     // (savedContacts / contactNames) bunlari okuyup panelde gosterecek.
     if (adKaydet) {
-      for (const p of cevrilen.participants) {
+      for (const p of (cevrilen.participants || [])) {
         if (p.name && p.name !== p.phoneNumber) { try { adKaydet(p.id, p.name); } catch (_) {} }
       }
     }
@@ -370,10 +382,13 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
   // (participants_count 25 iken dizi bos). Bu durumda alternatif uclari sirayla dene.
   // Hicbiri tutmazsa bos dizi doner — UYDURMA veri uretilmez.
   async function uyeleriCek(jid) {
+    // Olculmus sonuc: '/participants' 405 veriyor, '/members' 404.
+    // Calisan uclar asagidakiler; ana sorgu zaten ilkini kullaniyor.
+    const denecek = null;
     const denenecek = [
-      '/groups/' + encodeURIComponent(String(jid)) + '/participants',
       '/groups/' + encodeURIComponent(String(jid)) + '?participants=true',
       '/groups/' + encodeURIComponent(String(jid)) + '?full=true',
+      '/groups/' + encodeURIComponent(String(jid)) + '?fields=participants',
     ];
     for (const y of denenecek) {
       try {
@@ -398,7 +413,7 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
       if (!liste.length) break;
       for (const g of liste) {
         const c = grupCevir(g);
-        if (c && c.id) sonuc[c.id] = c;
+        if (c && c.id) sonuc[c.id] = c;   // desc/participants undefined kalir -> server.js EZMEZ
       }
       const toplam = (j && Number(j.total)) || 0;
       if (Object.keys(sonuc).length >= toplam || liste.length < 500) break;
