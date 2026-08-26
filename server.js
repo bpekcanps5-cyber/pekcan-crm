@@ -643,20 +643,67 @@ function _otoNorm(x) {
 // "ZEYL" mi "ZEYİL" mi diye ugrasmaya gerek kalmaz.
 // 'ayrica': etiketin panelde yazilabilecek diger adlari. Yonetici etiketi
 // "ZEYL" yerine "ZEYİL" diye yazmis olabilir — ikisi de bulunur.
-const OTO_ETIKET_KURALLARI = [
+//
+// KURULUS LISTESI: sistem ilk kez calistiginda bu liste veritabanina
+// yazilir. SONRASINDA panelden duzenlenir; burasi bir daha okunmaz.
+// (Panelde "Varsayilanlara don" denirse yine buradan yuklenir.)
+const OTO_ETIKET_VARSAYILAN = [
   { kalip: '2 AYLIK KESİP İLETELİM',     etiket: '2 AYLIK', ayrica: ['2AYLIK', 'IKI AYLIK'] },
   { kalip: '2 AYLIK YENİLEME BAKALIM',   etiket: '2 AYLIK', ayrica: ['2AYLIK', 'IKI AYLIK'] },
   { kalip: 'YILLIK KESELİM',             etiket: 'KALICI',  ayrica: ['YILLIK'] },
   { kalip: 'YILLIK BAKALIM',             etiket: 'KALICI',  ayrica: ['YILLIK'] },
   { kalip: 'İptal işleminiz alınmıştır', etiket: 'İPTAL',   ayrica: ['IPTAL'] },
   { kalip: 'ZEYİL İŞLEMİ',               etiket: 'ZEYL',    ayrica: ['ZEYİL', 'ZEYIL', 'ZEYILNAME', 'ZEYİLNAME'] },
-].map((k) => ({
-  ...k,
-  _n: _otoNorm(k.kalip),
-  _e: _otoNorm(k.etiket),
-  // aranacak etiket adlari: once asil ad, sonra alternatifler
-  _adaylar: [k.etiket, ...(k.ayrica || [])].map(_otoNorm).filter((v, i, a) => v && a.indexOf(v) === i),
-}));
+];
+
+// CALISAN LISTE — panelden degistirilince ANINDA burasi guncellenir,
+// her mesajda bu okunur. Yeniden baslatma gerekmez.
+let OTO_ETIKET_KURALLARI = [];
+
+// Ham kurali (kalip + etiket) aranabilir hale getirir.
+function _otoKuralDerle(k) {
+  const kalip = String((k && k.kalip) || '').trim();
+  const etiket = String((k && k.etiket) || '').trim();
+  if (!kalip || !etiket) return null;
+  const ayrica = Array.isArray(k.ayrica) ? k.ayrica : [];
+  const _n = _otoNorm(kalip);
+  if (_n.length < 3) return null;   // cok kisa kalip her mesaja takilir
+  return {
+    kalip, etiket, ayrica,
+    _n,
+    _e: _otoNorm(etiket),
+    // aranacak etiket adlari: once asil ad, sonra alternatifler
+    _adaylar: [etiket, ...ayrica].map(_otoNorm).filter((v, i, a) => v && a.indexOf(v) === i),
+  };
+}
+
+// Tum listeyi derle (panelden her degisiklikte cagrilir).
+function otoKurallariKur(liste) {
+  OTO_ETIKET_KURALLARI = (Array.isArray(liste) ? liste : [])
+    .map(_otoKuralDerle)
+    .filter(Boolean);
+  return OTO_ETIKET_KURALLARI;
+}
+
+// Veritabanindan yukle; hic kayit yoksa varsayilanlarla kur ve kaydet.
+async function otoKurallariYukle() {
+  let liste = null;
+  try { liste = await db.getSetting('oto_etiket_kurallari', null); } catch (e) {
+    console.log('⚠️  otomatik etiket kurallari okunamadi: ' + e.message);
+  }
+  if (!Array.isArray(liste) || !liste.length) {
+    liste = OTO_ETIKET_VARSAYILAN;
+    try { await db.saveSetting('oto_etiket_kurallari', liste); } catch (_) {}
+    console.log('🏷️  Otomatik etiket kurallari varsayilanlarla kuruldu (' + liste.length + ' kalip)');
+  }
+  otoKurallariKur(liste);
+  return OTO_ETIKET_KURALLARI;
+}
+
+// Panele gonderilecek sade bicim (ic alanlar gitmesin)
+function _otoKurallarOzet() {
+  return OTO_ETIKET_KURALLARI.map((k) => ({ kalip: k.kalip, etiket: k.etiket, ayrica: k.ayrica }));
+}
 
 // Ayni anda birden fazla kalip eslesebilir (mesajda iki cumle varsa) —
 // hepsinin etiketi eklenir.
@@ -774,320 +821,6 @@ async function otoEtiketYukle() {
   if (t) console.log(`🏷️  Otomatik etiket rolu: ${otoEtiketKullanicilar.size} panel kullanicisi, ${otoEtiketNumaralar.size} numara`);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  NIYET ALGILAMA — sohbetten "2 AYLIK" / "KALICI" cikarimi
-//  ---------------------------------------------------------------------
-//  AMAC: Musteri gruba ruhsat/kimlik atip bir sey yazdiginda, ne istedigini
-//  anlayip sohbete DOGRU etiketi koymak. Gruba HICBIR MESAJ YAZILMAZ.
-//
-//  NEDEN DUZ KELIME ARAMASI DEGIL:
-//    "fiyat" kelimesi KALICI isareti sayilsaydi, "fiyat gonderdim",
-//    "fiyati yuksek geldi", "fiyat guncellendi" gibi gunluk cumleler de
-//    etiket dusururdu. Ayni sekilde "kisa" -> 2 AYLIK sayilsaydi
-//    "en kisa surede donun" yanlis etiketlenirdi.
-//  Bu yuzden PUANLAMA kullaniyoruz:
-//    • KESIN kelime  (10 puan): tek basina yeter -> "2 aylik", "yillik"
-//    • DESTEK kelime  (4 puan): tek basina YETMEZ -> "fiyat", "kisa"
-//    • BELGE/FOTO     (3 puan): sadece zaten isaret varsa eklenir
-//    • ENGEL kelimesi        : o kategoriyi tamamen iptal eder
-//  Toplam ESIK'i (varsayilan 10) gecerse etiket dusur.
-//
-//  TEMEL ILKE: SUPHEDEYSEN DOKUNMA.
-//  Etiket bir kez konunca kaldirilmiyor; yanlis etiket kalici kirlilik
-//  demek. Kacirilan etiketin bedeli ise sadece elle koymak. Bu yuzden
-//  sistem bilerek TEMKINLI ayarlandi: emin degilse hicbir sey yapmaz.
-// ═══════════════════════════════════════════════════════════════════════
-
-// Metni karsilastirmaya hazirla: Turkce harfler sadelesir, noktalama ve
-// emoji bosluga doner, kelimeler tek bosluga iner, basa/sona bosluk konur
-// (boylece kelime siniri aramasi kolay olur).
-function _algiNorm(x) {
-  return ' ' + String(x || '')
-    .replace(/[İIı]/g, 'i')
-    .toLowerCase()
-    .replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ç/g, 'c')
-    .replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/â/g, 'a').replace(/î/g, 'i')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim() + ' ';
-}
-
-// Kalibi desene cevir.
-//  • Turkce sondan eklemeli: son kelime EK alabilir
-//    ("fiyat" -> "fiyati", "fiyata"; "bakalim" -> "bakalimmi")
-//  • Kelimeler arasi bosluk OLMAYABILIR: "kesermisiniz" gibi bitisik
-//    yazimlar sik ("keser misiniz" -> "kesermisiniz")
-function _algiDesen(kalip) {
-  const n = _algiNorm(kalip).trim();
-  if (!n) return null;
-  const kelimeler = n.split(' ').map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const son = kelimeler.pop();
-  const govde = kelimeler.length ? kelimeler.join('\\s*') + '\\s*' : '';
-  // son kelimeye en fazla 6 harflik ek: "aylik" -> "aylikmi" evet,
-  // ama "sureli" -> "surede" HAYIR (ek degil, farkli kelime)
-  try { return new RegExp('(?:^|\\s)' + govde + son + '[a-z0-9]{0,6}(?:\\s|$)'); }
-  catch (e) { return null; }
-}
-
-// ── VARSAYILAN KELIME LISTELERI ────────────────────────────────────────
-// Panelden eklenen kelimeler bunlarin USTUNE biner (silmez).
-// NOT: Turkce'de son sessiz yumusar ("aylik" -> "ayligina"), o yuzden
-// hem "aylik" hem "aylig" bicimi listede.
-const ALGI_VARSAYILAN = {
-  '2aylik': {
-    kesin: [
-      '2 aylik', '2 aylig', 'iki aylik', 'iki aylig', '2aylik',
-      'kisa sureli', 'kisa vadeli', 'kisa donem', 'kisa donemli',
-      'tezgah', 'tezgah sigortasi', 'tezgah policesi',
-      'gecici sigorta', 'gecici police',
-    ],
-    destek: [
-      'kisa', 'benim adima', 'adima', 'kendi adima', 'galeri adina', 'ustume',
-    ],
-    // Bu kaliplar gecerse 2 AYLIK tamamen IPTAL olur.
-    // "en kisa surede donun" = hiz talebi, sigorta suresi DEGIL.
-    engel: [
-      'en kisa surede', 'kisa surede', 'kisa zamanda', 'kisa bir surede', 'kisa sure icinde',
-    ],
-  },
-  kalici: {
-    kesin: [
-      'yillik', 'yillig', '1 yillik', 'bir yillik', 'senelik', '12 aylik', 'kalici',
-    ],
-    destek: [
-      'fiyat', 'ne kadar', 'kac para', 'uygun', 'en uygun', 'teklif',
-      'bakar misiniz', 'bakabilir misiniz', 'alabilir miyiz', 'alabilir miyim',
-      'bakalim', 'alalim', 'cikiyor', 'cikar mi', 'yapar misiniz',
-    ],
-    engel: [],
-  },
-};
-
-// ── CALISMA AYARLARI ───────────────────────────────────────────────────
-// IZLEME MODU: ilk kurulumda ACIK. Sistem karari VERIR ve gunluge yazar
-// ama ETIKETE DOKUNMAZ. Boylece once bir gun izleyip dogrulugunu
-// gorursun, sonra gercek moda alirsin. Yanlis etiket riski sifir.
-let _algiAyar = {
-  acik: false,        // ozellik hic calissin mi
-  izleme: true,       // true: sadece gunluge yaz, etiket KOYMA
-  esik: 10,           // etiket icin gereken puan
-  fark: 6,            // iki kategori de esigi gecerse, karar icin gereken puan farki
-  kesinPuan: 10,
-  destekPuan: 4,
-  medyaPuan: 3,
-  pencereDk: 5,       // ayni kisinin son kac dakikalik mesajlari birlikte degerlendirilsin
-  pencereAdet: 8,     // ...ve en fazla kac mesaji
-  ekKelimeler: { '2aylik': { kesin: [], destek: [], engel: [] },
-                 kalici:   { kesin: [], destek: [], engel: [] } },
-};
-let _algiDerli = null;   // derlenmis desenler (kelime listesi degisince sifirlanir)
-
-// Varsayilan + panelden eklenen kelimeleri birlestirip desene cevirir.
-function _algiDerle() {
-  const cik = {};
-  for (const kat of ['2aylik', 'kalici']) {
-    cik[kat] = {};
-    for (const tip of ['kesin', 'destek', 'engel']) {
-      const hepsi = [
-        ...(ALGI_VARSAYILAN[kat][tip] || []),
-        ...(((_algiAyar.ekKelimeler || {})[kat] || {})[tip] || []),
-      ];
-      // ayni kelime iki kez varsa bir kez islensin
-      const benzersiz = [...new Set(hepsi.map((k) => String(k || '').trim()).filter(Boolean))];
-      cik[kat][tip] = benzersiz
-        .map((k) => ({ kalip: k, desen: _algiDesen(k) }))
-        .filter((x) => x.desen);
-    }
-  }
-  _algiDerli = cik;
-  return cik;
-}
-
-// ── PENCERE: ayni kisinin son mesajlarini birlikte degerlendir ─────────
-// NEDEN: musteri once ruhsat fotografini, sonra ayri mesajda "yillik
-// fiyat alalim" yaziyor. Tek mesaja bakan sistem bunu kaciriyordu.
-// Ayni kisinin son N dakikalik mesajlarini tek bir talep sayiyoruz.
-function _algiPencere(chat, message) {
-  const simdi = message.ts || Date.now();
-  const sinir = simdi - (_algiAyar.pencereDk * 60000);
-  const kimlik = message.senderJid || '';
-  const ms = (chat && chat.messages) || [];
-  const parcalar = [];
-  let medyaVar = false;
-  let sayi = 0;
-  for (let i = ms.length - 1; i >= 0 && sayi < _algiAyar.pencereAdet; i--) {
-    const m = ms[i];
-    if (!m || m.fromMe || m.robot) continue;          // bizim/robotun mesaji degerlendirilmez
-    if ((m.ts || 0) < sinir) break;                   // pencere disinda kaldi
-    // Grup ise AYNI kisiden olmali (baskasinin cumlesi karismasin)
-    if (kimlik && m.senderJid && m.senderJid !== kimlik) continue;
-    sayi++;
-    const t = (m.text || '') + ' ' + (m.caption || '');
-    if (t.trim()) parcalar.push(t);
-    if (m.kind === 'image' || m.kind === 'document' || m.kind === 'video') medyaVar = true;
-  }
-  return { metin: parcalar.join(' \n '), medyaVar, mesajSayisi: sayi };
-}
-
-// ── PUANLAMA ───────────────────────────────────────────────────────────
-function _algiPuanla(metin, medyaVar) {
-  if (!_algiDerli) _algiDerle();
-  const n = _algiNorm(metin);
-  const sonuc = {};
-  for (const kat of ['2aylik', 'kalici']) {
-    const K = _algiDerli[kat];
-    // ENGEL once: varsa bu kategori tamamen iptal
-    const engel = K.engel.find((x) => x.desen.test(n));
-    if (engel) { sonuc[kat] = { puan: 0, kesin: false, bulunan: [], engel: engel.kalip }; continue; }
-
-    const bulunan = [];
-    let puan = 0, kesinVar = false;
-    for (const x of K.kesin) {
-      if (x.desen.test(n)) { puan += _algiAyar.kesinPuan; kesinVar = true; bulunan.push('✓' + x.kalip); }
-    }
-    for (const x of K.destek) {
-      if (x.desen.test(n)) { puan += _algiAyar.destekPuan; bulunan.push('·' + x.kalip); }
-    }
-    // BELGE/FOTO puani SADECE zaten isaret varsa eklenir.
-    // Tek basina fotograf hicbir sey ifade etmez (her turlu fotograf gelebilir).
-    if (puan > 0 && medyaVar) { puan += _algiAyar.medyaPuan; bulunan.push('·belge/foto'); }
-    sonuc[kat] = { puan, kesin: kesinVar, bulunan, engel: null };
-  }
-  return sonuc;
-}
-
-// ── KARAR ──────────────────────────────────────────────────────────────
-// Iki kategori de isaret veriyorsa acele etme:
-//   • Birinde KESIN kelime var, digerinde yoksa -> kesin olan kazanir
-//     ("2 aylik fiyat ne kadar" -> 2 AYLIK; "fiyat" sadece destek)
-//   • Ikisinde de kesin varsa (orn. "yillik mi 2 aylik mi") -> KARAR YOK
-//   • Ikisinde de kesin yoksa, puan farki azsa      -> KARAR YOK
-function _algiKarar(p) {
-  const A = p['2aylik'], K = p.kalici;
-  const aGecti = A.puan >= _algiAyar.esik;
-  const kGecti = K.puan >= _algiAyar.esik;
-  if (!aGecti && !kGecti) return { hedef: null, sebep: 'esik alti' };
-  if (aGecti && !kGecti) return { hedef: '2aylik', sebep: 'tek taraf esigi gecti' };
-  if (kGecti && !aGecti) return { hedef: 'kalici', sebep: 'tek taraf esigi gecti' };
-  if (A.kesin && !K.kesin) return { hedef: '2aylik', sebep: 'kesin kelime ustun geldi' };
-  if (K.kesin && !A.kesin) return { hedef: 'kalici', sebep: 'kesin kelime ustun geldi' };
-  if (Math.abs(A.puan - K.puan) < _algiAyar.fark) {
-    return { hedef: null, sebep: 'iki taraf da isaret veriyor — karar insana birakildi' };
-  }
-  return A.puan > K.puan
-    ? { hedef: '2aylik', sebep: 'puan farki belirgin' }
-    : { hedef: 'kalici', sebep: 'puan farki belirgin' };
-}
-
-// ── GUNLUK (son 200 karar) ─────────────────────────────────────────────
-// Izleme modunda "ne yapardi"yi burada gorursun.
-const _algiGunluk = [];
-function _algiGunlugeYaz(kayit) {
-  _algiGunluk.unshift(kayit);
-  if (_algiGunluk.length > 200) _algiGunluk.length = 200;
-}
-
-// Kategori -> panelde aranacak etiket adlari
-const ALGI_ETIKET_ADI = {
-  '2aylik': ['2 AYLIK', '2AYLIK', 'IKI AYLIK'],
-  kalici:   ['KALICI', 'YILLIK'],
-};
-
-// ── ANA GIRIS (addMessage icinden cagrilir) ────────────────────────────
-function algiCalistir(jid, message, lineId, chat) {
-  try {
-    if (!_algiAyar.acik) return;
-    if (!jid || !message) return;
-    if (message.fromMe || message.robot) return;   // sadece KARSI TARAFIN mesaji
-    if (message.kind === 'system' || message.kind === 'reaction') return;
-
-    const pencere = _algiPencere(chat, message);
-    if (!pencere.metin || pencere.metin.trim().length < 3) return;
-
-    const p = _algiPuanla(pencere.metin, pencere.medyaVar);
-    const karar = _algiKarar(p);
-
-    // Gunluge HER degerlendirmeyi degil, sadece bir isaret bulunani yaz
-    // (yoksa gunluk gunluk sohbetle dolar).
-    const isaretVar = p['2aylik'].puan > 0 || p.kalici.puan > 0;
-    if (!isaretVar) return;
-
-    let durum = 'karar yok';
-    let etiketAdi = '';
-    if (karar.hedef) {
-      const id = _otoEtiketIdBul(ALGI_ETIKET_ADI[karar.hedef].map(_otoNorm));
-      if (!id) {
-        durum = 'etiket panelde yok';
-      } else {
-        const mevcut = chatLabels.get(jid) || [];
-        etiketAdi = (labels.find((l) => l.id === id) || {}).name || karar.hedef;
-        if (mevcut.includes(id)) {
-          durum = 'zaten var';                       // dokunma (kullanici karari)
-        } else if (_algiAyar.izleme) {
-          durum = 'IZLEME — etiketlenmedi';
-        } else {
-          // ETIKET EKLE. Mevcut etiketler AYNEN KALIR (kullanici karari):
-          // 2 AYLIK varken KALICI gerekirse ikisi birden durur.
-          const yeni = [...mevcut, id];
-          chatLabels.set(jid, yeni);
-          db.addChatLabel(jid, id).catch(() => {});
-          broadcastHat(lineId, { type: 'chatLabelUpdate', jid, labelIds: yeni });
-          durum = 'etiketlendi';
-          console.log(`🔎 NIYET: ${(chat && chat.name) || jid.split('@')[0]} -> ${etiketAdi}`
-            + ` (${karar.sebep}; 2aylik=${p['2aylik'].puan} kalici=${p.kalici.puan})`);
-        }
-      }
-    }
-
-    _algiGunlugeYaz({
-      zaman: Date.now(),
-      jid,
-      grup: (chat && chat.name) || jid.split('@')[0],
-      kisi: message.senderPush || message.sender || '',
-      metin: pencere.metin.replace(/\s+/g, ' ').trim().slice(0, 220),
-      medya: pencere.medyaVar,
-      puanlar: { '2aylik': p['2aylik'].puan, kalici: p.kalici.puan },
-      bulunan: { '2aylik': p['2aylik'].bulunan, kalici: p.kalici.bulunan },
-      engel: { '2aylik': p['2aylik'].engel, kalici: p.kalici.engel },
-      hedef: karar.hedef, etiket: etiketAdi, sebep: karar.sebep, durum,
-    });
-  } catch (e) {
-    console.log('⚠️  niyet algilama hatasi: ' + e.message);
-  }
-}
-
-// Panele gonderilecek ozet (ic ayarlar disarida gorunmesin)
-function _algiAyarOzet() {
-  return {
-    acik: !!_algiAyar.acik,
-    izleme: !!_algiAyar.izleme,
-    esik: _algiAyar.esik,
-    pencereDk: _algiAyar.pencereDk,
-    kesinPuan: _algiAyar.kesinPuan,
-    destekPuan: _algiAyar.destekPuan,
-    medyaPuan: _algiAyar.medyaPuan,
-  };
-}
-
-// ── AYARLARI YUKLE / KAYDET ────────────────────────────────────────────
-async function algiAyarYukle() {
-  try {
-    const a = await db.getSetting('niyet_algilama', null);
-    if (a && typeof a === 'object') {
-      _algiAyar = { ..._algiAyar, ...a };
-      if (!_algiAyar.ekKelimeler) {
-        _algiAyar.ekKelimeler = { '2aylik': { kesin: [], destek: [], engel: [] },
-                                  kalici: { kesin: [], destek: [], engel: [] } };
-      }
-    }
-  } catch (e) { console.log('⚠️  niyet ayari yuklenemedi: ' + e.message); }
-  _algiDerle();
-  console.log(`🔎 Niyet algilama: ${_algiAyar.acik ? (_algiAyar.izleme ? 'IZLEME MODU (etiket koymaz)' : 'AKTIF') : 'kapali'}`);
-}
-async function algiAyarKaydet() {
-  _algiDerle();
-  try { await db.saveSetting('niyet_algilama', _algiAyar); } catch (e) { return { ok: false, error: e.message }; }
-  return { ok: true };
-}
 
 const profilFotolar = {}; // username -> data-url (panel profil fotograflari)
 
@@ -3106,7 +2839,9 @@ app.post('/api/otoetiket/numaralar', express.json(), async (req, res) => {
     res.json({
       ok: true,
       numaralar: liste,
-      kurallar: OTO_ETIKET_KURALLARI.map(k => ({ kalip: k.kalip, etiket: k.etiket })),
+      kurallar: _otoKurallarOzet(),
+      // Panelde "hangi etikete atasin" listesi icin mevcut etiketler
+      etiketler: (labels || []).map(l => ({ id: l.id, name: l.name, color: l.color })),
     });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
@@ -3137,79 +2872,86 @@ app.post('/api/otoetiket/numara-sil', express.json(), async (req, res) => {
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
-// ═══ NIYET ALGILAMA — API UCLARI (hepsi yonetici) ════════════════════════
-// ANLIK TEPKI: bu uclar ayari once BELLEGE yazar, sonra veritabanina
-// kaydeder. Bellekteki deger her mesajda okundugu icin dugmeye bastigin
-// AN devreye girer/cikar — yeniden baslatma gerekmez.
-app.post('/api/algi/ayar', express.json(), async (req, res) => {
+// ═══ OTOMATIK ETIKET KALIPLARI — ekle / sil / geri yukle ════════════════
+// ANLIK TEPKI: once BELLEKTEKI liste guncellenir (her mesajda o okunur),
+// sonra veritabanina yazilir. Kaydete bastigin an gecerli olur.
+app.post('/api/otoetiket/kural-ekle', express.json(), async (req, res) => {
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
   try {
-    const g = req.body || {};
-    // ANINDA uygula
-    if (typeof g.acik === 'boolean') _algiAyar.acik = g.acik;
-    if (typeof g.izleme === 'boolean') _algiAyar.izleme = g.izleme;
-    if (Number.isFinite(g.esik)) _algiAyar.esik = Math.max(4, Math.min(30, Number(g.esik)));
-    if (Number.isFinite(g.pencereDk)) _algiAyar.pencereDk = Math.max(1, Math.min(60, Number(g.pencereDk)));
-    const r = await algiAyarKaydet();   // kalici olsun (yeniden baslatmada da dursun)
-    console.log(`🔎 Niyet algilama ayari degisti: ${_algiAyar.acik ? (_algiAyar.izleme ? 'IZLEME' : 'AKTIF') : 'KAPALI'}`);
-    // Acik olan TUM panellere bildir (baska yonetici de aninda gorsun)
-    try { broadcastHat(POLICE_HAT, { type: 'algiAyar', ayar: _algiAyarOzet() }); } catch (_) {}
-    res.json({ ok: true, kaydedildi: r.ok, ayar: _algiAyarOzet() });
-  } catch (e) { res.json({ ok: false, error: e.message }); }
-});
-
-// Ayar + kelime listeleri + son kararlar
-app.post('/api/algi/durum', express.json(), (req, res) => {
-  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
-  try {
-    res.json({ ok: true, ayar: _algiAyarOzet(),
-      varsayilan: ALGI_VARSAYILAN,
-      ek: _algiAyar.ekKelimeler,
-      gunluk: _algiGunluk.slice(0, 60) });
-  } catch (e) { res.json({ ok: false, error: e.message }); }
-});
-
-// Kelime ekle / cikar (sadece PANELDEN eklenenler silinebilir;
-// yerlesik kelimeler korunur ki sistem bozulmasin)
-app.post('/api/algi/kelime', express.json(), async (req, res) => {
-  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
-  try {
-    const kat = String(req.body?.kategori || '');
-    const tip = String(req.body?.tip || '');
-    const islem = String(req.body?.islem || 'ekle');
-    const kelime = String(req.body?.kelime || '').trim().slice(0, 60);
-    if (!['2aylik', 'kalici'].includes(kat)) return res.json({ ok: false, error: 'Kategori gecersiz' });
-    if (!['kesin', 'destek', 'engel'].includes(tip)) return res.json({ ok: false, error: 'Tip gecersiz' });
-    if (!kelime || kelime.length < 2) return res.json({ ok: false, error: 'Kelime en az 2 harf olmali' });
-    if (!_algiAyar.ekKelimeler[kat]) _algiAyar.ekKelimeler[kat] = { kesin: [], destek: [], engel: [] };
-    if (!Array.isArray(_algiAyar.ekKelimeler[kat][tip])) _algiAyar.ekKelimeler[kat][tip] = [];
-    const liste = _algiAyar.ekKelimeler[kat][tip];
-    if (islem === 'sil') {
-      const i = liste.indexOf(kelime);
-      if (i >= 0) liste.splice(i, 1);
-    } else {
-      if (liste.includes(kelime)) return res.json({ ok: false, error: 'Bu kelime zaten var' });
-      // Yerlesik listede varsa tekrar eklemeye gerek yok
-      if ((ALGI_VARSAYILAN[kat][tip] || []).includes(kelime)) return res.json({ ok: false, error: 'Bu kelime zaten yerlesik listede' });
-      if (liste.length >= 200) return res.json({ ok: false, error: 'En fazla 200 kelime eklenebilir' });
-      liste.push(kelime);
+    const kalip = String(req.body?.kalip || '').trim().slice(0, 200);
+    const etiket = String(req.body?.etiket || '').trim().slice(0, 60);
+    if (!kalip || _otoNorm(kalip).length < 3) {
+      return res.json({ ok: false, error: 'Kalıp çok kısa. En az 3 harf/rakam olmalı.' });
     }
-    const r = await algiAyarKaydet();   // _algiDerle() icinde — ANINDA gecerli
-    res.json({ ok: r.ok, ek: _algiAyar.ekKelimeler, error: r.error });
+    if (!etiket) return res.json({ ok: false, error: 'Etiket seçilmedi' });
+    // Etiket panelde gercekten var mi? Yoksa kural sessizce calismaz.
+    const hedefId = _otoEtiketIdBul([_otoNorm(etiket)]);
+    if (!hedefId) return res.json({ ok: false, error: `"${etiket}" adlı etiket panelde yok` });
+
+    const mevcut = _otoKurallarOzet();
+    const n = _otoNorm(kalip);
+    if (mevcut.some((k) => _otoNorm(k.kalip) === n)) {
+      return res.json({ ok: false, error: 'Bu kalıp zaten ekli' });
+    }
+    if (mevcut.length >= 100) return res.json({ ok: false, error: 'En fazla 100 kalıp eklenebilir' });
+
+    // UYARI: yeni kalip mevcut bir kalibin icinde geciyorsa ikisi birden
+    // tetiklenir. Engellemiyoruz ama panele bildiriyoruz.
+    const cakisan = mevcut.find((k) => {
+      const m = _otoNorm(k.kalip);
+      return m.includes(n) || n.includes(m);
+    });
+
+    const yeni = [...mevcut, { kalip, etiket, ayrica: [] }];
+    otoKurallariKur(yeni);                                   // ANINDA gecerli
+    try { await db.saveSetting('oto_etiket_kurallari', yeni); } catch (e) {
+      return res.json({ ok: false, error: 'Kaydedilemedi: ' + e.message });
+    }
+    console.log(`🏷️  Yeni otomatik etiket kalibi: "${kalip}" -> ${etiket}`);
+    broadcastHat(POLICE_HAT, { type: 'otoKurallar', kurallar: _otoKurallarOzet() });
+    res.json({ ok: true, kurallar: _otoKurallarOzet(),
+      uyari: cakisan ? `Dikkat: "${cakisan.kalip}" kalıbıyla örtüşüyor, ikisi birden tetiklenebilir.` : null });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
-// PROVA: bir cumleyi yaz, ne olacagini ETIKETLEMEDEN gor
-app.post('/api/algi/dene', express.json(), (req, res) => {
+app.post('/api/otoetiket/kural-sil', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  try {
+    const n = _otoNorm(req.body?.kalip);
+    const kalan = _otoKurallarOzet().filter((k) => _otoNorm(k.kalip) !== n);
+    otoKurallariKur(kalan);                                  // ANINDA gecerli
+    try { await db.saveSetting('oto_etiket_kurallari', kalan); } catch (e) {
+      return res.json({ ok: false, error: 'Kaydedilemedi: ' + e.message });
+    }
+    broadcastHat(POLICE_HAT, { type: 'otoKurallar', kurallar: _otoKurallarOzet() });
+    res.json({ ok: true, kurallar: _otoKurallarOzet() });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/otoetiket/kural-sifirla', express.json(), async (req, res) => {
+  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  try {
+    otoKurallariKur(OTO_ETIKET_VARSAYILAN);                  // ANINDA gecerli
+    await db.saveSetting('oto_etiket_kurallari', OTO_ETIKET_VARSAYILAN);
+    console.log('🏷️  Otomatik etiket kaliplari varsayilanlara donduruldu');
+    broadcastHat(POLICE_HAT, { type: 'otoKurallar', kurallar: _otoKurallarOzet() });
+    res.json({ ok: true, kurallar: _otoKurallarOzet() });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+// PROVA: bir mesaj yazip hangi etikete duseceğini ETIKETLEMEDEN gor
+app.post('/api/otoetiket/dene', express.json(), (req, res) => {
   if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
   try {
     const metin = String(req.body?.metin || '');
-    const medya = !!req.body?.medya;
-    if (!metin.trim()) return res.json({ ok: false, error: 'Metin bos' });
-    const p = _algiPuanla(metin, medya);
-    const k = _algiKarar(p);
-    res.json({ ok: true, puanlar: p, karar: k, esik: _algiAyar.esik,
-      etiket: k.hedef ? (ALGI_ETIKET_ADI[k.hedef] || [])[0] : null });
+    if (!metin.trim()) return res.json({ ok: false, error: 'Metin boş' });
+    const bulunan = _otoEtiketKurallariBul(metin);
+    res.json({ ok: true, eslesen: bulunan.map((k) => {
+      const id = _otoEtiketIdBul(k._adaylar);
+      return { kalip: k.kalip, etiket: k.etiket,
+               panelde: !!id,
+               etiketAdi: id ? ((labels.find((l) => l.id === id) || {}).name || k.etiket) : null };
+    }) });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
@@ -7366,10 +7108,6 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
   // Yetkili biri kalip mesaji yazdiysa sohbete ilgili etiketi ekle.
   // TEK KANCA: panelden de telefondan da gelen her mesaj buradan gecer.
   otoEtiketUygula(jid, message, lineId);
-  // ═══ NIYET ALGILAMA ════════════════════════════════════════════════
-  // Karsi tarafin ne istedigini anlayip etiketler. Gruba mesaj YAZMAZ.
-  // Kapaliysa ilk satirda cikar — hicbir maliyeti olmaz.
-  algiCalistir(jid, message, lineId, chat);
   // HAFIF YAYIN: 60 mesaj yerine sadece bu yeni mesaji gonder (trafik ~40x az -> aninda gider).
   broadcastYeniMesaj(lineId, jid, chat, message);
   // Supabase'e kaydet (arka planda, mesaji bekletmez)
@@ -10024,7 +9762,7 @@ server.listen(PORT, async () => {
   const dbOk = await db.test();
   await bagimsizOkumaYukle(); // bağımsız okuma yan-rolü listesini belleğe al
   await otoEtiketYukle();     // otomatik etiket rolü (panel kullanıcıları + numaralar)
-  await algiAyarYukle();      // niyet algılama ayarları + kelime listeleri
+  await otoKurallariYukle();  // otomatik etiket kalıpları (panelden düzenlenebilir)
   await robotAyarYukle();     // robot (iptal belgesi algilama) acik mi?
   if (robotAktif) { _ocrHazirla().catch(() => {}); }   // motoru ONCEDEN isit (ilk belge beklemesin)
   await gorevleriYukle();     // görev etiketlerini (2aylik/kalici/iptal) belleğe al
