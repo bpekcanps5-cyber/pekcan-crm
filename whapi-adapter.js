@@ -119,16 +119,38 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
   }
 
   // Whapi cevabindan mesaj kimligi cikar (bicim surumden surume degisebiliyor)
+  // TESHIS: gonderim cevabinin BICIMINI bir kez logla. Panelden giden mesaj
+  // panelde IKI KEZ gorunuyorsa sebebi budur — gonderimde aldigimiz kimlik ile
+  // webhook'un geri yolladigi kimlik TUTMUYORdur. Token temizlenerek yazilir.
+  let _cevapBicimiYazildi = false;
   function kimlikCoz(cevap) {
     if (!cevap) return '';
+    if (!_cevapBicimiYazildi) {
+      _cevapBicimiYazildi = true;
+      try { log('gonderim cevabi bicimi: ' + gizle(JSON.stringify(cevap)).slice(0, 300)); } catch (_) {}
+    }
     const m = cevap.message || {};
-    return m.id || (m.key && m.key.id) || cevap.id || cevap.sent_id || '';
+    return m.id || (m.key && m.key.id) || cevap.id || cevap.sent_id
+        || (Array.isArray(cevap.messages) && cevap.messages[0] && cevap.messages[0].id) || '';
   }
 
   // Baileys'in dondurdugu bicimde cevap uret — panel kodu sent.key.id okuyor.
-  function baileysCevabi(id, jid) {
+  // Gonderimde Whapi'nin dondurdugu TUM kimlik adaylarini biriktir.
+  // Webhook mesaji bunlardan HANGISIYLE gelirse gelsin yansimayi taniyalim.
+  function kimlikAdaylari(cevap) {
+    const c = [];
+    const ek = (v) => { if (v && typeof v === 'string') c.push(v); };
+    if (!cevap) return c;
+    const m = cevap.message || {};
+    ek(m.id); ek(m.key && m.key.id); ek(cevap.id); ek(cevap.sent_id);
+    if (Array.isArray(cevap.messages)) for (const x of cevap.messages) { ek(x && x.id); ek(x && x.key && x.key.id); }
+    return [...new Set(c)];
+  }
+
+  function baileysCevabi(id, jid, cevap) {
     return {
       key: { id: String(id), remoteJid: String(jid), fromMe: true },
+      _kimlikAdaylari: kimlikAdaylari(cevap),
       message: undefined,
       status: 1,
       _whapi: true,
@@ -173,7 +195,7 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
       const c = await istek('/messages/' + encodeURIComponent(kaynakId) + '/forward', {
         yontem: 'POST', govde: { to: hedef },
       });
-      return baileysCevabi(kimlikCoz(c) || kaynakId, jid);
+      return baileysCevabi(kimlikCoz(c) || kaynakId, jid, c);
     }
 
     if (secim.tur === 'metin') {
@@ -187,7 +209,7 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
       const c = await istek(secim.yol, { yontem: 'POST', govde });
       const id = kimlikCoz(c);
       if (!id) throw new Error('whapi mesaj kimligi dondurmedi');
-      return baileysCevabi(id, jid);
+      return baileysCevabi(id, jid, c);
     }
 
     if (secim.tur === 'medya') {
@@ -202,7 +224,7 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
       const c = await istek(secim.yol, { yontem: 'POST', govde, zamanAsimi: MEDYA_ZAMAN_ASIMI });
       const id = kimlikCoz(c);
       if (!id) throw new Error('whapi medya kimligi dondurmedi');
-      return baileysCevabi(id, jid);
+      return baileysCevabi(id, jid, c);
     }
 
     throw new Error('bu icerik turu Whapi hattinda desteklenmiyor: ' + Object.keys(icerik).join(','));

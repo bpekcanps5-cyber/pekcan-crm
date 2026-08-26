@@ -88,6 +88,18 @@ function gorulenEkle(id) {
   }
 }
 
+// Panelden giden mesaj ile Whapi'nin webhook'ta kullandigi kimlik farkli
+// olabiliyor. Tik bildirimleri webhook kimligiyle geliyor; bu kopru sayesinde
+// dogru mesaja uygulanir.
+const kimlikKopru = new Map();   // webhook kimligi -> paneldeki mesaj kimligi
+function esiKimlikBagla(panelId, webhookId) {
+  kimlikKopru.set(webhookId, panelId);
+  if (kimlikKopru.size > 3000) {
+    const ilk = kimlikKopru.keys().next().value;
+    kimlikKopru.delete(ilk);
+  }
+}
+
 // ── MEDYA INDIRME ────────────────────────────────────────────
 function uzantiSec(link, mime, dosyaAdi) {
   // 1) dosya adindaki uzanti (belge icin en dogrusu)
@@ -159,7 +171,12 @@ function hedefMesajBul(jid, hedefId) {
   const C = B.hatChats(LINE_ID);
   const chat = C && C.get ? C.get(jid) : null;
   if (!chat || !chat.messages) return { chat: null, mesaj: null };
-  return { chat, mesaj: chat.messages.find((x) => x && x.id === hedefId) || null };
+  let m = chat.messages.find((x) => x && x.id === hedefId) || null;
+  if (!m && kimlikKopru.has(hedefId)) {
+    const panelId = kimlikKopru.get(hedefId);
+    m = chat.messages.find((x) => x && x.id === panelId) || null;
+  }
+  return { chat, mesaj: m };
 }
 
 function hedefiYayinla(jid, mesaj) {
@@ -400,6 +417,11 @@ function zarfIsle(zarf) {
 
     // Gonderen kendi hattimiz/ekibimiz mi -> panelde rozet gorunsun
     try { gonderenZenginlestir(is.message); } catch (_) {}
+
+    // NOT: "ayni metin = yansima" gibi bir tahmin YAPMIYORUZ.
+    // Iki kisi ayni anda cizgi cekerse veya ayni mesaj bilerek iki kez
+    // atilirsa ikincisi YUTULURDU. Mesaj kaybi kabul edilemez.
+    // Yansima elemesi SADECE kimlik eslesmesiyle yapilir (addMessage + gorulen).
 
     // MEVCUT AKIS: addMessage -> broadcastHat + db.saveChat + mesajGuvence
     B.addMessage(is.jid, is.message, is.meta, LINE_ID);
