@@ -231,19 +231,82 @@ function kendiHatlarimiz() {
   return kume;
 }
 
-function gonderenZenginlestir(message) {
+// PANEL KULLANICISINI BUL — bellekten.
+// Ofis (Baileys) panelinden yazilan mesaj, ofis hattinda PANEL KULLANICISININ
+// adiyla kayitli (server.js: sender = msg.agent). WhatsApp mesaj kimligi iki
+// hatta da AYNI oldugu icin ayni kimlikle arayip gercek adi aliyoruz.
+// Boylece whapi panelinde "OPERASYON MERKEZI" yerine "Efe Riza" yazar.
+// OLCULDU (2026-08): Whapi KENDI mesaj kimligini kullaniyor, Baileys'inkiyle
+// eslesmiyor.  whapi_id = PrAYhSY045J89Uo-...   ofis_id = 3EB018852634E...
+// Bu yuzden kimlikle eslestirme CALISMAZ. Olculen tek saglam anahtar:
+//   ayni grup + harfi harfine ayni metin + ~0.7 saniye zaman farki
+// (olculen farklar: 638, 642, 648, 652, 657, 662 ms)
+// Yanlis eslesme icin ayni grupta ayni saniyede AYNI metnin iki kez atilmasi
+// gerekir; o da zaten ayni mesajdir. Yanlis eslesse bile bedeli KOZMETIKTIR
+// (isim etiketi), mesaj kaybi veya cogalmasi DEGILDIR.
+const ES_ZAMAN_PENCERESI = 8000;   // ms
+
+function panelKullanicisiBul(jid, message) {
+  const metin = String(message.text || '');
+  if (!metin) return '';
+  const ts = Number(message.ts || Date.now());
+  try {
+    for (const [lid, l] of B.lines) {
+      if (!l || lid === LINE_ID) continue;
+      const C = B.hatChats(lid);
+      const c = C && C.get ? C.get(jid) : null;
+      if (!c || !c.messages) continue;
+      // Sondan basa: yeni mesaj sonda, en fazla 80 kayit geriye bak
+      const ms = c.messages;
+      for (let i = ms.length - 1, n = 0; i >= 0 && n < 80; i--, n++) {
+        const m = ms[i];
+        if (!m || !m.fromMe) continue;
+        if (String(m.text || '') !== metin) continue;
+        if (Math.abs(Number(m.ts || 0) - ts) > ES_ZAMAN_PENCERESI) continue;
+        if (m.sender && m.sender !== 'Ben') return m.sender;
+      }
+    }
+  } catch (_) {}
+  return '';
+}
+
+// Yaris durumu: whapi webhook'u, ofis hattinin ayni mesaji islemesinden ONCE
+// gelebilir. O yuzden bulamazsak kisa araliklarla birkac kez daha bakariz.
+// Bulunca mesaji gunceller ve panele yansitir. Bulamazsa WhatsApp hesap adi kalir.
+function panelKullanicisiSonradanAra(jid, message, deneme = 0) {
+  const gecikme = [400, 1000, 2500, 6000];
+  if (deneme >= gecikme.length) return;
+  const mesajId = message.id;
+  setTimeout(() => {
+    const ad = panelKullanicisiBul(jid, message);
+    if (!ad) { panelKullanicisiSonradanAra(jid, message, deneme + 1); return; }
+    const { mesaj } = hedefMesajBul(jid, mesajId);
+    if (!mesaj || mesaj.sender === ad) return;
+    mesaj.sender = ad;
+    mesaj.senderPush = ad;
+    mesaj.senderOfis = true;
+    B.broadcastHat(LINE_ID, { type: 'msgUpdate', jid, mesaj: B.stripBirMesaj(mesaj) });
+    if (B.db.isReady()) B.db.saveMessage(jid, mesaj, LINE_ID).catch(() => {});
+  }, gecikme[deneme]);
+}
+
+function gonderenZenginlestir(message, jid) {
   // KENDI mesajimizsa DOKUNMA. Aksi halde rehberdeki isim 'Ben' yazisini
   // eziyor ve panelde kendi mesajimiz baskasindan gelmis gibi gorunuyordu.
   if (message.fromMe) { message.sender = 'Ben'; return; }
   const numara = String(message.senderJid || '').split('@')[0];
   if (!numara) return;
 
-  // 1) Numara BIZIM baska bir hattimiz mi? (ofis Baileys, pazarlama hatlari)
+  // 0) BIZIM baska bir hattimizdan mi geldi? Oyleyse PANEL KULLANICISININ adini bul.
   if (kendiHatlarimiz().has(numara)) {
     message.senderOfis = true;
+    const panelAd = panelKullanicisiBul(jid, message);
+    if (panelAd) { message.sender = panelAd; message.senderPush = panelAd; }
+    else panelKullanicisiSonradanAra(jid, message);   // ofis hatti henuz islememis olabilir
     return;
   }
-  // 2) CRM rehberinde kayitli mi? (savedContacts / contactNames)
+
+  // 1) CRM rehberinde kayitli mi? (savedContacts / contactNames)
   const rehber = (B.kisiAdiBul && B.kisiAdiBul(numara + '@s.whatsapp.net')) || '';
   if (rehber) {
     message.senderOfis = true;                       // kayitli isim = ekip/taninan kisi
@@ -251,7 +314,7 @@ function gonderenZenginlestir(message) {
     message.senderPush = rehber;
     return;
   }
-  // 3) Gonderenin adi panel kullanicisi mi? (ekip uyesi)
+  // 2) Gonderenin adi panel kullanicisi mi? (ekip uyesi)
   if (B.ekipUyesiMi && message.senderPush && B.ekipUyesiMi(message.senderPush)) {
     message.senderOfis = true;
   }
@@ -447,7 +510,7 @@ function zarfIsle(zarf) {
     }
 
     // Gonderen kendi hattimiz/ekibimiz mi -> panelde rozet gorunsun
-    try { gonderenZenginlestir(is.message); } catch (_) {}
+    try { gonderenZenginlestir(is.message, is.jid); } catch (_) {}
 
     // NOT: "ayni metin = yansima" gibi bir tahmin YAPMIYORUZ.
     // Iki kisi ayni anda cizgi cekerse veya ayni mesaj bilerek iki kez

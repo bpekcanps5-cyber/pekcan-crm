@@ -239,9 +239,14 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
 
   // ── GRUPLAR ───────────────────────────────────────────────
   // Baileys groupMetadata bicimi: { id, subject, desc, participants:[{id,admin}] }
-  function grupCevir(g) {
+  // tekil=true  : /groups/{id}?participants=true cevabi -> alan YOKSA "gercekten yok" demektir
+  // tekil=false : /groups liste cevabi -> alan YOKSA "bilinmiyor" demektir (DOKUNMA)
+  // Bu ayrim SART: liste ucu ad/aciklama/uye vermiyor. Ikisini ayirmazsak ya
+  // dolu aciklamalar silinir, ya da server.js her seferinde AGIR toplu sorguya
+  // duser (yenileme dugmesinin cevap vermemesinin sebebi buydu).
+  function grupCevir(g, tekil = false) {
     if (!g) return null;
-    const uyeler = g.participants || g.members || [];
+    const uyeler = g.participants || g.members;
     return {
       id: g.id || '',
       subject: g.name || g.subject || '',
@@ -250,16 +255,18 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
       // server.js bunu "aciklama silinmis" sanip DOLU aciklamayi EZIYOR.
       // undefined = "bilinmiyor, dokunma" (Baileys tarafinda da ayni mantik var).
       desc: (g.description !== undefined ? (g.description || '')
-           : (g.desc !== undefined ? (g.desc || '') : undefined)),
+           : g.desc !== undefined ? (g.desc || '')
+           : (tekil ? '' : undefined)),
       // Grup fotografi: SADECE tekil /groups/{id} ucunda gelir, listede gelmez.
       chatPic: g.chat_pic_full || g.chat_pic || null,
       // participants dizisi BOS gelse bile gercek uye sayisi bu alanda
       uyeSayisi: Number(g.participants_count || (Array.isArray(uyeler) ? uyeler.length : 0)) || 0,
       owner: g.owner || g.created_by || undefined,
-      // AYNI KORUMA: liste ucunda participants BOS geliyor. Bos dizi donersek
-      // server.js memberCount'u 0'a duseruyor ve panelde "0 uye" gorunuyor.
-      // Kaynak dizi bossa undefined birak -> mevcut sayi korunur.
-      participants: (!Array.isArray(uyeler) || !uyeler.length) ? undefined
+      // Dizi HIC yoksa, ya da BOS gelmis ama gercek uye sayisi varsa:
+      // undefined birak. Yoksa server.js memberCount'u 0'a dusurup
+      // panelde "0 uye" gosteriyor.
+      participants: (!Array.isArray(uyeler)
+                    || (!uyeler.length && Number(g.participants_count || 0) > 0)) ? undefined
         : uyeler.map((p) => {
         const kimlik = typeof p === 'string' ? p : (p.id || p.phone || '');
         const rol = (typeof p === 'object' && (p.rank || p.role || p.admin)) || '';
@@ -282,7 +289,7 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
     // (participants_count 25 iken dizi bos). '?participants=true' eklenince
     // ad + aciklama + chat_pic + 25 uye TEK istekte geliyor. Ekstra sorgu YOK.
     const g = await istek('/groups/' + encodeURIComponent(String(jid)) + '?participants=true');
-    const cevrilen = grupCevir(g);
+    const cevrilen = grupCevir(g, true);   // TEKIL sorgu: alan yoksa gercekten yok
     if (!cevrilen) throw new Error('grup bulunamadi');
     if (!cevrilen.id) cevrilen.id = String(jid);
     // Whapi tekil ucta participants BOS gelebiliyor (count 25 iken dizi bos).
@@ -403,7 +410,15 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
     return { uc: null, uyeler: [] };
   }
 
+  let _topluOnbellek = null;
+  let _topluZaman = 0;
+  const TOPLU_TAZELIK = 10 * 60 * 1000;
+
   async function groupFetchAllParticipating() {
+    // ONBELLEK: Whapi'nin liste ucu ad/aciklama VERMIYOR, sadece kimlik ve
+    // uye sayisi doner. server.js bu cagriyi yedek olarak sik yapiyor;
+    // 603 grup icin her seferinde sayfa sayfa istek atmak paneli kilitliyordu.
+    if (_topluOnbellek && Date.now() - _topluZaman < TOPLU_TAZELIK) return _topluOnbellek;
     const sonuc = {};
     let sayfa = 0;
     // Whapi sayfali doner; 500'luk paketlerle hepsini topla (en fazla 20 tur).
@@ -419,6 +434,7 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
       if (Object.keys(sonuc).length >= toplam || liste.length < 500) break;
       sayfa += 1;
     }
+    _topluOnbellek = sonuc; _topluZaman = Date.now();
     return sonuc;
   }
 
