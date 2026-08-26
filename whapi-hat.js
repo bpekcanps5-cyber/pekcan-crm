@@ -285,6 +285,7 @@ function panelKullanicisiSonradanAra(jid, message, deneme = 0) {
     mesaj.sender = ad;
     mesaj.senderPush = ad;
     mesaj.senderOfis = true;
+    mesaj.panelKullanicisi = true;
     B.broadcastHat(LINE_ID, { type: 'msgUpdate', jid, mesaj: B.stripBirMesaj(mesaj) });
     if (B.db.isReady()) B.db.saveMessage(jid, mesaj, LINE_ID).catch(() => {});
   }, gecikme[deneme]);
@@ -301,7 +302,13 @@ function gonderenZenginlestir(message, jid) {
   if (kendiHatlarimiz().has(numara)) {
     message.senderOfis = true;
     const panelAd = panelKullanicisiBul(jid, message);
-    if (panelAd) { message.sender = panelAd; message.senderPush = panelAd; }
+    if (panelAd) {
+      message.sender = panelAd;
+      message.senderPush = panelAd;
+      // Panel bu isareti gorunce mesaji "panelden gonderilmis" gorunumuyle
+      // cizer (kalkan rozeti + profil fotosu + gorev rengi), duz gelen mesaj gibi degil.
+      message.panelKullanicisi = true;
+    }
     else panelKullanicisiSonradanAra(jid, message);   // ofis hatti henuz islememis olabilir
     return;
   }
@@ -415,6 +422,59 @@ function grupKuyruguIsle() {
   }
 }
 
+// ── ACIKLAMAYI OFIS (BAILEYS) HATTINDAN TAMAMLA ─────────────
+// OLCULDU: Whapi cogu grupta 'description' alanini HIC gondermiyor
+// (cevapta alan yok: id, name, type, timestamp, chat_pic, ... ).
+// Ofis Baileys hatti AYNI gruplarda uye ve aciklamayi dogru veriyor.
+//
+// KURAL: ofis hattini YORMAYACAGIZ. Bu yuzden dogrudan sokete gitmiyoruz;
+// server.js'in KENDI korumali yolundan (getGroupMeta) geciyoruz:
+//   • 30 dakika onbellek  • arka plan kuyrugu  • mesaj trafigine oncelik
+//   • 20 saniye emniyet agi (asla asili kalmaz)
+// Ayrica: ofis bagli degilse HIC denemiyoruz ve dakikada en fazla
+// ACIKLAMA_DAKIKA_TAVAN grup soruyoruz.
+const ACIKLAMA_DAKIKA_TAVAN = 20;
+let _aciklamaSayac = 0;
+let _aciklamaPencere = 0;
+const aciklamaSorulan = new Set();   // ayni grubu tekrar tekrar sorma
+
+function ofisAciklamaIzni() {
+  const simdi = Date.now();
+  if (simdi - _aciklamaPencere > 60000) { _aciklamaPencere = simdi; _aciklamaSayac = 0; }
+  if (_aciklamaSayac >= ACIKLAMA_DAKIKA_TAVAN) return false;
+  _aciklamaSayac += 1;
+  return true;
+}
+
+async function aciklamayiOfistenTamamla(jid, chat) {
+  if (!B.getGroupMeta) return false;
+  if (aciklamaSorulan.has(jid)) return false;
+  const ofis = B.lines.get('ofis');
+  if (!ofis || !ofis.connected || !ofis.sock) return false;   // ofis kopuksa DOKUNMA
+  if (!ofisAciklamaIzni()) return false;
+  aciklamaSorulan.add(jid);
+  if (aciklamaSorulan.size > 5000) aciklamaSorulan.clear();
+
+  try {
+    // server.js'in onbellekli + kuyruklu yolu. Ofis soketiyle sorar.
+    const meta = await B.getGroupMeta(jid, 30 * 60 * 1000, ofis.sock);
+    if (!meta || meta.desc === undefined || meta.desc === null) return false;
+    const yeni = String(meta.desc || '').trim();
+    if ((chat.description || '') === yeni) return false;
+    chat.description = yeni;
+    if (!global._whapiAciklamaOfisten) {
+      global._whapiAciklamaOfisten = true;
+      log('grup aciklamalari OFIS (Baileys) hattindan tamamlaniyor — Whapi bu alani vermiyor');
+    }
+    B.broadcastHat(LINE_ID, {
+      type: 'msgUpdate', jid,
+      ozet: { name: chat.name, description: chat.description || '', memberCount: chat.memberCount || 0, avatar: chat.avatar || null },
+    });
+    if (B.db.isReady()) B.db.saveChat(chat, LINE_ID).catch(() => {});
+    return true;
+  } catch (_) { return false; }
+}
+
 async function grupBilgisiCek(jid) {
   const C = B.hatChats(LINE_ID);
   const chat = C && C.get ? C.get(jid) : null;
@@ -466,6 +526,11 @@ async function grupBilgisiCek(jid) {
       },
     });
     if (B.db.isReady()) B.db.saveChat(chat, LINE_ID).catch(() => {});
+  }
+
+  // Whapi aciklamayi vermediyse OFIS hattindan tamamla (arka planda, beklemeden)
+  if (!chat.description) {
+    aciklamayiOfistenTamamla(jid, chat).catch(() => {});
   }
 }
 
