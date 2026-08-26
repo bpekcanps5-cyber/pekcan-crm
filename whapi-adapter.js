@@ -33,7 +33,7 @@ function hedefCoz(jid) {
   return grupMu(jid) ? String(jid) : jidNumara(jid);
 }
 
-function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log }) {
+function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log, adKaydet = null }) {
   if (!token) throw new Error('whapi-adapter: token yok');
   const U = String(taban).replace(/\/+$/, '');
   // Token'i her ciktidan sil — kaza ile loglanmasin.
@@ -217,7 +217,11 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log 
       id: g.id || '',
       subject: g.name || g.subject || '',
       desc: g.description || g.desc || '',
-      owner: g.owner || undefined,
+      // Grup fotografi: SADECE tekil /groups/{id} ucunda gelir, listede gelmez.
+      chatPic: g.chat_pic_full || g.chat_pic || null,
+      // participants dizisi BOS gelse bile gercek uye sayisi bu alanda
+      uyeSayisi: Number(g.participants_count || (Array.isArray(uyeler) ? uyeler.length : 0)) || 0,
+      owner: g.owner || g.created_by || undefined,
       participants: (Array.isArray(uyeler) ? uyeler : []).map((p) => {
         const kimlik = typeof p === 'string' ? p : (p.id || p.phone || '');
         const rol = (typeof p === 'object' && (p.rank || p.role || p.admin)) || '';
@@ -233,12 +237,104 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log 
     };
   }
 
-  async function groupMetadata(jid) {
+  // tam=true: panelin "Uyeleri ve numaralari cek" dugmesi bunu ister.
+  // server.js: SOCK.groupMetadata(jid, true)
+  async function groupMetadata(jid, tam = false) {
     const g = await istek('/groups/' + encodeURIComponent(String(jid)));
     const cevrilen = grupCevir(g);
     if (!cevrilen) throw new Error('grup bulunamadi');
     if (!cevrilen.id) cevrilen.id = String(jid);
+    // Whapi tekil ucta participants BOS gelebiliyor (count 25 iken dizi bos).
+    // Panel uye listesi istiyorsa alternatif uclari dene.
+    if (tam && !cevrilen.participants.length && cevrilen.uyeSayisi) {
+      const r = await uyeleriCek(jid).catch(() => ({ uyeler: [] }));
+      if (r.uyeler.length) cevrilen.participants = r.uyeler;
+    }
+    // Uye adlarini CRM rehberine yaz — server.js'in kendi eslemesi
+    // (savedContacts / contactNames) bunlari okuyup panelde gosterecek.
+    if (adKaydet) {
+      for (const p of cevrilen.participants) {
+        if (p.name && p.name !== p.phoneNumber) { try { adKaydet(p.id, p.name); } catch (_) {} }
+      }
+    }
     return cevrilen;
+  }
+
+  // ── YAZMA ISLEMLERI ───────────────────────────────────────
+  // Whapi'nin bu uclarinin ADRESINI dokumandan DOGRULAMADIM. Bu yuzden
+  // aday adresleri sirayla deniyoruz; tutan ilki loglanip hatirlaniyor.
+  // Hicbiri tutmazsa GERCEK hata firlatilir — sahte basari uretilmez.
+  const _tutanUc = new Map();   // islem -> calisan aday
+
+  async function ilkTutani(islem, adaylar) {
+    const hatirlanan = _tutanUc.get(islem);
+    if (hatirlanan) {
+      const i = adaylar.findIndex((a) => a.anahtar === hatirlanan);
+      if (i > 0) adaylar.unshift(adaylar.splice(i, 1)[0]);
+    }
+    const hatalar = [];
+    for (const a of adaylar) {
+      try {
+        const c = await istek(a.yol, { yontem: a.yontem, govde: a.govde, zamanAsimi: a.zamanAsimi || 30000 });
+        if (!_tutanUc.has(islem)) { _tutanUc.set(islem, a.anahtar); log(islem + ' su uctan calisiyor: ' + a.yontem + ' ' + a.yol.split('?')[0]); }
+        return c;
+      } catch (e) {
+        hatalar.push(a.yontem + ' ' + a.yol.split('?')[0] + ' -> ' + e.message);
+        // 401/403 yetki hatasiysa diger adresleri denemek anlamsiz
+        if (e.status === 401 || e.status === 403) throw e;
+      }
+    }
+    throw new Error(islem + ' basarisiz. Denenenler: ' + hatalar.join(' | '));
+  }
+
+  // Panel: "Grup adini degistir"
+  async function groupUpdateSubject(jid, yeniAd) {
+    const G = encodeURIComponent(String(jid));
+    return ilkTutani('grup adi degistirme', [
+      { anahtar: 'patch-name', yontem: 'PATCH', yol: '/groups/' + G, govde: { name: String(yeniAd) } },
+      { anahtar: 'put-name', yontem: 'PUT', yol: '/groups/' + G, govde: { name: String(yeniAd) } },
+      { anahtar: 'patch-subject', yontem: 'PATCH', yol: '/groups/' + G, govde: { subject: String(yeniAd) } },
+      { anahtar: 'put-subject-uc', yontem: 'PUT', yol: '/groups/' + G + '/subject', govde: { subject: String(yeniAd) } },
+    ]);
+  }
+
+  // Panel: "Aciklama duzenle"
+  async function groupUpdateDescription(jid, yeniAciklama) {
+    const G = encodeURIComponent(String(jid));
+    const d = String(yeniAciklama == null ? '' : yeniAciklama);
+    return ilkTutani('grup aciklamasi degistirme', [
+      { anahtar: 'patch-desc', yontem: 'PATCH', yol: '/groups/' + G, govde: { description: d } },
+      { anahtar: 'put-desc', yontem: 'PUT', yol: '/groups/' + G, govde: { description: d } },
+      { anahtar: 'put-desc-uc', yontem: 'PUT', yol: '/groups/' + G + '/description', govde: { description: d } },
+    ]);
+  }
+
+  // Panel: "Fotografi Degistir"
+  async function updateProfilePicture(jid, veri) {
+    const G = encodeURIComponent(String(jid));
+    const resim = Buffer.isBuffer(veri)
+      ? 'data:image/jpeg;base64,' + veri.toString('base64')
+      : String((veri && veri.url) || veri || '');
+    return ilkTutani('grup fotografi degistirme', [
+      { anahtar: 'put-icon', yontem: 'PUT', yol: '/groups/' + G + '/icon', govde: { media: resim }, zamanAsimi: 60000 },
+      { anahtar: 'patch-icon', yontem: 'PATCH', yol: '/groups/' + G, govde: { icon: resim }, zamanAsimi: 60000 },
+      { anahtar: 'put-profile', yontem: 'PUT', yol: '/groups/' + G + '/profile/picture', govde: { media: resim }, zamanAsimi: 60000 },
+    ]);
+  }
+
+  // Panel: "Gruba kisi ekle" (add / remove / promote / demote)
+  async function groupParticipantsUpdate(jid, katilimcilar, islem) {
+    const G = encodeURIComponent(String(jid));
+    const liste = (Array.isArray(katilimcilar) ? katilimcilar : [katilimcilar]).map(jidNumara).filter(Boolean);
+    if (!liste.length) throw new Error('katilimci listesi bos');
+    const yontemEsleme = { add: 'POST', remove: 'DELETE', promote: 'PUT', demote: 'PATCH' };
+    const yontem = yontemEsleme[islem] || 'POST';
+    const c = await ilkTutani('gruba kisi ' + (islem || 'add'), [
+      { anahtar: 'participants', yontem, yol: '/groups/' + G + '/participants', govde: { participants: liste } },
+      { anahtar: 'participants-alt', yontem, yol: '/groups/' + G + '/participants', govde: { numbers: liste } },
+    ]);
+    // Baileys bicimi: [{ status:'200', jid }]
+    return liste.map((n) => ({ status: '200', jid: n + '@s.whatsapp.net', _whapi: c || undefined }));
   }
 
   // UYE LISTESI: tekil /groups/{id} cevabinda participants BOS gelebiliyor
@@ -354,6 +450,10 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log 
     sendMessage,
     groupMetadata,
     groupFetchAllParticipating,
+    groupUpdateSubject,
+    groupUpdateDescription,
+    groupParticipantsUpdate,
+    updateProfilePicture,
     onWhatsApp,
     readMessages,
     sendPresenceUpdate,

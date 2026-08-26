@@ -215,6 +215,9 @@ function kendiHatlarimiz() {
 }
 
 function gonderenZenginlestir(message) {
+  // KENDI mesajimizsa DOKUNMA. Aksi halde rehberdeki isim 'Ben' yazisini
+  // eziyor ve panelde kendi mesajimiz baskasindan gelmis gibi gorunuyordu.
+  if (message.fromMe) { message.sender = 'Ben'; return; }
   const numara = String(message.senderJid || '').split('@')[0];
   if (!numara) return;
 
@@ -367,6 +370,10 @@ function zarfIsle(zarf) {
     throw new Error('whapi hatti henuz hazir degil — Whapi tekrar denesin');
   }
   const benim = sonSaglik.numara || null;
+  if (!benim && !global._whapiNumaraUyarisi) {
+    global._whapiNumaraUyarisi = true;
+    log('UYARI: kanal numarasi henuz bilinmiyor — kendi mesajlarin GELEN gorunebilir. /health sorgusu bekleniyor.');
+  }
   const isler = zarfCevir(zarf, benim);
   const ozet = { mesaj: 0, mukerrer: 0, tepki: 0, sil: 0, duzenle: 0, durum: 0, eski: 0, atla: 0, hedefYok: 0 };
 
@@ -488,7 +495,13 @@ async function hattiBaslat() {
 
   gorulenYukle();
 
-  sock = adaptor.olustur({ token: TOKEN, taban: TABAN, log });
+  sock = adaptor.olustur({
+    token: TOKEN, taban: TABAN, log,
+    // Whapi'nin verdigi uye adlarini CRM rehberine yaz. server.js'in
+    // kendi uye eslemesi (getGroupMembers) contactNames'ten okuyor;
+    // bunu doldurmazsak panelde isim yerine NUMARA gorunur.
+    adKaydet: (jid, ad) => { try { if (B.kisiAdiKaydet) B.kisiAdiKaydet(jid, ad); } catch (_) {} },
+  });
   line.sock = sock;              // KRITIK: panelin gonderme kodu bunu kullanir
 
   // Kendi numarasini ogren — fromMe tespiti buna dayaniyor

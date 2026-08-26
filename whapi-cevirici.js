@@ -177,9 +177,14 @@ function mesajCevir(m, benimNumaram) {
   const isGroup = jid.endsWith('@g.us');
   const gonderen = numaraNorm(m.from);
   const benim = numaraNorm(benimNumaram);
-  // from_me bayragina DEGIL, numara karsilastirmasina guveniyoruz.
-  // Bayrak dogruysa da yanlissa da bu yontem calisir.
-  const fromMe = !!(benim && gonderen === benim) || (!benim && !!m.from_me);
+  // KENDI MESAJIMIZ MI?
+  //  • Iki numarayi da biliyorsak KARSILASTIR (en guvenilir yol).
+  //  • Gonderen numara gelmemisse (kisi sohbetlerinde olabiliyor) Whapi'nin
+  //    from_me bayragina duseriz.
+  //  • Kanal numarasi henuz ogrenilmediyse yine bayraga duseriz.
+  // ESKI HATA: benim biliniyor ama gonderen bos ise HER ZAMAN false donuyordu;
+  // kendi telefonundan atilan mesaj panelde 'gelen' gorunuyordu.
+  const fromMe = (benim && gonderen) ? (gonderen === benim) : !!m.from_me;
   const ts = m.timestamp ? Number(m.timestamp) * 1000 : Date.now();
 
   // ── YAS FILTRESI ──
