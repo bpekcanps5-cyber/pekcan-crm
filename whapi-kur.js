@@ -63,6 +63,32 @@ const KOY_2 = `  ${ISARET} Whapi ikinci hat: webhook ucunu kaydet ve hatti ayaga
   startWA(); // <-- veri yüklendikten SONRA
 `;
 
+
+// ── UCUNCU KANCA: addMessage EKSIK ARGUMAN HATASI ───────────
+// addMessage(jid, message, meta = {}, lineId = 'ofis')
+// Panelden gonderme yollarinda META ATLANMIS, hat kimligi onun yerine
+// veriliyor:   addMessage(jid, {...}, _LID)
+// Sonuc: _LID meta sanilir, GERCEK hat 'ofis'e duser.
+//   • Panelden gonderilen mesaj OFIS bellegine yazilir
+//   • Kendi hattinda BULUNAMAZ  -> silme/duzenleme calismaz
+//     ("mesaj bulundu=false" satirinin sebebi budur)
+//   • Ayrica whapi/pazarlama mesajlari ofis hattina karisir
+// DUZELTME: eksik meta argumanini ekle.  }, _LID)  ->  }, {}, _LID)
+// 'ofis' icin davranis DEGISMEZ (meta olarak string gecmek ile {} gecmek
+// ayni sonucu veriyordu), pazarlama hatlari da bu duzeltmeden FAYDALANIR.
+// DIKKAT: duz metin araması YANLIS sonuc verir, cunku dogru yazilmis
+//   addMessage(..., { name: x }, _LID);
+// cagrisi da '}, _LID);' dizisini ICERIR ve bozulur.
+// Bu yuzden SADECE satir basinda (girintiden sonra) duran kapanisi hedefliyoruz:
+//        }, _LID);      <- nesne kapanisi, meta EKSIK
+const DESEN_3 = /(\n[ \t]*)\}, _LID\);/g;
+
+function ucuncuKanca(kaynak) {
+  let n = 0;
+  const yeni = kaynak.replace(DESEN_3, (t, girinti) => { n += 1; return girinti + '}, {}, _LID);'; });
+  return { kaynak: yeni, n };
+}
+
 function geriAl() {
   if (!fs.existsSync(YEDEK)) { console.log('✗ yedek yok, geri alinamiyor'); process.exit(1); }
   fs.copyFileSync(YEDEK, HEDEF);
@@ -99,6 +125,8 @@ function kur() {
   console.log('✔ yedek: server.js.whapi-oncesi');
 
   kaynak = kaynak.replace(ARA_1, KOY_1).replace(ARA_2, KOY_2);
+  const u = ucuncuKanca(kaynak);
+  kaynak = u.kaynak;
 
   const gecici = path.join(__dirname, 'server.whapi-gecici.js');
   fs.writeFileSync(gecici, kaynak, 'utf8');
@@ -115,10 +143,13 @@ function kur() {
   const eski = fs.readFileSync(YEDEK, 'utf8').split('\n').length;
   const yeni = kaynak.split('\n').length;
   console.log('✔ iki kanca eklendi (' + eski + ' -> ' + yeni + ' satir)');
+  console.log('✔ addMessage eksik arguman hatasi duzeltildi (' + u.n + ' yerde)');
   console.log('✔ soz dizimi saglam');
   console.log('');
   console.log('Sonraki adim:  pm2 restart pekcan --update-env');
   console.log('Geri alma   :  node whapi-kur.js --geri');
 }
+
+
 
 if (process.argv.includes('--geri')) geriAl(); else kur();
