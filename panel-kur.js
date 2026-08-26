@@ -15,8 +15,33 @@
 const fs = require('fs');
 const path = require('path');
 
-const HEDEF = path.join(__dirname, 'index.html');
-const YEDEK = path.join(__dirname, 'index.html.whapi-oncesi');
+// DOGRU DOSYAYI BUL — KRITIK
+// server.js panelin HTML'ini su satirla servis ediyor:
+//     app.use(express.static(path.join(__dirname, 'public')))
+// Yani tarayiciya giden dosya  public/index.html  olabilir.
+// Proje kokundeki index.html sadece bir kopya/kaynak olabilir ve
+// onu yamalamak PANELDE HICBIR SEY DEGISTIRMEZ.
+// Bu yuzden ADAYLARI kontrol edip GERCEKTEN servis edileni seciyoruz.
+function hedefBul() {
+  const adaylar = [
+    path.join(__dirname, 'public', 'index.html'),
+    path.join(__dirname, 'index.html'),
+  ];
+  const bulunan = adaylar.filter((y) => fs.existsSync(y));
+  if (!bulunan.length) { console.log('✗ index.html hicbir yerde bulunamadi'); process.exit(1); }
+  if (bulunan.length > 1) {
+    const a = fs.readFileSync(bulunan[0], 'utf8');
+    const b = fs.readFileSync(bulunan[1], 'utf8');
+    console.log('ℹ  iki index.html var:');
+    console.log('   public/index.html : ' + a.length + ' bayt  (TARAYICIYA GIDEN)');
+    console.log('   index.html        : ' + b.length + ' bayt');
+    if (a !== b) console.log('   ⚠  ICERIKLERI FARKLI');
+  }
+  return bulunan[0];   // public/ once
+}
+
+const HEDEF = hedefBul();
+const YEDEK = HEDEF + '.whapi-oncesi';
 const ISARET = '/* WHAPI PANEL GORUNUMU */';
 
 const ARA = `        name='<div class="sender-name clickable'+(ofisMu?' ofis-uye':'')+'" style="color:'+colorFor(m.sender)+'"'
@@ -103,12 +128,12 @@ const KOY4 = `      const pj=prev.senderJid||'', mj=m.senderJid||'';
 function geriAl() {
   if (!fs.existsSync(YEDEK)) { console.log('✗ yedek yok'); process.exit(1); }
   fs.copyFileSync(YEDEK, HEDEF);
-  console.log('✔ index.html yedekten geri yuklendi');
+  console.log('✔ geri yuklendi: ' + HEDEF);
   console.log('  panelde CTRL+F5 yap');
 }
 
 function kur() {
-  if (!fs.existsSync(HEDEF)) { console.log('✗ index.html bulunamadi'); process.exit(1); }
+  console.log('yamalanan dosya: ' + HEDEF);
   let s = fs.readFileSync(HEDEF, 'utf8');
   if (s.includes(ISARET)) { console.log('• Zaten kurulu, hicbir sey yapilmadi.'); return; }
   const say = (t) => s.split(t).length - 1;
