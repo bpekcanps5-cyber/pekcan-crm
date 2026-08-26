@@ -17,6 +17,19 @@
 
 const MEDYA_ALANLARI = ['image', 'video', 'audio', 'voice', 'document', 'sticker'];
 
+// YAS FILTRESI: server.js ile AYNI (MESAJ_SAKLAMA_GUN = 30).
+// Whapi 'pdo_sync' ile TUM gecmisi yollayabiliyor; eski mesajlar panele
+// dusmesin, DB'ye yazilmasin. Baileys yolunda da ayni filtre var.
+const SAKLAMA_GUN = 30;
+const SAKLAMA_MS = SAKLAMA_GUN * 24 * 60 * 60 * 1000;
+
+// Whapi durum -> CRM durum kodu
+//   CRM: 1 gonderiliyor · 2 gonderildi(tek tik) · 3 iletildi(cift tik) · 4 okundu(mavi) · -1 hata
+const DURUM_ESLEME = {
+  pending: 1, sent: 2, delivered: 3, read: 4, played: 4,
+  failed: -1, error: -1, canceled: -1,
+};
+
 // Whapi tur -> CRM kind. Baileys'in describeMessage ciktisiyla ayni sozluk.
 const TUR_ESLEME = {
   text: 'text',
@@ -169,6 +182,14 @@ function mesajCevir(m, benimNumaram) {
   const fromMe = !!(benim && gonderen === benim) || (!benim && !!m.from_me);
   const ts = m.timestamp ? Number(m.timestamp) * 1000 : Date.now();
 
+  // ── YAS FILTRESI ──
+  // Gecmis senkronundan gelen eski mesajlari ELE. 'action' turleri (tepki/
+  // silme/duzenleme) HEDEF mesaji guncelledigi icin filtreden muaf degil:
+  // eski bir mesaja gelen tepki de eskidir, zaten hedefi bellekte olmaz.
+  if (ts < Date.now() - SAKLAMA_MS) {
+    return { tur: 'atla', sebep: 'eski mesaj (' + SAKLAMA_GUN + ' gunden once)', ham: null };
+  }
+
   // ── ACTION: tepki / silme / duzenleme. Bunlar YENI MESAJ DEGIL. ──
   if (m.type === 'action') {
     const a = m.action || {};
@@ -242,12 +263,41 @@ function mesajCevir(m, benimNumaram) {
   return { tur: 'mesaj', jid, isGroup, message, meta, indir, onizleme, ts };
 }
 
+// ── DURUM (TIK) CEVIRICI ────────────────────────────────────
+// Whapi zarfi: { statuses:[{id, code, status, recipient_id, viewer_id}], event:{type:'statuses'} }
+// Baileys'te bunun karsiligi messages.update(status) + message-receipt.update.
+function durumCevir(d) {
+  if (!d || !d.id) return { tur: 'atla', sebep: 'durum kimligi yok' };
+  const jid = jidCoz(d.recipient_id || d.chat_id);
+  if (!jid) return { tur: 'atla', sebep: 'durum sohbeti yok' };
+  let kod = DURUM_ESLEME[String(d.status || '').toLowerCase()];
+  if (kod === undefined) {
+    const c = Number(d.code);
+    kod = (c >= 1 && c <= 4) ? c : undefined;
+  }
+  if (kod === undefined) return { tur: 'atla', sebep: 'bilinmeyen durum: ' + d.status };
+  return {
+    tur: 'durum', jid, hedefId: d.id, durum: kod,
+    okuyan: d.viewer_id ? numaraNorm(d.viewer_id) : '',
+  };
+}
+
 // ── ZARFI CEVIR ─────────────────────────────────────────────
 function zarfCevir(zarf, benimNumaram) {
   if (!zarf || typeof zarf !== 'object') return [];
+  const isler = [];
+
+  // DURUM ZARFI (tik bilgisi)
+  if (Array.isArray(zarf.statuses)) {
+    for (const d of zarf.statuses) {
+      try { isler.push(durumCevir(d)); }
+      catch (e) { isler.push({ tur: 'atla', sebep: 'durum cevirici hatasi: ' + e.message }); }
+    }
+  }
+
+  // MESAJ ZARFI
   const liste = Array.isArray(zarf.messages) ? zarf.messages
               : (zarf.message ? [zarf.message] : []);
-  const isler = [];
   for (const m of liste) {
     try { isler.push(mesajCevir(m, benimNumaram)); }
     catch (e) { isler.push({ tur: 'atla', sebep: 'cevirici hatasi: ' + e.message, ham: m }); }
@@ -255,4 +305,4 @@ function zarfCevir(zarf, benimNumaram) {
   return isler;
 }
 
-module.exports = { zarfCevir, mesajCevir, jidCoz, numaraNorm, saatBicimle };
+module.exports = { zarfCevir, mesajCevir, durumCevir, jidCoz, numaraNorm, saatBicimle, SAKLAMA_MS };

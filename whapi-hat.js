@@ -197,52 +197,144 @@ function duzenlemeUygula(is) {
   return true;
 }
 
+// ── DURUM (TIK) UYGULA ──────────────────────────────────────
+// Baileys'te bu is messages.update + message-receipt.update ile oluyordu.
+// Whapi'de 'statuses' zarfi geliyor. Panelin bekledigi yayin: msgStatus.
+function durumUygula(is) {
+  const { mesaj } = hedefMesajBul(is.jid, is.hedefId);
+  if (!mesaj) return false;
+  if (!mesaj.fromMe) return false;              // sadece BIZIM mesajlarin tiki
+  const eski = mesaj.durum || 0;
+  if (is.durum === -1) {
+    mesaj.durum = -1;
+    B.broadcastHat(LINE_ID, { type: 'msgStatus', jid: is.jid, id: is.hedefId, durum: -1 });
+    return true;
+  }
+  if (is.durum <= eski) return false;           // geri gitme (okundu -> iletildi olmaz)
+  mesaj.durum = is.durum;
+  B.broadcastHat(LINE_ID, { type: 'msgStatus', jid: is.jid, id: is.hedefId, durum: is.durum });
+  // ILETIM DENETCISI: durum >= 3 ise mesaj ULASTI, 45sn'lik "gitmedi" alarmini iptal et.
+  // Panelin "mesaj gitmedi" yanlis uyarisinin sebebi buydu.
+  if (is.durum >= 3 && typeof B.iletimDenetleTamam === 'function') {
+    try { B.iletimDenetleTamam(is.hedefId); } catch (_) {}
+  }
+  if (B.db.isReady()) B.db.saveMessage(is.jid, mesaj, LINE_ID).catch(() => {});
+  return true;
+}
+
 // ── GRUP BILGISI (arka planda, mesaji BEKLETMEDEN) ───────────
 const grupSonCekim = new Map();   // jid -> zaman
 const GRUP_TAZELIK = 30 * 60 * 1000;
+const grupKuyruk = [];            // sirada bekleyen jid'ler
+const grupKuyruktakiler = new Set();
+let grupIsliyor = false;
+const GRUP_ARALIK = 1200;         // iki sorgu arasi bekleme (Whapi'yi bogmayalim)
 
-function grupBilgisiTazele(jid) {
+// Grubu SIRAYA al. Yuzlerce grup ayni anda sorgulanirsa Whapi 429/404 veriyor
+// ("specified group not found" satirlarinin sebebi buydu).
+function grupBilgisiTazele(jid, zorla = false) {
   if (!sock || !String(jid).endsWith('@g.us')) return;
+  if (grupKuyruktakiler.has(jid)) return;
   const son = grupSonCekim.get(jid) || 0;
-  if (Date.now() - son < GRUP_TAZELIK) return;
-  grupSonCekim.set(jid, Date.now());
-  sock.groupMetadata(jid).then((meta) => {
-    if (!meta) return;
-    const C = B.hatChats(LINE_ID);
-    const chat = C && C.get ? C.get(jid) : null;
-    if (!chat) return;
-    let degisti = false;
-    if (meta.subject && chat.name !== meta.subject) { chat.name = meta.subject; degisti = true; }
-    if (meta.desc !== undefined && chat.description !== meta.desc) { chat.description = meta.desc || ''; degisti = true; }
-    if (meta.participants && meta.participants.length) {
-      chat.memberCount = meta.participants.length;
-      chat.members = meta.participants.map((p) => ({
-        jid: p.id, number: p.phoneNumber || String(p.id).split('@')[0],
-        name: p.phoneNumber || String(p.id).split('@')[0],
-        admin: !!p.admin, isLid: false,
-      }));
-      degisti = true;
+  if (!zorla && Date.now() - son < GRUP_TAZELIK) return;
+  grupKuyruktakiler.add(jid);
+  if (zorla) grupKuyruk.unshift(jid); else grupKuyruk.push(jid);
+  grupKuyruguIsle();
+}
+
+async function grupKuyruguIsle() {
+  if (grupIsliyor) return;
+  grupIsliyor = true;
+  try {
+    while (grupKuyruk.length) {
+      const jid = grupKuyruk.shift();
+      grupKuyruktakiler.delete(jid);
+      grupSonCekim.set(jid, Date.now());
+      try { await grupBilgisiCek(jid); } catch (_) {}
+      await new Promise((c) => setTimeout(c, GRUP_ARALIK));
     }
-    if (degisti) {
-      B.broadcastHat(LINE_ID, {
-        type: 'msgUpdate', jid,
-        ozet: { name: chat.name, description: chat.description || '', memberCount: chat.memberCount || 0, avatar: chat.avatar || null },
-      });
-      if (B.db.isReady()) B.db.saveChat(chat, LINE_ID).catch(() => {});
+  } finally { grupIsliyor = false; }
+}
+
+async function grupBilgisiCek(jid) {
+  const C = B.hatChats(LINE_ID);
+  const chat = C && C.get ? C.get(jid) : null;
+  if (!chat) return;
+
+  const meta = await sock.groupMetadata(jid);
+  if (!meta) return;
+  let degisti = false;
+
+  // AD: Whapi tekil /groups/{id} ucunda 'name' alaninda geliyor (listede GELMEZ).
+  if (meta.subject && meta.subject.trim() && chat.name !== meta.subject.trim()) {
+    chat.name = meta.subject.trim(); degisti = true;
+  }
+  // ACIKLAMA
+  if (meta.desc !== undefined && (chat.description || '') !== (meta.desc || '')) {
+    chat.description = meta.desc || ''; degisti = true;
+  }
+  // GRUP FOTOGRAFI: 'chat_pic' -> panelin avatar alani
+  if (meta.chatPic && chat.avatar !== meta.chatPic) {
+    chat.avatar = meta.chatPic; degisti = true;
+  }
+  // UYE SAYISI: participants bos gelse bile participants_count dogru
+  if (meta.uyeSayisi && chat.memberCount !== meta.uyeSayisi) {
+    chat.memberCount = meta.uyeSayisi; degisti = true;
+  }
+  // UYE LISTESI: tekil ucta bos gelirse alternatif uclari dene
+  let uyeler = meta.participants || [];
+  if (!uyeler.length && meta.uyeSayisi && sock._uyeleriCek) {
+    const r = await sock._uyeleriCek(jid).catch(() => ({ uyeler: [] }));
+    uyeler = r.uyeler || [];
+    if (uyeler.length && !global._whapiUyeUcu) {
+      global._whapiUyeUcu = r.uc;
+      log('uye listesi su uctan geliyor: ' + r.uc);
     }
-  }).catch(() => {});
+  }
+  if (uyeler.length) {
+    chat.members = uyeler.map((p) => {
+      const numara = p.phoneNumber || String(p.id).split('@')[0];
+      // Isim onceligi: Whapi'nin verdigi ad > CRM rehberi > numara
+      const rehber = (B.kisiAdiBul && B.kisiAdiBul(p.id)) || '';
+      return { jid: p.id, number: numara, name: p.name || rehber || numara, admin: !!p.admin, isLid: false };
+    });
+    chat.memberCount = uyeler.length;
+    degisti = true;
+  }
+
+  if (degisti) {
+    B.broadcastHat(LINE_ID, {
+      type: 'msgUpdate', jid,
+      ozet: {
+        name: chat.name, description: chat.description || '',
+        memberCount: chat.memberCount || 0, avatar: chat.avatar || null,
+      },
+    });
+    if (B.db.isReady()) B.db.saveChat(chat, LINE_ID).catch(() => {});
+  }
 }
 
 // ── ZARFI ISLE (webhook ucunun cagirdigi ana fonksiyon) ──────
 // SENKRON kisim: addMessage cagrilir -> mesaj-guvence JSONL'e YAZAR.
 // Bu bittiginde mesaj kalicidir, ancak o zaman 200 doneriz.
 function zarfIsle(zarf) {
+  // KRITIK KORUMA: hat henuz kurulmadiysa isleme! server.js'in hatChats()
+  // fonksiyonu hat bulunamazsa GLOBAL (ofis) sohbetlerine duser -> whapi
+  // mesajlari ofis paneline karisirdi. 500 donup Whapi'nin tekrar
+  // gondermesini sagliyoruz (kalici webhook 24 kez dener, veri kaybolmaz).
+  if (!B.lines.get(LINE_ID)) {
+    throw new Error('whapi hatti henuz hazir degil — Whapi tekrar denesin');
+  }
   const benim = sonSaglik.numara || null;
   const isler = zarfCevir(zarf, benim);
-  const ozet = { mesaj: 0, mukerrer: 0, tepki: 0, sil: 0, duzenle: 0, atla: 0, hedefYok: 0 };
+  const ozet = { mesaj: 0, mukerrer: 0, tepki: 0, sil: 0, duzenle: 0, durum: 0, eski: 0, atla: 0, hedefYok: 0 };
 
   for (const is of isler) {
-    if (is.tur === 'atla') { ozet.atla += 1; continue; }
+    if (is.tur === 'atla') {
+      if (String(is.sebep || '').startsWith('eski mesaj')) ozet.eski += 1; else ozet.atla += 1;
+      continue;
+    }
+    if (is.tur === 'durum')   { if (durumUygula(is))       ozet.durum += 1;   else ozet.hedefYok += 1; continue; }
 
     if (is.tur === 'tepki')   { if (tepkiUygula(is))      ozet.tepki += 1;   else ozet.hedefYok += 1; continue; }
     if (is.tur === 'sil')     { if (silmeUygula(is))      ozet.sil += 1;     else ozet.hedefYok += 1; continue; }
@@ -281,12 +373,14 @@ function kancaKur(app, express) {
       const ozet = zarfIsle(req.body || {});
       // 200 = "kalici olarak aldik". Whapi bir daha yollamaz.
       res.json({ ok: true });
-      if (ozet.mesaj || ozet.tepki || ozet.sil || ozet.duzenle || ozet.mukerrer) {
+      if (ozet.mesaj || ozet.tepki || ozet.sil || ozet.duzenle || ozet.durum || ozet.mukerrer || ozet.eski) {
         const parcalar = [];
         if (ozet.mesaj) parcalar.push(ozet.mesaj + ' mesaj');
         if (ozet.tepki) parcalar.push(ozet.tepki + ' tepki');
         if (ozet.sil) parcalar.push(ozet.sil + ' silme');
         if (ozet.duzenle) parcalar.push(ozet.duzenle + ' duzenleme');
+        if (ozet.durum) parcalar.push(ozet.durum + ' tik');
+        if (ozet.eski) parcalar.push(ozet.eski + ' ESKI mesaj elendi');
         if (ozet.mukerrer) parcalar.push(ozet.mukerrer + ' MUKERRER engellendi');
         if (ozet.hedefYok) parcalar.push(ozet.hedefYok + ' hedef bulunamadi');
         log(parcalar.join(' | '));

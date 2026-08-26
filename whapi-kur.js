@@ -43,6 +43,8 @@ const KOY_2 = `  ${ISARET} Whapi ikinci hat: webhook ucunu kaydet ve hatti ayaga
     global._whapiKurulum = whapiHat.kur({
       addMessage, broadcastHat, hatChats, stripBirMesaj,
       lines, createLine, db, MEDIA_DIR,
+      iletimDenetleTamam,
+      kisiAdiBul: (jid) => savedContacts.get(jid) || contactNames.get(jid) || '',
       log: (...a) => console.log(...a),
     }, app, express);
     if (process.env.WHAPI_TOKEN) {

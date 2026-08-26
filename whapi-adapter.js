@@ -222,9 +222,11 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log 
         const kimlik = typeof p === 'string' ? p : (p.id || p.phone || '');
         const rol = (typeof p === 'object' && (p.rank || p.role || p.admin)) || '';
         const yonetici = /admin|superadmin|creator|owner/i.test(String(rol)) ? 'admin' : null;
+        const ad = (typeof p === 'object' && (p.name || p.pushname || p.display_name || p.notify)) || '';
         return {
           id: jidNumara(kimlik) + '@s.whatsapp.net',
           phoneNumber: jidNumara(kimlik),
+          name: ad,
           admin: yonetici,
         };
       }),
@@ -237,6 +239,28 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log 
     if (!cevrilen) throw new Error('grup bulunamadi');
     if (!cevrilen.id) cevrilen.id = String(jid);
     return cevrilen;
+  }
+
+  // UYE LISTESI: tekil /groups/{id} cevabinda participants BOS gelebiliyor
+  // (participants_count 25 iken dizi bos). Bu durumda alternatif uclari sirayla dene.
+  // Hicbiri tutmazsa bos dizi doner — UYDURMA veri uretilmez.
+  async function uyeleriCek(jid) {
+    const denenecek = [
+      '/groups/' + encodeURIComponent(String(jid)) + '/participants',
+      '/groups/' + encodeURIComponent(String(jid)) + '?participants=true',
+      '/groups/' + encodeURIComponent(String(jid)) + '?full=true',
+    ];
+    for (const y of denenecek) {
+      try {
+        const j = await istek(y, { zamanAsimi: 20000 });
+        const ham = (j && (j.participants || j.members || (Array.isArray(j) ? j : null))) || null;
+        if (Array.isArray(ham) && ham.length) {
+          const c = grupCevir({ id: jid, participants: ham });
+          return { uc: y, uyeler: c.participants };
+        }
+      } catch (_) { /* sonrakini dene */ }
+    }
+    return { uc: null, uyeler: [] };
   }
 
   async function groupFetchAllParticipating() {
@@ -336,6 +360,7 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log 
     profilePictureUrl,
     // whapi'ye ozel ekler
     _saglik: saglik,
+    _uyeleriCek: uyeleriCek,
     _mesajlariCek: mesajlariCek,
     _istek: istek,
     _gizle: gizle,
