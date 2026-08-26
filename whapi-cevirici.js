@@ -259,7 +259,9 @@ function mesajCevir(m, benimNumaram) {
 
   // Indirilecek medya bilgisi (cevirici indirmez, sadece isaret eder)
   const indir = (bulunan && bulunan.medya.link)
-    ? { link: bulunan.medya.link, mime: bulunan.medya.mime_type || '', dosyaAdi: bulunan.medya.file_name || bulunan.medya.filename || '' }
+    ? { link: bulunan.medya.link, mime: bulunan.medya.mime_type || '',
+        dosyaAdi: bulunan.medya.file_name || bulunan.medya.filename || '',
+        kind }   // robot kancasi 'image' / 'document' ayrimi icin
     : null;
 
   // Onizleme: Whapi 'preview' alaninda base64 data-url veriyor -> aninda goster

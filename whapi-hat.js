@@ -135,12 +135,39 @@ async function medyaIndir(link, mime, dosyaAdi) {
 
 // Baileys tarafiyla AYNI davranis: mesaj BEKLEMEZ, medya arkadan iner,
 // inince addMessage tekrar cagrilip mediaUrl guncellenir.
+// ── IPTAL ROBOTU KANCASI ────────────────────────────────────
+// Baileys yolunda robot, saveMedia icinden ve messages.upsert'ten
+// cagriliyordu. Whapi yolu o iki yerden gecmedigi icin robot Whapi
+// hattinda HIC calismiyordu.
+//
+// ACIP KAPAMA: robotMedyaGeldi'nin ILK satiri  if (!robotAktif) return;
+// Bayragi CAGRI ANINDA okuyor, onbellege almiyor. Kendi yolumuzu yazmayip
+// AYNI fonksiyonu cagirdigimiz icin paneldeki mevcut ac/kapa dugmesi
+// Whapi hattini da ANINDA kontrol eder. Kapaliyken belge kuyruga bile girmez.
+function robotaVer(jid, mesajId, kind, url, mime) {
+  if (!B.robotMedyaGeldi) return;
+  try {
+    // robotMedyaGeldi Baileys nesnesinden SADECE su ikisini okuyor:
+    //   m.key.id                                  -> arac bilgisini mesaja islemek icin
+    //   m.message.documentMessage.mimetype        -> PDF mi tespiti icin
+    // Dosyanin kendisini diskten okuyor (public/media/...), o yuzden
+    // ham Baileys nesnesine ihtiyaci yok.
+    const m = {
+      key: { id: mesajId, remoteJid: jid, fromMe: false },
+      message: mime ? { documentMessage: { mimetype: mime } } : {},
+    };
+    B.robotMedyaGeldi({ m, kind, url, jid, lineId: LINE_ID });
+  } catch (e) { log('robot kancasi: ' + e.message); }
+}
+
 function medyaArkaPlanda(jid, mesajId, indir, deneme = 1) {
   const enFazla = String(jid).endsWith('@g.us') ? 4 : 3;   // grup medyasi is kritik
   medyaIndir(indir.link, indir.mime, indir.dosyaAdi)
     .then((url) => {
       if (!url) throw new Error('bos yol');
       B.addMessage(jid, { id: mesajId, mediaUrl: url, fromMe: false }, {}, LINE_ID);
+      // Belge/foto indi -> IPTAL ROBOTU'na ver (acikssa isler, kapaliysa atlar)
+      robotaVer(jid, mesajId, indir.kind, url, indir.mime);
     })
     .catch((e) => {
       if (deneme < enFazla) {
