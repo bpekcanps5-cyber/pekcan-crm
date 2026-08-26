@@ -197,6 +197,46 @@ function duzenlemeUygula(is) {
   return true;
 }
 
+// ── KENDI HATLARIMIZI TANI ──────────────────────────────────
+// Ofis (Baileys) ve pazarlama hatlari AYNI gruplarda uye. Ofis panelden
+// yazinca Whapi kanali bunu "disaridan gelen mesaj" olarak goruyor ve
+// panelde musteri gibi duruyor. Baileys tarafinda bunun karsiligi
+// 'senderOfis' bayragi: kayitli/ekip kisisi ise panel rozet koyuyor.
+// Burada ayni bayragi kuruyoruz.
+function kendiHatlarimiz() {
+  const kume = new Set();
+  try {
+    for (const [, l] of B.lines) {
+      if (!l || l.id === LINE_ID) continue;          // kendi hattimiz haric
+      if (l.myNumber) kume.add(String(l.myNumber).split(':')[0].replace(/\D/g, ''));
+    }
+  } catch (_) {}
+  return kume;
+}
+
+function gonderenZenginlestir(message) {
+  const numara = String(message.senderJid || '').split('@')[0];
+  if (!numara) return;
+
+  // 1) Numara BIZIM baska bir hattimiz mi? (ofis Baileys, pazarlama hatlari)
+  if (kendiHatlarimiz().has(numara)) {
+    message.senderOfis = true;
+    return;
+  }
+  // 2) CRM rehberinde kayitli mi? (savedContacts / contactNames)
+  const rehber = (B.kisiAdiBul && B.kisiAdiBul(numara + '@s.whatsapp.net')) || '';
+  if (rehber) {
+    message.senderOfis = true;                       // kayitli isim = ekip/taninan kisi
+    message.sender = rehber;                         // KAYITLI isim once gelir (Baileys de boyle)
+    message.senderPush = rehber;
+    return;
+  }
+  // 3) Gonderenin adi panel kullanicisi mi? (ekip uyesi)
+  if (B.ekipUyesiMi && message.senderPush && B.ekipUyesiMi(message.senderPush)) {
+    message.senderOfis = true;
+  }
+}
+
 // ── DURUM (TIK) UYGULA ──────────────────────────────────────
 // Baileys'te bu is messages.update + message-receipt.update ile oluyordu.
 // Whapi'de 'statuses' zarfi geliyor. Panelin bekledigi yayin: msgStatus.
@@ -237,6 +277,7 @@ function grupBilgisiTazele(jid, zorla = false) {
   if (grupKuyruktakiler.has(jid)) return;
   const son = grupSonCekim.get(jid) || 0;
   if (!zorla && Date.now() - son < GRUP_TAZELIK) return;
+  if (zorla && Date.now() - son < 20000) return;   // adsiz bile olsa 20sn'de bir yeter
   grupKuyruktakiler.add(jid);
   if (zorla) grupKuyruk.unshift(jid); else grupKuyruk.push(jid);
   grupKuyruguIsle();
@@ -350,13 +391,23 @@ function zarfIsle(zarf) {
       if (t) is.message.thumb = t;
     }
 
+    // Gonderen kendi hattimiz/ekibimiz mi -> panelde rozet gorunsun
+    try { gonderenZenginlestir(is.message); } catch (_) {}
+
     // MEVCUT AKIS: addMessage -> broadcastHat + db.saveChat + mesajGuvence
     B.addMessage(is.jid, is.message, is.meta, LINE_ID);
     ozet.mesaj += 1;
 
     // Ag isleri mesaji BEKLETMEZ, hepsi addMessage'tan SONRA
     if (is.indir && is.indir.link) medyaArkaPlanda(is.jid, is.message.id, is.indir);
-    if (is.isGroup) grupBilgisiTazele(is.jid);
+    if (is.isGroup) {
+      // ADI HALA SAYI olan gruplar SIRANIN BASINA gecsin — kullanici
+      // "grup adlari gec geliyor" dedi; adsiz grup en oncelikli is.
+      const C = B.hatChats(LINE_ID);
+      const c = C && C.get ? C.get(is.jid) : null;
+      const adsiz = !c || !c.name || /^\d+$/.test(String(c.name));
+      grupBilgisiTazele(is.jid, adsiz);
+    }
   }
   return ozet;
 }

@@ -45,6 +45,7 @@ const KOY_2 = `  ${ISARET} Whapi ikinci hat: webhook ucunu kaydet ve hatti ayaga
       lines, createLine, db, MEDIA_DIR,
       iletimDenetleTamam,
       kisiAdiBul: (jid) => savedContacts.get(jid) || contactNames.get(jid) || '',
+      ekipUyesiMi,
       log: (...a) => console.log(...a),
     }, app, express);
     if (process.env.WHAPI_TOKEN) {
