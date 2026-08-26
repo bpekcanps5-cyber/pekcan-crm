@@ -33,7 +33,7 @@ function hedefCoz(jid) {
   return grupMu(jid) ? String(jid) : jidNumara(jid);
 }
 
-function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log, adKaydet = null, gonderimOnaylandi = null }) {
+function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log, adKaydet = null, gonderimOnaylandi = null, ofisYedek = null }) {
   if (!token) throw new Error('whapi-adapter: token yok');
   const U = String(taban).replace(/\/+$/, '');
   // Token'i her ciktidan sil — kaza ile loglanmasin.
@@ -297,6 +297,28 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
     if (tam && !(cevrilen.participants || []).length && cevrilen.uyeSayisi) {
       const r = await uyeleriCek(jid).catch(() => ({ uyeler: [] }));
       if (r.uyeler.length) cevrilen.participants = r.uyeler;
+    }
+
+    // ── OFIS (BAILEYS) YEDEGI ────────────────────────────────
+    // tam=true demek KULLANICI BIR DUGMEYE BASTI demektir
+    // (aciklama yenile / uyeleri cek / grup adi yenile — ucu de buraya gelir).
+    // Whapi aciklamayi cogu grupta HIC vermiyor. O anda ofis Baileys hattindan
+    // ANINDA cekiyoruz. Otomatik akista bu YAPILMAZ (orada onbellekli yol var).
+    if (tam && ofisYedek) {
+      const eksikAciklama = !cevrilen.desc;
+      const eksikUye = !(cevrilen.participants || []).length;
+      if (eksikAciklama || eksikUye) {
+        try {
+          const y = await ofisYedek(jid);
+          if (y) {
+            if (eksikAciklama && y.desc) cevrilen.desc = y.desc;
+            if (eksikUye && Array.isArray(y.participants) && y.participants.length) {
+              cevrilen.participants = y.participants;
+              cevrilen.uyeSayisi = y.participants.length;
+            }
+          }
+        } catch (_) { /* yedek yoksa Whapi'nin verdigi neyse o kalir */ }
+      }
     }
     // Uye adlarini CRM rehberine yaz — server.js'in kendi eslemesi
     // (savedContacts / contactNames) bunlari okuyup panelde gosterecek.

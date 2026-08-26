@@ -446,6 +446,57 @@ function ofisAciklamaIzni() {
   return true;
 }
 
+// ── DUGMEYE BASILDIGINDA: OFIS HATTINDAN ANINDA CEK ─────────
+// Panelin "aciklama yenile", "uyeleri cek" ve "grup adi yenile" dugmeleri
+// server.js'te SOCK.groupMetadata(jid, true) cagiriyor. Whapi aciklamayi
+// vermediginde ofis Baileys soketinden DOGRUDAN soruyoruz — beklemesiz.
+//
+// YUK KORUMASI: bu ofis panelindeki AYNI dugmenin yaptigi isin aynisi, yani
+// fazladan bir yuk degil. Yine de kotuye kullanimi onlemek icin:
+//   • ofis kopuksa HIC denenmez
+//   • iki sorgu arasi en az 1.2 saniye
+//   • dakikada en fazla 30 sorgu
+//   • 12 saniye cevap gelmezse vazgecilir (panel askida kalmaz)
+const ANINDA_ARALIK = 1200;
+const ANINDA_DAKIKA_TAVAN = 30;
+let _anindaSonSorgu = 0;
+let _anindaSayac = 0;
+let _anindaPencere = 0;
+
+async function ofistenAninda(jid) {
+  const ofis = B.lines.get('ofis');
+  if (!ofis || !ofis.connected || !ofis.sock) return null;
+
+  const simdi = Date.now();
+  if (simdi - _anindaPencere > 60000) { _anindaPencere = simdi; _anindaSayac = 0; }
+  if (_anindaSayac >= ANINDA_DAKIKA_TAVAN) { log('ofis yedegi dakika tavanina takildi, atlandi'); return null; }
+  const bekle = Math.max(0, ANINDA_ARALIK - (simdi - _anindaSonSorgu));
+  if (bekle) await new Promise((c) => setTimeout(c, bekle));
+  _anindaSonSorgu = Date.now();
+  _anindaSayac += 1;
+
+  try {
+    const meta = await Promise.race([
+      ofis.sock.groupMetadata(jid),
+      new Promise((_, r) => setTimeout(() => r(new Error('ofis yedegi zaman asimi')), 12000)),
+    ]);
+    if (!meta) return null;
+    const uyeler = (meta.participants || []).map((p) => {
+      const numara = String(p.id || '').split('@')[0].split(':')[0];
+      const ad = (B.kisiAdiBul && (B.kisiAdiBul(p.id) || B.kisiAdiBul(numara + '@s.whatsapp.net'))) || '';
+      return { id: numara + '@s.whatsapp.net', phoneNumber: numara, name: ad, admin: p.admin ? 'admin' : null };
+    });
+    if (!global._whapiOfisYedegi) {
+      global._whapiOfisYedegi = true;
+      log('aciklama/uye eksiginde OFIS (Baileys) hatti yedek olarak kullaniliyor');
+    }
+    return { desc: (meta.desc === undefined || meta.desc === null) ? '' : String(meta.desc), participants: uyeler };
+  } catch (e) {
+    log('ofis yedegi basarisiz: ' + e.message);
+    return null;
+  }
+}
+
 async function aciklamayiOfistenTamamla(jid, chat) {
   if (!B.getGroupMeta) return false;
   if (aciklamaSorulan.has(jid)) return false;
@@ -683,6 +734,7 @@ async function hattiBaslat() {
     // bunu doldurmazsak panelde isim yerine NUMARA gorunur.
     adKaydet: (jid, ad) => { try { if (B.kisiAdiKaydet) B.kisiAdiKaydet(jid, ad); } catch (_) {} },
     gonderimOnaylandi: (jid, id, adaylar) => { gonderimTekTik(jid, id, adaylar); },
+    ofisYedek: (jid) => ofistenAninda(jid),
   });
   line.sock = sock;              // KRITIK: panelin gonderme kodu bunu kullanir
 
