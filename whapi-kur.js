@@ -64,6 +64,26 @@ const KOY_2 = `  ${ISARET} Whapi ikinci hat: webhook ucunu kaydet ve hatti ayaga
 `;
 
 
+// ── DORDUNCU KANCA: ZAMAN DAMGASI EZILMESI ──────────────────
+// addMessage icinde:  message.ts = now;   <- VARIS zamani, KOSULSUZ.
+// Baileys'te mesaj aninda geldigi icin varis ≈ gercek zaman, sorun
+// gorunmuyordu. Whapi webhook'u gec gelince mesaj panelde YANLIS YERE
+// dusuyor: saati '13:44' yaziyor ama 13:48'in altinda duruyor.
+// Ayni sebeple panel-kullanicisi eslestirmesi de (3 sn'lik pencere)
+// tutmuyor, gonderen adi 'OPERASYON MERKEZI' kaliyordu.
+//
+// GUVENLIK: server.js'teki 13 addMessage cagri yerinin HICBIRI 'ts'
+// gecirmiyor (tek tek kontrol edildi). Yani Baileys yolunda message.ts
+// her zaman undefined -> now'a duser -> DAVRANIS AYNEN KORUNUR.
+// Sadece cevirici gercek damga koydugunda o damga KORUNUR.
+const ARA_4 = '  message.ts = now; // gercek zaman damgasi (siralama icin)\n';
+const KOY_4 = `  ${ISARET} Cevirici GERCEK WhatsApp zaman damgasi koyduysa EZME.
+     Baileys yolu ts gecirmedigi icin orada davranis DEGISMEZ. */
+  message.ts = (typeof message.ts === 'number' && message.ts > 0) ? message.ts : now;
+  /* ═══ WHAPI KANCASI SONU ═══ */
+`;
+
+
 // ── UCUNCU KANCA: addMessage EKSIK ARGUMAN HATASI ───────────
 // addMessage(jid, message, meta = {}, lineId = 'ofis')
 // Panelden gonderme yollarinda META ATLANMIS, hat kimligi onun yerine
@@ -118,13 +138,15 @@ function kur() {
 
   const n1 = kaynak.split(ARA_1).length - 1;
   const n2 = kaynak.split(ARA_2).length - 1;
+  const n4 = kaynak.split(ARA_4).length - 1;
   if (n1 !== 1) { console.log(`✗ startWA baslangici ${n1} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
   if (n2 !== 1) { console.log(`✗ acilis satiri ${n2} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
+  if (n4 !== 1) { console.log(`✗ 'message.ts = now' satiri ${n4} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
 
   if (!fs.existsSync(YEDEK)) fs.copyFileSync(HEDEF, YEDEK);
   console.log('✔ yedek: server.js.whapi-oncesi');
 
-  kaynak = kaynak.replace(ARA_1, KOY_1).replace(ARA_2, KOY_2);
+  kaynak = kaynak.replace(ARA_1, KOY_1).replace(ARA_2, KOY_2).replace(ARA_4, KOY_4);
   const u = ucuncuKanca(kaynak);
   kaynak = u.kaynak;
 
@@ -142,8 +164,9 @@ function kur() {
 
   const eski = fs.readFileSync(YEDEK, 'utf8').split('\n').length;
   const yeni = kaynak.split('\n').length;
-  console.log('✔ iki kanca eklendi (' + eski + ' -> ' + yeni + ' satir)');
+  console.log('✔ uc kanca eklendi (' + eski + ' -> ' + yeni + ' satir)');
   console.log('✔ addMessage eksik arguman hatasi duzeltildi (' + u.n + ' yerde)');
+  console.log('✔ zaman damgasi ezilmesi durduruldu (gercek ts korunuyor)');
   console.log('✔ soz dizimi saglam');
   console.log('');
   console.log('Sonraki adim:  pm2 restart pekcan --update-env');

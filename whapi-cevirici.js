@@ -222,6 +222,19 @@ function mesajCevir(m, benimNumaram) {
 
   const message = {
     id: m.id,
+    // ═══ GERCEK ZAMAN DAMGASI (2026-08) ═══════════════════════════════
+    // ESKI HATA: bu alan HIC gonderilmiyordu. server.js'in addMessage'i
+    //   message.ts = now;            <- VARIS zamani
+    // yaziyordu. Baileys'te mesaj aninda geldigi icin varis ≈ gercek zaman,
+    // sorun gorunmuyordu. Whapi webhook'u GEC gelince mesaj panelde YANLIS
+    // YERE dusuyordu: saati '13:44' yaziyor ama 13:48'in altinda duruyordu.
+    // Ayrica panel-kullanicisi eslestirmesi (ES_ZAMAN_PENCERESI=3000ms) de
+    // varis zamanina baktigi icin tutmuyor, gonderen 'OPERASYON MERKEZI'
+    // kaliyordu.
+    // DIKKAT: Whapi zaman damgasi SANIYE hassasiyetinde (±999 ms). Ayni
+    // saniyedeki iki mesaj icin panel tarafinda varis sayaci esitlik bozucu
+    // olarak kullanilir.
+    ts,
     // KEY: server.js'in SILME ve DUZENLEME kodu bu alani ariyor.
     //   silme    -> SOCK.sendMessage(jid, { delete: orig.key })
     //   duzenleme-> if (orig?.key) ... { text, edit: orig.key }

@@ -125,6 +125,27 @@ const KOY4 = `      const pj=prev.senderJid||'', mj=m.senderJid||'';
         /* WHAPI PANEL GORUNUMU SONU */
       } else {`;
 
+// ── BESINCI YAMA: gec gelen mesaj DOGRU YERE otursun ────────
+// handleMsgAppend mesaji her zaman SONA ekliyordu. Baileys'te mesaj
+// aninda geldigi icin gelis sirasi = gercek sira, sorun gorunmuyordu.
+// Whapi webhook'u gec gelince mesaj panelde YANLIS YERE dusuyor:
+// saati '13:44' yaziyor ama 13:48'in altinda duruyor.
+//
+// Sondan geriye tarayip ilk uygun konuma sokuyoruz. Mesajlar cogunlukla
+// sirali geldigi icin bu pratikte tek karsilastirma (O(1)).
+// ESITLIK BOZUCU: Whapi zaman damgasi SANIYE hassasiyetinde. Ayni ts'li
+// mesajlarda '>' kullandigimiz icin yeni gelen esitin ARKASINA gecer,
+// yani ayni saniyedeki mesajlar GELIS SIRASINI korur.
+const ARA5 = `    c.messages.push(m);
+    if(c.messages.length>400) c.messages=c.messages.slice(-400);`;
+const KOY5 = `    /* WHAPI PANEL GORUNUMU */
+    // SIRALI EKLEME: gec gelen mesaj kendi zamanina otursun (sona degil).
+    { const _ts=Number(m.ts||0);
+      let _i=c.messages.length;
+      while(_i>0 && Number(c.messages[_i-1].ts||0)>_ts) _i--;
+      if(_i===c.messages.length) c.messages.push(m); else c.messages.splice(_i,0,m); }
+    if(c.messages.length>400) c.messages=c.messages.slice(-400);`;
+
 function geriAl() {
   if (!fs.existsSync(YEDEK)) { console.log('✗ yedek yok'); process.exit(1); }
   fs.copyFileSync(YEDEK, HEDEF);
@@ -137,7 +158,7 @@ function kur() {
   let s = fs.readFileSync(HEDEF, 'utf8');
   if (s.includes(ISARET)) { console.log('• Zaten kurulu, hicbir sey yapilmadi.'); return; }
   const say = (t) => s.split(t).length - 1;
-  const kontrol = [['isim etiketi', ARA], ['balon sinifi', ARA2], ['stil blogu', ARA3], ['gruplama', ARA4]];
+  const kontrol = [['isim etiketi', ARA], ['balon sinifi', ARA2], ['stil blogu', ARA3], ['gruplama', ARA4], ['sirali ekleme', ARA5]];
   for (const [ad, t] of kontrol) {
     const n = say(t);
     if (ad === 'stil blogu' ? n < 1 : n !== 1) {
@@ -146,13 +167,14 @@ function kur() {
     }
   }
   if (!fs.existsSync(YEDEK)) fs.copyFileSync(HEDEF, YEDEK);
-  s = s.replace(ARA, KOY).replace(ARA2, KOY2).replace(ARA4, KOY4);
+  s = s.replace(ARA, KOY).replace(ARA2, KOY2).replace(ARA4, KOY4).replace(ARA5, KOY5);
   // stil: SON </style> etiketine ekle
   const sonStil = s.lastIndexOf(ARA3);
   s = s.slice(0, sonStil) + KOY3 + s.slice(sonStil + ARA3.length);
   fs.writeFileSync(HEDEF, s, 'utf8');
   console.log('✔ yedek: index.html.whapi-oncesi');
   console.log('✔ isim etiketi + balon rengi + gruplama ayrimi + stil eklendi');
+  console.log('✔ sirali ekleme eklendi (gec gelen mesaj dogru yere oturuyor)');
   console.log('');
   console.log('Sonraki: pm2 restart pekcan  ->  panelde CTRL+F5');
   console.log('Geri alma: node panel-kur.js --geri');

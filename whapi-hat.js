@@ -67,6 +67,21 @@ function gorulenYukle() {
   } catch (e) { log('gorulen listesi okunamadi: ' + e.message); }
 }
 
+// YAZILAMAYAN MESAJ GUNLUGU. Whapi 24 denemeden sonra pes ederse mesaj
+// yine de burada durur; elle kurtarilabilir. Token/gizli dize YAZILMAZ.
+const KARANTINA_DOSYA = path.join(__dirname, 'guvence', 'whapi-yazilamayan.jsonl');
+function karantinayaYaz(is, hata) {
+  try {
+    fs.appendFileSync(KARANTINA_DOSYA, JSON.stringify({
+      zaman: new Date().toISOString(),
+      jid: is.jid,
+      id: is.message && is.message.id,
+      hata: String((hata && hata.message) || hata).slice(0, 300),
+      mesaj: is.message,
+    }) + '\n', 'utf8');
+  } catch (_) {}
+}
+
 function gorulenEkle(id) {
   gorulen.add(id);
   try {
@@ -636,6 +651,45 @@ async function grupBilgisiCek(jid) {
   }
 }
 
+// ── TESLIM GECIKMESI OLCUMU ──────────────────────────────────
+// "Mesajlar gec geliyor" sikayetini TAHMIN etmeden cevaplamak icin.
+// Olculen: WhatsApp mesaj zaman damgasi -> webhook'un bize ulastigi an.
+// Whapi damgasi SANIYE hassasiyetinde, ±1 sn gurultu normaldir.
+//
+// TIPE GORE AYIRIYOR. Suphe: Whapi'de "otomatik indirme" acik oldugu icin
+// medyayi once kendi deposuna yukluyor, webhook'u ONDAN SONRA yolluyor.
+// Oyleyse metin hizli, medya yavas cikar ve rakam bunu gosterir.
+const gecikme = new Map();       // kind -> {adet, toplam, enKotu, esikAsan}
+const GECIKME_ESIK = 10000;      // 10 sn ustu "gec" sayilir
+let gecikmeSonRapor = Date.now();
+const GECIKME_RAPOR_ARALIK = 5 * 60 * 1000;
+
+function gecikmeOlc(ts, kind) {
+  if (!ts) return;
+  const fark = Date.now() - Number(ts);
+  if (fark < -5000 || fark > 6 * 60 * 60 * 1000) return;   // sacma deger, sayma
+  const k = kind || 'text';
+  if (!gecikme.has(k)) gecikme.set(k, { adet: 0, toplam: 0, enKotu: 0, esikAsan: 0 });
+  const g = gecikme.get(k);
+  g.adet += 1; g.toplam += fark;
+  if (fark > g.enKotu) g.enKotu = fark;
+  if (fark > GECIKME_ESIK) g.esikAsan += 1;
+
+  const simdi = Date.now();
+  let toplamAdet = 0;
+  for (const v of gecikme.values()) toplamAdet += v.adet;
+  if (simdi - gecikmeSonRapor >= GECIKME_RAPOR_ARALIK && toplamAdet >= 3) {
+    gecikmeSonRapor = simdi;
+    const satirlar = [];
+    for (const [tip, v] of gecikme) {
+      satirlar.push(tip + ': ' + v.adet + ' adet, ort ' + Math.round(v.toplam / v.adet)
+        + ' ms, en kotu ' + v.enKotu + ' ms, ' + (GECIKME_ESIK / 1000) + 'sn+ ' + v.esikAsan);
+    }
+    log('TESLIM GECIKMESI ─ ' + satirlar.join(' | '));
+    gecikme.clear();
+  }
+}
+
 // ── ZARFI ISLE (webhook ucunun cagirdigi ana fonksiyon) ──────
 // SENKRON kisim: addMessage cagrilir -> mesaj-guvence JSONL'e YAZAR.
 // Bu bittiginde mesaj kalicidir, ancak o zaman 200 doneriz.
@@ -653,11 +707,28 @@ function zarfIsle(zarf) {
     log('UYARI: kanal numarasi henuz bilinmiyor — kendi mesajlarin GELEN gorunebilir. /health sorgusu bekleniyor.');
   }
   const isler = zarfCevir(zarf, benim);
-  const ozet = { mesaj: 0, mukerrer: 0, tepki: 0, sil: 0, duzenle: 0, durum: 0, eski: 0, atla: 0, hedefYok: 0 };
+  const ozet = { mesaj: 0, mukerrer: 0, tepki: 0, sil: 0, duzenle: 0, durum: 0, eski: 0, atla: 0, hedefYok: 0, hata: 0, sebepler: {} };
+
+  // TANINMAYAN ZARF: zarfCevir SADECE 'messages' ve 'statuses' okuyor.
+  // Whapi panelinde 'chats', 'contacts', 'groups', 'users' de acik olabilir.
+  // Bunlar sessizce cope gidiyordu — en azindan GORELIM ki mesaj tasiyip
+  // tasimadigini anlayalim.
+  if (!isler.length) {
+    const anahtarlar = Object.keys(zarf || {}).filter((k) => k !== 'event' && k !== 'channel_id');
+    const olay = (zarf && zarf.event) ? (zarf.event.type + '/' + zarf.event.event) : 'olaysiz';
+    log('ISLENMEYEN ZARF — olay: ' + olay + ' | alanlar: ' + (anahtarlar.join(',') || 'yok'));
+  }
 
   for (const is of isler) {
     if (is.tur === 'atla') {
-      if (String(is.sebep || '').startsWith('eski mesaj')) ozet.eski += 1; else ozet.atla += 1;
+      if (String(is.sebep || '').startsWith('eski mesaj')) ozet.eski += 1;
+      else {
+        // ESKI KOR NOKTA: 'atla' hicbir yerde loglanmiyordu, log kosulunda
+        // bile yoktu. Cevirici bir mesaji sessizce elerse ortada TEK SATIR
+        // iz kalmiyordu. Artik sebebini sayiyoruz.
+        ozet.atla += 1;
+        ozet.sebepler[is.sebep || 'bilinmiyor'] = (ozet.sebepler[is.sebep || 'bilinmiyor'] || 0) + 1;
+      }
       continue;
     }
     if (is.tur === 'durum')   { if (durumUygula(is))       ozet.durum += 1;   else ozet.hedefYok += 1; continue; }
@@ -668,36 +739,74 @@ function zarfIsle(zarf) {
 
     // ── NORMAL MESAJ ──
     if (gorulen.has(is.message.id)) { ozet.mukerrer += 1; continue; }
-    gorulenEkle(is.message.id);
 
-    // Onizleme varsa diske yaz -> foto aninda gorunur
-    if (is.onizleme) {
-      const t = onizlemeYaz(is.onizleme);
-      if (t) is.message.thumb = t;
+    // ═══ MUKERRER ISARETI YAZMADAN SONRA (2026-08) ═══════════════════
+    // ESKI HATA: gorulenEkle(id) addMessage'tan ONCE cagriliyordu.
+    // addMessage patlarsa mesaj "gordum" damgasini yemis ama panele ve
+    // DB'ye HIC yazilmamis oluyordu. Webhook 500 donunce Whapi ayni zarfi
+    // tekrar yolluyor, mesaj bu kez MUKERRER sayilip atlaniyordu.
+    // Sonuc: KALICI MESAJ KAYBI. (test-kayip.js bunu ureten testtir.)
+    //
+    // KURAL: bir mesaj panele YAZILDIYSA bir daha yazilmaz; YAZILMADIYSA
+    // mukerrer sayilmaz, Whapi tekrar denedinde islenir.
+    //
+    // Ayrica dongu mesaj basina korumali: bir mesaj patlarsa zarftaki
+    // DIGERLERI islenmeye devam eder (eskiden hepsi kesiliyordu).
+    try {
+      // Onizleme varsa diske yaz -> foto aninda gorunur
+      if (is.onizleme) {
+        const t = onizlemeYaz(is.onizleme);
+        if (t) is.message.thumb = t;
+      }
+
+      // Gonderen kendi hattimiz/ekibimiz mi -> panelde rozet gorunsun
+      try { gonderenZenginlestir(is.message, is.jid); } catch (_) {}
+
+      // NOT: "ayni metin = yansima" gibi bir tahmin YAPMIYORUZ.
+      // Iki kisi ayni anda cizgi cekerse veya ayni mesaj bilerek iki kez
+      // atilirsa ikincisi YUTULURDU. Mesaj kaybi kabul edilemez.
+      // Yansima elemesi SADECE kimlik eslesmesiyle yapilir (addMessage + gorulen).
+
+      // MEVCUT AKIS: addMessage -> broadcastHat + db.saveChat + mesajGuvence
+      B.addMessage(is.jid, is.message, is.meta, LINE_ID);
+
+      // ANCAK BURADA "gorduk" diyebiliriz — mesaj artik panelde ve kuyrukta.
+      gorulenEkle(is.message.id);
+      ozet.mesaj += 1;
+      gecikmeOlc(is.ts, is.message.kind);
+    } catch (e) {
+      // Mesaj YAZILAMADI: gorulen'e EKLENMEDI, Whapi tekrar deneyince islenecek.
+      // Whapi 24 denemeden sonra pes ederse diye ham kaydi karantinaya aliyoruz.
+      ozet.hata += 1;
+      karantinayaYaz(is, e);
+      log('MESAJ YAZILAMADI (mukerrer isaretlenmedi, Whapi tekrar deneyecek): '
+        + String(is.message.id).slice(0, 16) + ' — ' + e.message);
+      continue;
     }
 
-    // Gonderen kendi hattimiz/ekibimiz mi -> panelde rozet gorunsun
-    try { gonderenZenginlestir(is.message, is.jid); } catch (_) {}
-
-    // NOT: "ayni metin = yansima" gibi bir tahmin YAPMIYORUZ.
-    // Iki kisi ayni anda cizgi cekerse veya ayni mesaj bilerek iki kez
-    // atilirsa ikincisi YUTULURDU. Mesaj kaybi kabul edilemez.
-    // Yansima elemesi SADECE kimlik eslesmesiyle yapilir (addMessage + gorulen).
-
-    // MEVCUT AKIS: addMessage -> broadcastHat + db.saveChat + mesajGuvence
-    B.addMessage(is.jid, is.message, is.meta, LINE_ID);
-    ozet.mesaj += 1;
-
-    // Ag isleri mesaji BEKLETMEZ, hepsi addMessage'tan SONRA
-    if (is.indir && is.indir.link) medyaArkaPlanda(is.jid, is.message.id, is.indir);
-    if (is.isGroup) {
-      // ADI HALA SAYI olan gruplar SIRANIN BASINA gecsin — kullanici
-      // "grup adlari gec geliyor" dedi; adsiz grup en oncelikli is.
-      const C = B.hatChats(LINE_ID);
-      const c = C && C.get ? C.get(is.jid) : null;
-      const adsiz = !c || !c.name || /^\d+$/.test(String(c.name));
-      grupBilgisiTazele(is.jid, adsiz);
+    // Ag isleri mesaji BEKLETMEZ, hepsi addMessage'tan SONRA.
+    // Bunlar patlarsa mesaj ZATEN yazildi -> kayip yok, zarfi kesme.
+    try {
+      if (is.indir && is.indir.link) medyaArkaPlanda(is.jid, is.message.id, is.indir);
+      if (is.isGroup) {
+        // ADI HALA SAYI olan gruplar SIRANIN BASINA gecsin — kullanici
+        // "grup adlari gec geliyor" dedi; adsiz grup en oncelikli is.
+        const C = B.hatChats(LINE_ID);
+        const c = C && C.get ? C.get(is.jid) : null;
+        const adsiz = !c || !c.name || /^\d+$/.test(String(c.name));
+        grupBilgisiTazele(is.jid, adsiz);
+      }
+    } catch (e) {
+      log('mesaj sonrasi arka plan isi basarisiz (mesaj GUVENDE): ' + e.message);
     }
+  }
+
+  // Yazilamayan mesaj varsa 500 don ki Whapi zarfi TEKRAR yollasin.
+  // Basarili olanlar gorulen'de oldugu icin ikinci kez panele DUSMEZ.
+  if (ozet.hata) {
+    const h = new Error(ozet.hata + ' mesaj yazilamadi — Whapi tekrar denesin');
+    h._ozet = ozet;
+    throw h;
   }
   return ozet;
 }
@@ -714,7 +823,7 @@ function kancaKur(app, express) {
       const ozet = zarfIsle(req.body || {});
       // 200 = "kalici olarak aldik". Whapi bir daha yollamaz.
       res.json({ ok: true });
-      if (ozet.mesaj || ozet.tepki || ozet.sil || ozet.duzenle || ozet.durum || ozet.mukerrer || ozet.eski) {
+      if (ozet.mesaj || ozet.tepki || ozet.sil || ozet.duzenle || ozet.durum || ozet.mukerrer || ozet.eski || ozet.atla) {
         const parcalar = [];
         if (ozet.mesaj) parcalar.push(ozet.mesaj + ' mesaj');
         if (ozet.tepki) parcalar.push(ozet.tepki + ' tepki');
@@ -724,11 +833,24 @@ function kancaKur(app, express) {
         if (ozet.eski) parcalar.push(ozet.eski + ' ESKI mesaj elendi');
         if (ozet.mukerrer) parcalar.push(ozet.mukerrer + ' MUKERRER engellendi');
         if (ozet.hedefYok) parcalar.push(ozet.hedefYok + ' hedef bulunamadi');
+        // ELENEN: sebebiyle birlikte. Eskiden bu satir HIC yazilmiyordu.
+        if (ozet.atla) {
+          const s = Object.entries(ozet.sebepler).map(([k, v]) => k + ' x' + v).join(', ');
+          parcalar.push(ozet.atla + ' ELENDI (' + s + ')');
+        }
         log(parcalar.join(' | '));
       }
     } catch (e) {
       // 500 = "alamadik". Whapi artan araliklarla 24 kez tekrar dener.
-      log('WEBHOOK HATASI (Whapi tekrar deneyecek): ' + e.message);
+      // Kismi basari: bir kismi YAZILDI (gorulen'de, ikinci kez dusmez),
+      // yazilamayanlar tekrar denenecek.
+      const o = e._ozet;
+      if (o) {
+        log('KISMI BASARI — yazilan: ' + o.mesaj + ' | YAZILAMAYAN: ' + o.hata
+          + ' (Whapi tekrar deneyecek, yazilanlar ikinci kez DUSMEZ)');
+      } else {
+        log('WEBHOOK HATASI (Whapi tekrar deneyecek): ' + e.message);
+      }
       try { res.status(500).json({ ok: false }); } catch (_) {}
     }
   });
