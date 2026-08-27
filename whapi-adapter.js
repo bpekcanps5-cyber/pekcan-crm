@@ -185,12 +185,23 @@ function olustur({ token, taban = 'https://gate.whapi.cloud', log = console.log,
     }
 
     if (secim.tur === 'duzenle') {
-      const hedefId = icerik.edit && icerik.edit.id;
-      if (!hedefId) throw new Error('duzenlenecek mesaj kimligi yok');
-      await istek('/messages/' + encodeURIComponent(hedefId), {
-        yontem: 'PUT', govde: { body: icerik.text || '' },
-      });
-      return baileysCevabi(hedefId, jid);
+      // ═══ OLCULDU (2026-08): WHAPI MESAJ DUZENLEMEYI DESTEKLEMIYOR ═══
+      // Denenen uclar ve gercek sonuclari (mesaj SONRADAN geri okunarak dogrulandi):
+      //   PUT   /messages/{id}       {body}          -> 200 {"success":true} ama METIN DEGISMEDI
+      //   PUT   /messages/{id}       {text:{body}}   -> 200 {"success":true} ama METIN DEGISMEDI
+      //   PUT   /messages/{id}       {edit}          -> 200 {"success":true} ama METIN DEGISMEDI
+      //   POST  /messages/{id}       {body}          -> 400 wrong request parameters
+      //   PUT   /messages/text/{id}  {body}          -> 404 not found
+      //   PATCH /messages/{id}                       -> 405 method not allowed
+      //
+      // 'success:true' donen uc BASKA bir is yapiyor; duzenleme YAPMIYOR.
+      // Basarili saymak SAHTE BASARI olur: panel metni degistirir, WhatsApp'ta
+      // eski metin kalir, kullanici duzelttigini saniyordu. Bu yuzden ACIKCA
+      // hata firlatiyoruz — panel "duzenlenemedi" der ve metni DEGISTIRMEZ.
+      //
+      // Whapi ileride destek eklerse: asagidaki throw'u kaldirip dogru ucu yaz,
+      // ve mutlaka geri okuyarak dogrula (istek 200 donuyor diye guvenme).
+      throw new Error('Whapi hatti mesaj duzenlemeyi desteklemiyor (Baileys hattinda calisir)');
     }
 
     if (secim.tur === 'ilet') {

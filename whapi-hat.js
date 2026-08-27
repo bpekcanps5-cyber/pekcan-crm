@@ -43,6 +43,10 @@ const MEDYA_TAVAN = 80 * 1024 * 1024;   // 80 MB'tan buyuk dosya indirilmez
 let B = null;          // server.js'ten gelen baglam
 let sock = null;       // whapi adaptoru (line.sock'a takilacak)
 let sagliTimer = null;
+let telafiTimer = null;
+// Telafi ne siklikta calissin. 5 dakika: kacan mesaj en gec 5 dk sonra gelir.
+// Cok kisaltma — her turda TELAFI_SOHBET_TAVAN kadar API istegi gidiyor.
+const TELAFI_ARALIK = 5 * 60 * 1000;
 let sonSaglik = { bagli: false, durumMetni: 'baslamadi', numara: null };
 
 function log(...a) { (B && B.log ? B.log : console.log)('[whapi]', ...a); }
@@ -82,20 +86,71 @@ function karantinayaYaz(is, hata) {
   } catch (_) {}
 }
 
+// ═══ YAZMA TAMPONU (2026-08) ══════════════════════════════════
+// ESKI HALI: her mesajda fs.appendFileSync — webhook isleyicisinin TAM
+// ortasinda, senkron. Art arda mesaj gelince disk yazmalari siraya girip
+// olay dongusunu kilitliyordu. Yavas kalirsak Whapi zaman asimina duser,
+// kalici webhook 24 denemeden sonra pes eder, mesaj GERCEKTEN kaybolur.
+// Saniyede bir cekim yapacaksak bu yol kesinlikle senkron OLMAMALI.
+//
+// YENI: kimlik ANINDA bellege girer (mukerrer korumasi hemen aktif),
+// diske yazma tamponlanip asenkron yapilir.
+// COKME RISKI: tampon bosalmadan surec olurse birkac kimlik diske
+// yazilmamis olur. Bu MESAJ KAYBI DEGIL — en fazla ayni mesaj ikinci kez
+// islenmeye calisilir, ve UC katman bunu engeller:
+//   1) addMessage'in kendi kimlik kontrolu
+//   2) DB birincil anahtari (line_id, chat_jid, id)
+//   3) panelin handleMsgAppend kimlik kontrolu
+const gorulenTampon = [];
+let gorulenBosaltTimer = null;
+const GORULEN_BOSALT_MS = 2000;
+const GORULEN_TAMPON_TAVAN = 50;
+
+function gorulenBosalt() {
+  if (gorulenBosaltTimer) { clearTimeout(gorulenBosaltTimer); gorulenBosaltTimer = null; }
+  if (!gorulenTampon.length) return;
+  const yazilacak = gorulenTampon.splice(0, gorulenTampon.length).join('\n') + '\n';
+  fs.appendFile(GORULEN_DOSYA, yazilacak, 'utf8', (e) => {
+    if (e) log('gorulen listesi diske yazilamadi: ' + e.message);
+  });
+}
+
+// Surec kapanirken (pm2 restart / SIGTERM) tamponu KAYBETME.
+// Burasi senkron yazmanin dogru oldugu TEK yer: olay dongusu zaten bitiyor.
+let cikisKancasiKuruldu = false;
+function cikisKancasiKur() {
+  if (cikisKancasiKuruldu) return;
+  cikisKancasiKuruldu = true;
+  const bosaltSenkron = () => {
+    if (!gorulenTampon.length) return;
+    try {
+      fs.appendFileSync(GORULEN_DOSYA, gorulenTampon.splice(0, gorulenTampon.length).join('\n') + '\n', 'utf8');
+    } catch (_) {}
+  };
+  process.on('exit', bosaltSenkron);
+  for (const s of ['SIGINT', 'SIGTERM']) {
+    process.on(s, () => { bosaltSenkron(); });
+  }
+}
+
 function gorulenEkle(id) {
-  gorulen.add(id);
-  try {
-    fs.appendFileSync(GORULEN_DOSYA, id + '\n', 'utf8');
-    gorulenYazimSayaci += 1;
-    // Dosya sismesin: her 2000 yazimda sadece bellekte kalanlari geri yaz
-    if (gorulenYazimSayaci >= 2000) {
-      gorulenYazimSayaci = 0;
-      const kalan = Array.from(gorulen).slice(-GORULEN_TAVAN);
-      gorulen.clear();
-      for (const k of kalan) gorulen.add(k);
-      fs.writeFileSync(GORULEN_DOSYA, kalan.join('\n') + '\n', 'utf8');
-    }
-  } catch (_) {}
+  gorulen.add(id);                 // mukerrer korumasi ANINDA aktif
+  gorulenTampon.push(id);
+  gorulenYazimSayaci += 1;
+  if (gorulenTampon.length >= GORULEN_TAMPON_TAVAN) gorulenBosalt();
+  else if (!gorulenBosaltTimer) {
+    gorulenBosaltTimer = setTimeout(gorulenBosalt, GORULEN_BOSALT_MS);
+    if (gorulenBosaltTimer.unref) gorulenBosaltTimer.unref();
+  }
+  // Dosya sismesin: her 2000 yazimda sadece bellekte kalanlari geri yaz
+  if (gorulenYazimSayaci >= 2000) {
+    gorulenYazimSayaci = 0;
+    const kalan = Array.from(gorulen).slice(-GORULEN_TAVAN);
+    gorulen.clear();
+    for (const k of kalan) gorulen.add(k);
+    gorulenTampon.length = 0;
+    fs.writeFile(GORULEN_DOSYA, kalan.join('\n') + '\n', 'utf8', () => {});
+  }
   if (gorulen.size > GORULEN_TAVAN * 2) {
     const kalan = Array.from(gorulen).slice(-GORULEN_TAVAN);
     gorulen.clear();
@@ -693,7 +748,7 @@ function gecikmeOlc(ts, kind) {
 // ── ZARFI ISLE (webhook ucunun cagirdigi ana fonksiyon) ──────
 // SENKRON kisim: addMessage cagrilir -> mesaj-guvence JSONL'e YAZAR.
 // Bu bittiginde mesaj kalicidir, ancak o zaman 200 doneriz.
-function zarfIsle(zarf) {
+function zarfIsle(zarf, telafiMi = false) {
   // KRITIK KORUMA: hat henuz kurulmadiysa isleme! server.js'in hatChats()
   // fonksiyonu hat bulunamazsa GLOBAL (ofis) sohbetlerine duser -> whapi
   // mesajlari ofis paneline karisirdi. 500 donup Whapi'nin tekrar
@@ -733,9 +788,9 @@ function zarfIsle(zarf) {
     }
     if (is.tur === 'durum')   { if (durumUygula(is))       ozet.durum += 1;   else ozet.hedefYok += 1; continue; }
 
-    if (is.tur === 'tepki')   { if (tepkiUygula(is))      ozet.tepki += 1;   else ozet.hedefYok += 1; continue; }
-    if (is.tur === 'sil')     { if (silmeUygula(is))      ozet.sil += 1;     else ozet.hedefYok += 1; continue; }
-    if (is.tur === 'duzenle') { if (duzenlemeUygula(is))  ozet.duzenle += 1; else ozet.hedefYok += 1; continue; }
+    if (is.tur === 'tepki')   { if (tepkiUygula(is))      ozet.tepki += 1;   else { ozet.hedefYok += 1; bosluktanTetikle(is.jid); } continue; }
+    if (is.tur === 'sil')     { if (silmeUygula(is))      ozet.sil += 1;     else { ozet.hedefYok += 1; bosluktanTetikle(is.jid); } continue; }
+    if (is.tur === 'duzenle') { if (duzenlemeUygula(is))  ozet.duzenle += 1; else { ozet.hedefYok += 1; bosluktanTetikle(is.jid); } continue; }
 
     // ── NORMAL MESAJ ──
     if (gorulen.has(is.message.id)) { ozet.mukerrer += 1; continue; }
@@ -773,7 +828,8 @@ function zarfIsle(zarf) {
       // ANCAK BURADA "gorduk" diyebiliriz — mesaj artik panelde ve kuyrukta.
       gorulenEkle(is.message.id);
       ozet.mesaj += 1;
-      gecikmeOlc(is.ts, is.message.kind);
+      // TELAFI ile gelen mesaj ESKI olabilir; gecikme istatistigini kirletmesin.
+      if (!telafiMi) gecikmeOlc(is.ts, is.message.kind);
     } catch (e) {
       // Mesaj YAZILAMADI: gorulen'e EKLENMEDI, Whapi tekrar deneyince islenecek.
       // Whapi 24 denemeden sonra pes ederse diye ham kaydi karantinaya aliyoruz.
@@ -803,12 +859,224 @@ function zarfIsle(zarf) {
 
   // Yazilamayan mesaj varsa 500 don ki Whapi zarfi TEKRAR yollasin.
   // Basarili olanlar gorulen'de oldugu icin ikinci kez panele DUSMEZ.
-  if (ozet.hata) {
+  // TELAFI yolunda firlatma: orada 'tekrar yollayacak' bir karsi taraf yok,
+  // bir sonraki telafi turunda zaten yeniden denenir.
+  if (ozet.hata && !telafiMi) {
     const h = new Error(ozet.hata + ' mesaj yazilamadi — Whapi tekrar denesin');
     h._ozet = ozet;
     throw h;
   }
   return ozet;
+}
+
+// ── KACAN MESAJ TELAFISI ─────────────────────────────────────
+// Baileys'te bunun karsiligi kacanMesajTelafi(sock): baglanti kurulunca
+// aktif gruplarin son mesajlarini PROAKTIF ister, kacanlar boylece gelir.
+// Whapi hattinda bu HIC YOKTU: webhook gelmezse mesaj sonsuza kadar kayipti.
+// "Baileys neden daha eksiksiz" sorusunun cevabi buydu.
+//
+// GUVENLIK: mukerrer olusturmaz. Iki katman var —
+//   1) gorulen (kimlik kumesi, diske yazili, restart'a dayanikli)
+//   2) addMessage'in kendi kimlik kontrolu (ayni id ikinci kez EKLENMEZ)
+// Whapi kimlikleri webhook ile /messages/list arasinda AYNI oldugu icin
+// eslesme tutar. Tutmazsa mesaj iki kez GORUNUR; asagidaki olcum bunu
+// yakalar (kurtarilan sayisi surekli yuksek kalirsa kimlikler tutmuyordur).
+// ── BOSLUK TELAFISI ICIN ORTAK AYARLAR ──────────────────────
+// Tek sohbeti aninda kontrol ederken kac mesaj geriye bakilir.
+const BOSLUK_ADET = Math.max(3, Number(process.env.WHAPI_BOSLUK_ADET) || 8);
+
+function hizSiniriMi(e) {
+  return /rate-overlimit|429|too many/i.test(String((e && e.message) || e));
+}
+
+// Tek sohbeti hemen kontrol et (bosluk sinyali ve sohbet kipi icin)
+async function birSohbetiTelafiEt(jid, adet) {
+  const ham = await sock._mesajlariCek(jid, adet);
+  if (!Array.isArray(ham) || !ham.length) return 0;
+  const o = zarfIsle({ messages: ham }, true);
+  return o.mesaj;
+}
+
+// NOT: eski 'hizli tur' KALDIRILDI. Isini SUREKLI CEKIM devraldi
+// (o her turda zaten aktif sohbetlere bakiyor). Iki mekanizma birden
+// calisirsa gereksiz istek gider ve 429 riski artar.
+
+// ── BOSLUK SINYALI ───────────────────────────────────────────
+// Birisi bizde OLMAYAN bir mesaja tepki verdiyse / onu sildiyse, o mesaji
+// KACIRMISIZ demektir. Bu bedava bir kanit — eskiden 'hedef bulunamadi'
+// diye sayilip atiliyordu. Artik o sohbeti ANINDA telafi ediyoruz.
+const bosluk = new Map();          // jid -> son tetikleme
+const BOSLUK_BEKLEME = 5000;       // ayni sohbet icin 5 sn'de bir yeter
+
+function bosluktanTetikle(jid) {
+  if (!jid || !sock || !sonSaglik.bagli) return;
+  const son = bosluk.get(jid) || 0;
+  if (Date.now() - son < BOSLUK_BEKLEME) return;
+  bosluk.set(jid, Date.now());
+  if (bosluk.size > 500) bosluk.clear();
+  setTimeout(() => {
+    birSohbetiTelafiEt(jid, BOSLUK_ADET)
+      .then((n) => { if (n) log('BOSLUK TELAFISI: bizde olmayan mesaja tepki/silme geldi -> '
+        + n + ' kacan mesaj kurtarildi'); })
+      .catch(() => {});
+  }, 300);
+}
+
+// ── SUREKLI CEKIM: webhook'a GUVENME, sen iste ───────────────
+// Kullanici: "eksiksiz Whapi'den her mesaji iste, ne olursa olsun."
+// Webhook PUSH'tur; gelmezse haberimiz olmaz. Cekim PULL'dur; biz sorariz,
+// cevap gelmezse tekrar sorariz. Kayip icin tek gercek panzehir budur.
+//
+// IKI KIP var, kod HANGISININ calistigini kendisi bulur:
+//   GENEL : tek istekte TUM sohbetlerin son mesajlari  -> her tur her sey
+//   SOHBET: sohbet basina istek, sirayla doner          -> genel uc yoksa
+// Whapi'nin genel ucu destekleyip desteklemedigini bilmiyorum; ilk turda
+// deneyip 404/405 alirsa sohbet kipine duser ve bunu LOGLAR.
+const CEKIM_SN   = Math.max(1, Number(process.env.WHAPI_CEKIM_SN) || 2);
+const CEKIM_ADET = Math.max(10, Number(process.env.WHAPI_CEKIM_ADET) || 50);
+const CEKIM_SOHBET_TUR = Math.max(1, Number(process.env.WHAPI_CEKIM_SOHBET) || 2);
+const CEKIM_CARPAN_TAVAN = 15;
+
+let cekimTimer = null;
+let cekimKip = 'bilinmiyor';   // 'genel' | 'sohbet'
+let cekimCarpan = 1;
+let cekimBasarili = 0;
+let cekimSirasi = 0;
+const cekimSayac = { tur: 0, kurtarilan: 0, hata: 0 };
+let cekimSonRapor = Date.now();
+
+async function genelCekimDene() {
+  // Whapi'de sohbet kimligi VERMEDEN son mesajlar
+  const c = await sock._istek('/messages/list?count=' + CEKIM_ADET, { zamanAsimi: 30000 });
+  return (c && c.messages) || [];
+}
+
+async function surekliCekim() {
+  if (!sock || !sonSaglik.bagli || !B.lines.get(LINE_ID)) return;
+  if (telafiCalisiyor) return;
+  telafiCalisiyor = true;
+  cekimSayac.tur += 1;
+  try {
+    let kurtarilan = 0;
+
+    if (cekimKip !== 'sohbet') {
+      try {
+        const ham = await genelCekimDene();
+        if (cekimKip === 'bilinmiyor') {
+          cekimKip = 'genel';
+          log('SUREKLI CEKIM kipi: GENEL — tek istekte tum sohbetler (' + CEKIM_SN + ' sn)');
+        }
+        if (ham.length) kurtarilan += zarfIsle({ messages: ham }, true).mesaj;
+      } catch (e) {
+        if (hizSiniriMi(e)) throw e;
+        // Genel uc yok -> sohbet kipine dus. Bir kez soyle, bir daha deneme.
+        cekimKip = 'sohbet';
+        log('SUREKLI CEKIM kipi: SOHBET — genel uc yok (' + e.message.slice(0, 60)
+          + '). Tur basina ' + CEKIM_SOHBET_TUR + ' sohbet dolasilacak.');
+      }
+    }
+
+    if (cekimKip === 'sohbet') {
+      const C = B.hatChats(LINE_ID);
+      const aktif = Array.from((C && C.values) ? C.values() : [])
+        .filter((c) => c && c.jid && c.lastTs && (Date.now() - Number(c.lastTs) < TELAFI_YAS))
+        .sort((a, b) => (Number(b.lastTs) || 0) - (Number(a.lastTs) || 0));
+      if (!aktif.length) return;
+      for (let i = 0; i < CEKIM_SOHBET_TUR; i++) {
+        const c = aktif[cekimSirasi % aktif.length];
+        cekimSirasi += 1;
+        try { kurtarilan += await birSohbetiTelafiEt(c.jid, CEKIM_ADET); }
+        catch (e) { if (hizSiniriMi(e)) throw e; cekimSayac.hata += 1; }
+      }
+    }
+
+    cekimSayac.kurtarilan += kurtarilan;
+    if (kurtarilan) log('SUREKLI CEKIM: ' + kurtarilan + ' mesaj webhook ile GELMEMISTI, cekimle geldi');
+
+    cekimBasarili += 1;
+    if (cekimCarpan > 1 && cekimBasarili >= 20) {
+      cekimCarpan = Math.max(1, cekimCarpan - 1);
+      cekimBasarili = 0;
+      log('hiz siniri gecti — cekim araligi ' + (CEKIM_SN * cekimCarpan) + ' sn');
+    }
+  } catch (e) {
+    if (hizSiniriMi(e)) {
+      cekimCarpan = Math.min(cekimCarpan * 2, CEKIM_CARPAN_TAVAN);
+      cekimBasarili = 0;
+      log('HIZ SINIRI — cekim araligi ' + (CEKIM_SN * cekimCarpan)
+        + ' sn ye cikarildi (Whapi 429 verdi). Panele dusme suresi bu kadar uzar.');
+    } else {
+      cekimSayac.hata += 1;
+    }
+  } finally {
+    telafiCalisiyor = false;
+  }
+
+  // 5 dakikada bir ozet: cekim gercekten is yapiyor mu, rakamla gorelim
+  if (Date.now() - cekimSonRapor >= 5 * 60 * 1000) {
+    cekimSonRapor = Date.now();
+    log('CEKIM OZETI (' + cekimKip + ', ' + (CEKIM_SN * cekimCarpan) + ' sn): '
+      + cekimSayac.tur + ' tur | ' + cekimSayac.kurtarilan
+      + ' mesaj SADECE cekimle geldi | ' + cekimSayac.hata + ' hata');
+    cekimSayac.tur = 0; cekimSayac.kurtarilan = 0; cekimSayac.hata = 0;
+  }
+}
+
+function cekimPlanla() {
+  if (cekimTimer) clearTimeout(cekimTimer);
+  cekimTimer = setTimeout(() => {
+    surekliCekim().catch(() => {}).then(cekimPlanla);
+  }, CEKIM_SN * 1000 * cekimCarpan);
+  if (cekimTimer.unref) cekimTimer.unref();
+}
+
+const TELAFI_SOHBET_TAVAN = 25;      // en son konusulan kac sohbet
+const TELAFI_MESAJ_ADEDI = 20;       // sohbet basina kac mesaj geri bakilir
+const TELAFI_YAS = 48 * 3600 * 1000; // son 48 saatte konusulan sohbetler
+const TELAFI_NEFES = 250;            // istekler arasi bekleme (429 yememek icin)
+let telafiCalisiyor = false;
+
+function bekleMs(n) { return new Promise((c) => setTimeout(c, n)); }
+
+async function kacanTelafi(sebep = 'periyodik') {
+  if (telafiCalisiyor) return { atlandi: 'zaten calisiyor' };
+  if (!sock || !B.lines.get(LINE_ID)) return { atlandi: 'hat hazir degil' };
+  if (!sonSaglik.bagli) return { atlandi: 'hat bagli degil' };
+  telafiCalisiyor = true;
+  const basladi = Date.now();
+  let bakilan = 0, kurtarilan = 0, hatali = 0;
+  try {
+    const C = B.hatChats(LINE_ID);
+    const sohbetler = Array.from((C && C.values) ? C.values() : [])
+      .filter((c) => c && c.jid && c.lastTs && (Date.now() - Number(c.lastTs) < TELAFI_YAS))
+      .sort((a, b) => (Number(b.lastTs) || 0) - (Number(a.lastTs) || 0))
+      .slice(0, TELAFI_SOHBET_TAVAN);
+
+    for (const c of sohbetler) {
+      try {
+        const ham = await sock._mesajlariCek(c.jid, TELAFI_MESAJ_ADEDI);
+        if (!Array.isArray(ham) || !ham.length) continue;
+        bakilan += ham.length;
+        // AYNI yoldan gecir: cevirici + gorulen + addMessage. Paralel yol YOK.
+        const o = zarfIsle({ messages: ham }, true);
+        kurtarilan += o.mesaj;
+        if (o.mesaj) {
+          log('TELAFI: "' + String(c.name || c.jid).slice(0, 30) + '" icin '
+            + o.mesaj + ' KACAN mesaj kurtarildi');
+        }
+      } catch (e) {
+        hatali += 1;
+        log('telafi sorgusu basarisiz (' + String(c.jid).slice(0, 24) + '): ' + e.message);
+      }
+      await bekleMs(TELAFI_NEFES);
+    }
+  } finally {
+    telafiCalisiyor = false;
+  }
+  const sure = Date.now() - basladi;
+  log('TELAFI (' + sebep + ') bitti: ' + kurtarilan + ' kacan mesaj kurtarildi | '
+    + bakilan + ' mesaj kontrol edildi | ' + hatali + ' sorgu hatasi | ' + sure + ' ms');
+  return { kurtarilan, bakilan, hatali, sure };
 }
 
 // ── WEBHOOK UCU ──────────────────────────────────────────────
@@ -878,6 +1146,11 @@ async function sagligiYokla(ilkMi = false) {
         myJid: s.numara ? s.numara + '@s.whatsapp.net' : null,
         myName: s.ad || '', qr: false, qrImage: null,
       });
+      // KOPUKTAN BAGLIYA gecis: kopukken gelen webhook'lar kaybolmus olabilir.
+      // Baileys'te kacanMesajTelafi tam olarak burada calisiyor; ayni sey.
+      if (s.bagli && !eskiBagli && !ilkMi) {
+        kacanTelafi('baglanti geri geldi').catch(() => {});
+      }
     }
   } catch (e) {
     sonSaglik = { bagli: false, durumMetni: 'ulasilamadi', numara: sonSaglik.numara };
@@ -899,6 +1172,7 @@ async function hattiBaslat() {
   line.lastQR = null;            // Whapi'de QR yok
 
   gorulenYukle();
+  cikisKancasiKur();
 
   sock = adaptor.olustur({
     token: TOKEN, taban: TABAN, log,
@@ -948,6 +1222,21 @@ async function hattiBaslat() {
   sagliTimer = setInterval(() => { sagligiYokla(false).catch(() => {}); }, 60000);
   if (sagliTimer.unref) sagliTimer.unref();
 
+  // ── TELAFI ZAMANLAYICISI ──
+  // Baileys'in kacanMesajTelafi'sinin Whapi karsiligi. Webhook'un kacirdigi
+  // mesajlar burada yakalanir. Mukerrer uretmez (kimlik bazli iki katman).
+  if (telafiTimer) clearInterval(telafiTimer);
+  telafiTimer = setInterval(() => { kacanTelafi('periyodik').catch(() => {}); }, TELAFI_ARALIK);
+  if (telafiTimer.unref) telafiTimer.unref();
+  // Acilistan 30 sn sonra bir kez: surec kapaliyken gelenleri yakala
+  setTimeout(() => { kacanTelafi('acilis').catch(() => {}); }, 30000).unref?.();
+
+  // SUREKLI CEKIM: webhook'a guvenmeden her mesaji biz isteyecegiz
+  cekimPlanla();
+  log('SUREKLI CEKIM acik — her ' + CEKIM_SN + ' sn, ' + CEKIM_ADET
+    + ' mesaj | genis telafi: ' + (TELAFI_ARALIK / 60000) + ' dk / '
+    + TELAFI_SOHBET_TAVAN + ' sohbet (emniyet agi)');
+
   return line;
 }
 
@@ -955,7 +1244,8 @@ async function hattiBaslat() {
 function kur(baglam, app, express) {
   B = baglam;
   kancaKur(app, express);
-  return { hattiBaslat, LINE_ID, durum: () => sonSaglik, sock: () => sock };
+  return { hattiBaslat, LINE_ID, durum: () => sonSaglik, sock: () => sock, telafi: kacanTelafi, birSohbet: birSohbetiTelafiEt, cekim: surekliCekim,
+    cekimKip: () => cekimKip, bosalt: gorulenBosalt };
 }
 
 module.exports = { kur, LINE_ID };

@@ -73,6 +73,8 @@ const baglam = {
     loadAll: async () => ({ chats: [] }),
   },
   MEDIA_DIR: path.join(GECICI, 'media'),
+  kisiAdiBul: (jid) => (String(jid).startsWith('905111111111') ? 'YUSUF (OFIS)' : ''),
+  ekipUyesiMi: (ad) => ad === 'MOTOR TEST',
   log: () => {},
 };
 
@@ -105,8 +107,19 @@ const BELGE = JSON.parse(fs.readFileSync(path.join(__dirname, 'ornek.jsonl'), 'u
 const TEPKI = JSON.parse(fs.readFileSync(path.join(__dirname, 'ornek.jsonl'), 'utf8').split('\n').find((s) => s.includes('"reaction"')));
 const SIL = JSON.parse(fs.readFileSync(path.join(__dirname, 'ornek.jsonl'), 'utf8').split('\n').find((s) => s.includes('"delete"')));
 
+const bekleMs = (n) => new Promise((c) => setTimeout(c, n));
+
 (async () => {
-  console.log('═══ WEBHOOK UCU ═══\n');
+  console.log('═══ HAT BASLATMA (once bu olmali) ═══\n');
+  const line = await kurulum.hattiBaslat();
+  bekle('line olustu', !!line, true);
+  bekle('motor isaretlendi', line.motor, 'whapi');
+  bekle('line.sock DOLU', !!line.sock, true);
+  bekle('bagli', line.connected, true);
+  bekle('kendi numarasi', line.myNumber, '905458126770');
+  bekle('QR YOK', line.lastQR, null);
+
+  console.log('\n═══ WEBHOOK UCU ═══\n');
 
   console.log(' Guvenlik:');
   let r = await cagir('yanlis-dize', METIN);
@@ -127,6 +140,13 @@ const SIL = JSON.parse(fs.readFileSync(path.join(__dirname, 'ornek.jsonl'), 'utf
 
   console.log('\n Kalici mukerrer korumasi (surec yeniden baslasa da):');
   const dosya = path.join(GECICI, 'guvence', 'whapi-gorulen.txt');
+  // DAVRANIS DEGISTI (2026-08): diske yazma artik TAMPONLU ve ASENKRON.
+  // Sicak yolda fs.appendFileSync vardi; saniyede bir cekim yapinca olay
+  // dongusunu kilitliyordu. Kimlik bellege ANINDA giriyor (mukerrer korumasi
+  // hemen aktif), disk yazmasi tamponlaniyor. Testte tamponu elle bosaltiyoruz;
+  // gercekte 2 saniyede bir, 50 kimlikte bir ve surec kapanirken bosaliyor.
+  kurulum.bosalt();
+  await bekleMs(60);
   bekle('gorulen kimlik diske yazildi', fs.existsSync(dosya), true);
   bekle('dosyada mesaj kimligi var', fs.readFileSync(dosya, 'utf8').includes('KjtJaYFqP.PbwA-guABq53lT6_BEQ'), true);
 
@@ -174,21 +194,187 @@ const SIL = JSON.parse(fs.readFileSync(path.join(__dirname, 'ornek.jsonl'), 'utf
   r = await cagir('dogru-gizli-dize', null);
   bekle('null govde 200', r.kod, 200);
 
-  console.log('\n═══ HAT BASLATMA ═══\n');
-  const line = await kurulum.hattiBaslat();
-  bekle('line olustu', !!line, true);
-  bekle('motor isaretlendi (startWA Baileys\'e girmeyecek)', line.motor, 'whapi');
-  bekle('line.sock DOLU (panel gonderme kodu bunu arar)', !!line.sock, true);
-  bekle('sock whapi adaptoru', line.sock._motor, 'whapi');
-  bekle('bagli', line.connected, true);
-  bekle('kendi numarasi ogrenildi', line.myNumber, '905458126770');
-  bekle('QR YOK', line.lastQR, null);
+  console.log('\n KENDI HATLARIMIZ (ofis Baileys mesaji musteri gibi gorunmesin):');
+  // ofis hattini lines'a ekle — gercekte server.js ekliyor
+  baglam.lines.set('ofis', { id: 'ofis', myNumber: '905399265440', chats: new Map() });
+  const yap = (frm, ad) => ({ messages: [{ id: 'S_' + frm, chat_id: '120363423265440017@g.us', type: 'text', timestamp: Math.floor(Date.now() / 1000), from: frm, from_name: ad, text: { body: 'x' }, chat_name: 'G' }] });
+
+  await cagir('dogru-gizli-dize', yap('905399265440', 'OPERASYON MERKEZİ'));
+  const ofisMsj = chats.get('120363423265440017@g.us').messages.find((m) => m.id === 'S_905399265440');
+  bekle('ofis Baileys hatti EKIP olarak isaretlendi', ofisMsj.senderOfis, true);
+
+  await cagir('dogru-gizli-dize', yap('905111111111', 'yusuf'));
+  const kayitli = chats.get('120363423265440017@g.us').messages.find((m) => m.id === 'S_905111111111');
+  bekle('rehberde kayitli kisi EKIP sayildi', kayitli.senderOfis, true);
+  bekle('KAYITLI isim pushName yerine kullanildi', kayitli.sender, 'YUSUF (OFIS)');
+
+  await cagir('dogru-gizli-dize', yap('905999888777', 'Bilinmeyen Musteri'));
+  const musteri = chats.get('120363423265440017@g.us').messages.find((m) => m.id === 'S_905999888777');
+  bekle('gercek musteri EKIP DEGIL', !!musteri.senderOfis, false);
+  bekle('musteri adi korundu', musteri.sender, 'Bilinmeyen Musteri');
+
+  console.log('\n AYNI METIN IKI KEZ YAZILIRSA IKISI DE DUSMELI (mesaj kaybi olmasin):');
+  const n0 = cagrilar.addMessage.length;
+  const cizgi = (id) => ({ messages: [{ id, chat_id: '120363423265440017@g.us', type: 'text', timestamp: Math.floor(Date.now() / 1000), from: '905393793449', from_name: 'Volkan', text: { body: '------------' } }] });
+  await cagir('dogru-gizli-dize', cizgi('CIZGI_1'));
+  await cagir('dogru-gizli-dize', cizgi('CIZGI_2'));
+  bekle('iki ayri cizgi de eklendi', cagrilar.addMessage.length, n0 + 2);
+  const cizgiler = chats.get('120363423265440017@g.us').messages.filter((m) => m.text === '------------');
+  bekle('sohbette IKI kayit var', cizgiler.length, 2);
+
+  console.log('\n Ayni KIMLIK iki kez gelirse elenmeli:');
+  const n1 = cagrilar.addMessage.length;
+  await cagir('dogru-gizli-dize', cizgi('CIZGI_1'));
+  bekle('mukerrer kimlik elendi', cagrilar.addMessage.length, n1);
+
+  console.log('\n DIGER PANELDEN YAZAN KISININ ADI (WhatsApp hesap adi degil):');
+  // ofis hatti ayni mesaji PANEL KULLANICISININ adiyla kaydetmis
+  const ofisChats = new Map();
+  const simdiMs = Date.now();
+  // GERCEK DURUM: ofis hattinda BASKA bir kimlik var (3EB0...), whapi'de PrAY...
+  ofisChats.set('120363423265440017@g.us', { jid: '120363423265440017@g.us', messages: [
+    { id: '3EB018852634E3927CF54A', fromMe: true, sender: 'Emrecan Say', text: 'poliçe kesildi', ts: simdiMs - 650 },
+    { id: '3EB0658AB54121DC2F6780', fromMe: true, sender: 'Efe Rıza', text: 'zeyil yapıldı', ts: simdiMs - 40000 },
+  ] });
+  baglam.lines.set('ofis', { id: 'ofis', myNumber: '905399265440', chats: ofisChats });
+  const eskiHatChats = baglam.hatChats;
+  baglam.hatChats = (lid) => (lid === 'ofis' ? ofisChats : chats);
+
+  await cagir('dogru-gizli-dize', { messages: [{ id: 'PrAYhSY045J89Uo-gl4', chat_id: '120363423265440017@g.us', type: 'text', timestamp: Math.floor(simdiMs / 1000), from: '905399265440', from_name: 'OPERASYON MERKEZİ', text: { body: 'poliçe kesildi' } }] });
+  const gelen = chats.get('120363423265440017@g.us').messages.find((m) => m.id === 'PrAYhSY045J89Uo-gl4');
+  bekle('FARKLI kimlige ragmen panel kullanicisi bulundu', gelen.sender, 'Emrecan Say');
+  bekle('ekip rozeti kondu', gelen.senderOfis, true);
+
+  console.log('\n AYNI CIZGIYI IKI KISI CEKERSE HERKESE KENDI ADI (kritik):');
+  const t0 = Date.now();
+  ofisChats.get('120363423265440017@g.us').messages.push(
+    { id: '3EB0_ERTAN', fromMe: true, sender: 'Ertan', text: '-------------', ts: t0 - 600 },
+    { id: '3EB0_EFE',   fromMe: true, sender: 'Efe Rıza', text: '-------------', ts: t0 + 3000 },
+  );
+  // Ertan'in cizgisi once dusuyor
+  await cagir('dogru-gizli-dize', { messages: [{ id: 'W_ERTAN', chat_id: '120363423265440017@g.us', type: 'text', timestamp: Math.floor(t0 / 1000), from: '905399265440', from_name: 'OPERASYON MERKEZİ', text: { body: '-------------' } }] });
+  // Efe'nin cizgisi 3 saniye sonra
+  await cagir('dogru-gizli-dize', { messages: [{ id: 'W_EFE', chat_id: '120363423265440017@g.us', type: 'text', timestamp: Math.floor((t0 + 3600) / 1000), from: '905399265440', from_name: 'OPERASYON MERKEZİ', text: { body: '-------------' } }] });
+  const mE = chats.get('120363423265440017@g.us').messages.find((m) => m.id === 'W_ERTAN');
+  const mF = chats.get('120363423265440017@g.us').messages.find((m) => m.id === 'W_EFE');
+  bekle('birinci cizgi -> Ertan', mE.sender, 'Ertan');
+  bekle('ikinci cizgi -> Efe Rıza (karismadi)', mF.sender, 'Efe Rıza');
+
+  console.log('\n Zaman penceresi DISINDA ayni metin ESLESMEMELI:');
+  await cagir('dogru-gizli-dize', { messages: [{ id: 'ESKI_ES_1', chat_id: '120363423265440017@g.us', type: 'text', timestamp: Math.floor(simdiMs / 1000), from: '905399265440', from_name: 'OPERASYON MERKEZİ', text: { body: 'zeyil yapıldı' } }] });
+  const uzak = chats.get('120363423265440017@g.us').messages.find((m) => m.id === 'ESKI_ES_1');
+  bekle('40sn onceki mesajla eslesmedi', uzak.sender, 'OPERASYON MERKEZİ');
+
+  console.log('\n Panelde OLMAYAN kisi (gercek musteri) DEGISMEMELI:');
+  await cagir('dogru-gizli-dize', { messages: [{ id: 'MUSTERI_1', chat_id: '120363423265440017@g.us', type: 'text', timestamp: Math.floor(Date.now() / 1000), from: '905999000111', from_name: 'Ahmet Bey', text: { body: 'merhaba' } }] });
+  const mus = chats.get('120363423265440017@g.us').messages.find((m) => m.id === 'MUSTERI_1');
+  bekle('musteri adi korundu', mus.sender, 'Ahmet Bey');
+  bekle('musteri ekip DEGIL', !!mus.senderOfis, false);
+  baglam.hatChats = eskiHatChats;
+
+  console.log('\n ACIKLAMA: Whapi vermiyorsa OFIS hattindan tamamla:');
+  let ofisSoruldu = 0;
+  // Artik DOGRUDAN ofis soketine soruluyor (kuyruk yok, daha hizli)
+  const ofisSoket = { groupMetadata: async () => { ofisSoruldu++; return { subject: 'G', desc: 'BAILEYS ACIKLAMASI', participants: [] }; } };
+  baglam.lines.set('ofis', { id: 'ofis', myNumber: '905399265440', connected: true, sock: ofisSoket, chats: ofisChats });
+  const gjid = '120363499000111@g.us';
+  chats.set(gjid, { jid: gjid, name: 'G', isGroup: true, messages: [], description: '', avatar: null, memberCount: 0 });
+  const eskiFetch2 = global.fetch;
+  global.fetch = async (u) => {
+    if (String(u).includes('/health')) return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ status: { code: 4, text: 'AUTH' }, user: { id: '905458126770' } }) };
+    // Whapi cevabinda description alani YOK (gercek durum)
+    return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ id: gjid, name: 'ÖZ KARDEŞLER 56', chat_pic: 'http://f', participants_count: 24 }) };
+  };
+  await cagir('dogru-gizli-dize', { messages: [{ id: 'AC_1', chat_id: gjid, type: 'text', timestamp: Math.floor(Date.now() / 1000), from: '905999000222', from_name: 'Musteri', text: { body: 'selam' } }] });
+  await bekleMs(900);
+  bekle('ofis hattina soruldu', ofisSoruldu > 0, true);
+  bekle('aciklama Baileys\'ten geldi', chats.get(gjid).description, 'BAILEYS ACIKLAMASI');
+
+  console.log('\n OFIS KOPUKSA ofis hattina HIC dokunma:');
+  baglam.lines.set('ofis', { id: 'ofis', myNumber: '905399265440', connected: false, sock: null, chats: ofisChats });
+  const oncekiSoru = ofisSoruldu;
+  const gjid2 = '120363499000222@g.us';
+  chats.set(gjid2, { jid: gjid2, name: 'G2', isGroup: true, messages: [], description: '', avatar: null, memberCount: 0 });
+  await cagir('dogru-gizli-dize', { messages: [{ id: 'AC_2', chat_id: gjid2, type: 'text', timestamp: Math.floor(Date.now() / 1000), from: '905999000333', text: { body: 'x' } }] });
+  await bekleMs(500);
+  bekle('ofis kopukken sorgu ATILMADI', ofisSoruldu, oncekiSoru);
+  global.fetch = eskiFetch2;
+
+  console.log('\n IPTAL ROBOTU (anlik ac/kapa):');
+  const robotaGelenler = [];
+  let robotAcik = true;
+  // server.js'in gercek davranisi: ILK SATIRDA bayragi okur
+  baglam.robotMedyaGeldi = (x) => { if (!robotAcik) return; robotaGelenler.push(x); };
+
+  const pdfZarf = (id) => ({ messages: [{ id, chat_id: '120363423265440017@g.us', type: 'document',
+    timestamp: Math.floor(Date.now() / 1000), from: '905999000444', from_name: 'Musteri',
+    document: { link: 'https://s3.eu-central-1.wasabisys.com/x.pdf', mime_type: 'application/pdf',
+      file_name: 'ADEM OTO TRAFİK SİG 34 KHL 196.pdf' } }] });
+
+  await cagir('dogru-gizli-dize', pdfZarf('ROBOT_1'));
+  await bekleMs(300);
+  bekle('robot ACIKKEN belge geldi', robotaGelenler.length, 1);
+  if (robotaGelenler.length) {
+    const r = robotaGelenler[0];
+    bekle('dogru hat', r.lineId, 'whapi');
+    bekle('kind document', r.kind, 'document');
+    bekle('mesaj kimligi tasindi', r.m.key.id, 'ROBOT_1');
+    bekle('PDF mime tasindi (PDF tespiti icin)', r.m.message.documentMessage.mimetype, 'application/pdf');
+    bekle('diskteki dosya yolu', String(r.url).startsWith('/media/'), true);
+    bekle('uzanti .pdf korundu', String(r.url).endsWith('.pdf'), true);
+  }
+
+  console.log('\n Robot KAPATILINCA aninda durmali:');
+  robotAcik = false;
+  const oncekiN = robotaGelenler.length;
+  await cagir('dogru-gizli-dize', pdfZarf('ROBOT_2'));
+  await bekleMs(300);
+  bekle('kapaliyken belge islenmedi', robotaGelenler.length, oncekiN);
+
+  console.log('\n Tekrar ACILINCA aninda calismali:');
+  robotAcik = true;
+  await cagir('dogru-gizli-dize', pdfZarf('ROBOT_3'));
+  await bekleMs(300);
+  bekle('acilinca yeniden isledi', robotaGelenler.length, oncekiN + 1);
+
+  console.log('\n TIK (yeni):');
+  sahteAddMessage('120363423265440017@g.us', { id: 'GIDEN_1', kind: 'text', text: 'panelden', fromMe: true, durum: 2 }, {}, 'whapi');
+  let iletimTemizlendi = false;
+  baglam.iletimDenetleTamam = () => { iletimTemizlendi = true; };
+  await cagir('dogru-gizli-dize', { statuses: [{ id: 'GIDEN_1', code: 4, status: 'read', recipient_id: '120363423265440017@g.us', viewer_id: '905546084466' }], event: { type: 'statuses', event: 'put' } });
+  const giden = chats.get('120363423265440017@g.us').messages.find((m) => m.id === 'GIDEN_1');
+  bekle('durum 4 (okundu) islendi', giden.durum, 4);
+  bekle('panele msgStatus yayinlandi', cagrilar.broadcast.some((x) => x.type === 'msgStatus'), true);
+  bekle('iletim denetcisi TEMIZLENDI (yanlis alarm bitti)', iletimTemizlendi, true);
+
+  console.log('\n ESKI MESAJ (pdo_sync gecmis seli):');
+  const oncekiSayi = cagrilar.addMessage.length;
+  const eskiTs = Math.floor(Date.now() / 1000) - 200 * 86400;
+  await cagir('dogru-gizli-dize', { messages: [{ id: 'ESKI_1', chat_id: '120363499999999@g.us', type: 'text', timestamp: eskiTs, from: '905', text: { body: 'cok eski' }, chat_name: 'Eski Grup' }] });
+  bekle('eski mesaj panele DUSMEDI', cagrilar.addMessage.length, oncekiSayi);
+  bekle('eski grup OLUSTURULMADI', chats.has('120363499999999@g.us'), false);
 
   console.log('\n Panel bu hattan mesaj gonderebiliyor mu:');
   const sent = await line.sock.sendMessage('120363423265440017@g.us', { text: 'panelden' });
   bekle('Baileys bicimli cevap dondu', !!(sent && sent.key && sent.key.id), true);
   bekle('gercek Whapi kimligi tasindi', sent.key.id, 'WHAPI_GIDEN_1');
   bekle('fromMe isaretli', sent.key.fromMe, true);
+
+  console.log('\n GONDERIM ONAYI -> ANINDA TEK TIK (saat ikonu kalmasin):');
+  // server.js gibi davran: once gonder, SONRA mesaji ekle
+  const gonderim = line.sock.sendMessage('120363423265440017@g.us', { text: 'tek tik testi' });
+  const s2 = await gonderim;
+  // server.js grup mesajina baslangic durumu 1 (saat) veriyor
+  sahteAddMessage('120363423265440017@g.us', { id: s2.key.id, kind: 'text', text: 'tek tik testi', fromMe: true, sender: 'MOTOR TEST', durum: 1, ts: Date.now() }, {}, 'whapi');
+  const msj = chats.get('120363423265440017@g.us').messages.find((m) => m.id === s2.key.id);
+  bekle('baslangicta saat ikonu (durum 1)', msj.durum, 1);
+  await bekleMs(900);
+  bekle('kisa sure sonra TEK TIK (durum 2)', msj.durum, 2);
+  bekle('panele msgStatus gitti', cagrilar.broadcast.filter((x) => x.type === 'msgStatus').length > 0, true);
+
+  console.log('\n Sonra gelen gercek makbuz TIKI YUKSELTMELI:');
+  await cagir('dogru-gizli-dize', { statuses: [{ id: s2.key.id, code: 4, status: 'read', recipient_id: '120363423265440017@g.us' }] });
+  bekle('okundu (durum 4) oldu', msj.durum, 4);
 
   console.log('\n Whapi kimlik DONDURMEZSE sahte basari uretmemeli:');
   const eskiFetch = global.fetch;
