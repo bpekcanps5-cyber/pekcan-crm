@@ -211,7 +211,7 @@ const KOY6 = '<meta charset="UTF-8">\n'
 // kaydirma zipliyor, titreme oluyor. Whapi hatti surekli cekim yaptigi
 // icin bu cizim cok siklasti ve his belirginlesti.
 const ARA7 = "  document.getElementById('chatCount').textContent=nAll+' sohbet';\n}";
-const KOY7 = ARA7 + "\n\n/* WHAPI PANEL GORUNUMU — LISTE SABITLIGI\n   IKI KATMAN. Hicbiri cizimi ENGELLEMEZ, sadece ZAMANLAR:\n     1) Kullanici DOKUNURKEN cizme. Son etkilesimden 450 ms gecmeden DOM'a\n        el surulmez, cizim ertelenir -> tiklama parmagin altindan kaymaz.\n     2) Kaydirma konumu korunur (cizim sonrasi geri yazilir).\n   NOT: 'ayni HTML ise yazma' katmani DENENDI ve GERI ALINDI — ilk cizimde\n   list.innerHTML iki kez ayarlaniyor (liste + 'Sonuc bulunamadi' dali) ve\n   ikisi ayni deger olunca ikincisi yutulup LISTE BOS KALIYORDU.\n   Kaynak veri, siralama, filtreler ve sayaclar AYNEN calisir. */\n(function(){\n  if(window._whapiListeSabit) return; window._whapiListeSabit=1;\n  var asil=_renderListRaw;\n  var sonEtkilesim=0, bekleyen=false;\n\n  /* 1) Kullanici dokunurken/kaydirirken cizme */\n  ['pointerdown','pointerup','touchstart','touchend','wheel'].forEach(function(ev){\n    document.addEventListener(ev,function(){ sonEtkilesim=Date.now(); },{passive:true,capture:true});\n  });\n\n  _renderListRaw=function(){\n    var el=document.getElementById('chatList');\n    var kalan=450-(Date.now()-sonEtkilesim);\n    if(el&&kalan>0){\n      if(!bekleyen){ bekleyen=true; setTimeout(function(){ bekleyen=false; _renderListRaw(); }, kalan+30); }\n      return;\n    }\n    /* 2) Kaydirma konumunu koru */\n    var ust=el?el.scrollTop:0;\n    asil.apply(this,arguments);\n    if(el&&el.scrollTop!==ust) el.scrollTop=ust;\n  };\n})();";
+const KOY7 = ARA7 + "\n\n/* WHAPI PANEL GORUNUMU — LISTE SABITLIGI (v2)\n   DERT: \"gruplara tiklarken panel kiriliyormus gibi oynuyor\".\n   SEBEP: _renderListRaw her cagrilisinda list.innerHTML=html ile 1600+\n   sohbetin DOM'u sifirdan kuruluyor; tiklama anina denk gelirse parmagin\n   altindaki satir yok olup yerine yenisi geliyor.\n\n   v1 GERI ALINDI: 450 ms'lik zaman penceresi ve 'ayni HTML ise yazma'\n   katmani yuzunden liste BOS KALIYORDU. Iki hata vardi:\n     - ilk cizimde innerHTML iki kez ayarlaniyor, ikincisi yutuluyordu\n     - erteleme bayragi takilinca cizim bir daha hic yapilmiyordu\n   v2'de ikisi de yok:\n     - DOM yazimina HIC karisilmiyor\n     - erteleme SADECE parmak BASILIYKEN, pointerup gelince hemen cizilir\n     - BEKCI: 1200 ms icinde cizim yapilmadiysa erteleme iptal, zorla ciz\n       -> liste hicbir kosulda bos kalamaz */\n(function(){\n  if(window._whapiListeSabit2) return; window._whapiListeSabit2=1;\n  var asil=_renderListRaw;\n  var basili=false, kirli=false, ilkCizimYapildi=false, sonIstek=0;\n\n  function serbestBirak(){\n    basili=false;\n    if(kirli){ kirli=false; _renderListRaw(); }\n  }\n  ['pointerdown','touchstart','mousedown'].forEach(function(ev){\n    document.addEventListener(ev,function(){\n      basili=true;\n      /* EMNIYET: pointerup gelmese bile 1200 ms sonra serbest birak */\n      setTimeout(serbestBirak,1200);\n    },{passive:true,capture:true});\n  });\n  ['pointerup','touchend','touchcancel','pointercancel','mouseup'].forEach(function(ev){\n    document.addEventListener(ev,serbestBirak,{passive:true,capture:true});\n  });\n\n  _renderListRaw=function(){\n    var el=document.getElementById('chatList');\n    /* ILK cizimi ASLA erteleme — liste bos acilmasin */\n    if(basili && ilkCizimYapildi && (Date.now()-sonIstek)<1200){\n      kirli=true; return;\n    }\n    sonIstek=Date.now();\n    var ust=el?el.scrollTop:0;\n    asil.apply(this,arguments);\n    ilkCizimYapildi=true;\n    if(el&&ust&&el.scrollTop!==ust) el.scrollTop=ust;\n  };\n})();";
 
 function geriAl() {
   if (!fs.existsSync(YEDEK)) { console.log('✗ yedek yok'); process.exit(1); }
@@ -223,10 +223,24 @@ function geriAl() {
 function kur() {
   console.log('yamalanan dosya: ' + HEDEF);
   let s = fs.readFileSync(HEDEF, 'utf8');
-  if (s.includes(ISARET)) { console.log('• Zaten kurulu, hicbir sey yapilmadi.'); return; }
-  const say = (t) => s.split(t).length - 1;
   const kontrol = [['isim etiketi', ARA], ['balon sinifi', ARA2], ['stil blogu', ARA3], ['gruplama', ARA4], ['sirali ekleme', ARA5], ['ceviri kapatma', ARA6], ['liste sabitligi', ARA7]];
-  for (const [ad, t] of kontrol) {
+
+  // KISMI KURULUM (2026-08): dosya ESKI bir yama surumu tasiyabilir.
+  // Eskiden burada kosulsuz cikiliyordu; sonuc olarak yeni yamalar (sirali
+  // ekleme, ceviri kapatma, liste sabitligi) SESSIZCE uygulanmiyordu.
+  // Artik hangi capalarin DURDUGUNA bakiyoruz: hepsi eksikse zaten kurulu,
+  // bir kismi eksikse SADECE eksik olanlari ekliyoruz.
+  const eksikler = kontrol.filter(([, c]) => s.includes(c));
+  if (!eksikler.length) { console.log('• Zaten kurulu, hicbir sey yapilmadi.'); return; }
+  if (eksikler.length < kontrol.length) {
+    console.log('ℹ  kismi kurulum: ' + eksikler.length + '/' + kontrol.length
+      + ' yama eksik, sadece onlar eklenecek');
+    for (const [ad] of eksikler) console.log('     • ' + ad);
+  }
+  // SADECE eklenecek olanlarin capasini dogrula. Kurulu yamalarin capasi
+  // zaten degistirilmis oldugu icin bulunamaz — o normal, hata degil.
+  const say = (t) => s.split(t).length - 1;
+  for (const [ad, t] of eksikler) {
     const n = say(t);
     if (ad === 'stil blogu' ? n < 1 : n !== 1) {
       console.log('✗ ' + ad + ' ' + n + ' kez bulundu. DOKUNULMADI.');
@@ -234,10 +248,26 @@ function kur() {
     }
   }
   if (!fs.existsSync(YEDEK)) fs.copyFileSync(HEDEF, YEDEK);
-  s = s.replace(ARA, KOY).replace(ARA2, KOY2).replace(ARA4, KOY4).replace(ARA5, KOY5).replace(ARA6, KOY6).replace(ARA7, KOY7);
-  // stil: SON </style> etiketine ekle
-  const sonStil = s.lastIndexOf(ARA3);
-  s = s.slice(0, sonStil) + KOY3 + s.slice(sonStil + ARA3.length);
+  else console.log('ℹ  yedek zaten var, uzerine YAZILMADI: ' + YEDEK);
+  const eslesme = { 'isim etiketi': [ARA, KOY], 'balon sinifi': [ARA2, KOY2],
+    'stil blogu': [ARA3, KOY3], 'gruplama': [ARA4, KOY4], 'sirali ekleme': [ARA5, KOY5],
+    'ceviri kapatma': [ARA6, KOY6], 'liste sabitligi': [ARA7, KOY7] };
+  // DIKKAT: ARA3 ('</style>') dosyada BIRDEN COK var. Her yamayi TEK KEZ
+  // uygula ve uygulandigini isaretle — aksi halde ayni CSS iki kez giriyordu
+  // (zararsizdi ama dosyayi kirletiyordu ve geri almayi zorlastiriyordu).
+  const uygulandi = new Set();
+  for (const [ad] of eksikler) {
+    if (uygulandi.has(ad)) continue;
+    const par = eslesme[ad];
+    if (!par) continue;
+    const once = s;
+    s = s.replace(par[0], par[1]);
+    if (s !== once) uygulandi.add(ad);
+    else console.log('⚠ ' + ad + ' uygulanamadi (capa degismis olabilir)');
+  }
+  // NOT: stil blogu yukaridaki eslesme dongusunde uygulaniyor.
+  // Burada IKINCI bir uygulama vardi (eski koddan kalma) — ayni CSS'i
+  // dosyaya bir kez daha ekliyordu. Kaldirildi.
   fs.writeFileSync(HEDEF, s, 'utf8');
   console.log('✔ yedek: index.html.whapi-oncesi');
   console.log('✔ isim etiketi + balon rengi + gruplama ayrimi + stil eklendi');
