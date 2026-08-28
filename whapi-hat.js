@@ -1128,7 +1128,38 @@ function kancaKur(app, express) {
   if (!GIZLI) { log('UYARI: WHAPI_WEBHOOK_SECRET yok — webhook ucu ACILMADI'); return; }
   const yol = '/whapi/gelen/:gizli';
 
+  // ═══ SICAK YENILEME (2026-08) ═══════════════════════════════
+  // DERT: her Whapi degisikligi icin 'pm2 restart' gerekiyordu; o da
+  // BAILEYS hattini yeniden baslatiyor. Ofis canlida calistigi icin bu
+  // her seferinde kesinti demek.
+  // COZUM: webhook yolu SURECE BIR KEZ kaydedilir. Yol, isleyiciyi
+  // global'den okur. Yenilemede sadece o isaretci degisir; Express yolu
+  // ve Baileys'e HIC dokunulmaz.
+  global._whapiWebhook = webhookIsleyici;
+
+  if (global._whapiYolKuruldu) {
+    log('sicak yenileme: webhook isleyicisi degistirildi (yol zaten kayitli)');
+    return;
+  }
+  global._whapiYolKuruldu = true;
+
   app.post(yol, express.json({ limit: '50mb' }), (req, res) => {
+    const h = global._whapiWebhook;
+    if (!h) return res.status(503).json({ ok: false });
+    return h(req, res);
+  });
+
+  // Yenileme ucu: POST /whapi/yenile/<gizli>
+  // Whapi kodunu yeniden yukler. BAILEYS'E DOKUNMAZ.
+  app.post('/whapi/yenile/:gizli', (req, res) => {
+    if (req.params.gizli !== GIZLI) return res.status(404).end();
+    try {
+      const sonuc = global._whapiYenile();
+      res.json(sonuc);
+    } catch (e) { res.status(500).json({ ok: false, hata: e.message }); }
+  });
+
+  function webhookIsleyici(req, res) {
     // Gizli yol yanlissa hicbir bilgi verme (var oldugunu bile belli etme)
     if (req.params.gizli !== GIZLI) return res.status(404).end();
     try {
@@ -1165,9 +1196,9 @@ function kancaKur(app, express) {
       }
       try { res.status(500).json({ ok: false }); } catch (_) {}
     }
-  });
+  }
 
-  log('webhook ucu hazir: POST /whapi/gelen/<gizli>');
+  log('webhook ucu hazir: POST /whapi/gelen/<gizli>  |  yenileme: POST /whapi/yenile/<gizli>');
 }
 
 // ── SAGLIK YOKLAMASI ─────────────────────────────────────────
@@ -1285,9 +1316,38 @@ async function hattiBaslat() {
 }
 
 // ── server.js'in cagirdigi kurulum ───────────────────────────
+// ── SICAK YENILEME: Whapi kodunu Baileys'e DOKUNMADAN yeniden yukle ──
+// Eski surumun zamanlayicilarini durdurur, tamponu diske yazar, modul
+// onbellegini temizler ve yeni surumu kurar. Express yolu ve BAILEYS
+// hatti hic etkilenmez.
+function yenilemeKur(app, express) {
+  global._whapiYenile = function () {
+    const oncekiKip = cekimKip;
+    // 1) Eski surumun zamanlayicilarini DURDUR (yoksa iki kopya birden calisir)
+    try { if (cekimTimer) clearTimeout(cekimTimer); } catch (_) {}
+    try { if (telafiTimer) clearInterval(telafiTimer); } catch (_) {}
+    try { if (sagliTimer) clearInterval(sagliTimer); } catch (_) {}
+    // 2) Bellekteki kimlikleri KAYBETME
+    try { gorulenBosalt(); } catch (_) {}
+    // 3) Modul onbellegini temizle
+    const dosyalar = ['whapi-hat.js', 'whapi-cevirici.js', 'whapi-adapter.js'];
+    for (const d of dosyalar) {
+      try { delete require.cache[require.resolve(path.join(__dirname, d))]; } catch (_) {}
+    }
+    // 4) Yeni surumu kur ve baslat
+    const yeni = require(path.join(__dirname, 'whapi-hat.js'));
+    const kurulum = yeni.kur(B, app, express);   // yol tekrar KAYDEDILMEZ
+    global._whapiKurulum = kurulum;
+    kurulum.hattiBaslat().catch((e) => log('yenileme sonrasi hat baslatilamadi: ' + e.message));
+    log('SICAK YENILEME tamam — Baileys hattina DOKUNULMADI (onceki cekim kipi: ' + oncekiKip + ')');
+    return { ok: true, mesaj: 'whapi yeniden yuklendi, baileys etkilenmedi' };
+  };
+}
+
 function kur(baglam, app, express) {
   B = baglam;
   kancaKur(app, express);
+  yenilemeKur(app, express);
   return { hattiBaslat, LINE_ID, durum: () => sonSaglik, sock: () => sock, telafi: kacanTelafi, birSohbet: birSohbetiTelafiEt, cekim: surekliCekim,
     cekimKip: () => cekimKip, bosalt: gorulenBosalt };
 }
