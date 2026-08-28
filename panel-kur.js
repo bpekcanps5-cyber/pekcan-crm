@@ -100,6 +100,27 @@ const KOY3 = `
   -webkit-line-clamp:3;
 }
 
+/* WHAPI PANEL GORUNUMU — MESAJ METNI ALT ALTA (2026-08)
+   OLCULDU (tarayici konsolu): veri panele DOGRU geliyor, sorun CIZIMDE.
+     .msg sinifinda 'white-space' HIC yok
+     esc() satir sonunu <br> yapmiyor, sadece HTML kacisi yapiyor
+   HTML'de ciplak \n BOSLUGA doner -> WhatsApp'ta alt alta yazilan mesaj
+   panelde tek paragraf gibi akiyordu (fiyat listeleri, teminat listeleri...).
+   'pre-wrap' satir sonlarini korur, ARDISIK BOSLUKLARI da korur ve
+   satir kaydirmayi bozmaz — <br> enjeksiyonundan daha guvenli, cunku
+   HTML'e dokunmuyoruz. */
+.msg,
+.msg .im-caption,
+.msg-text{
+  white-space:pre-wrap;
+}
+/* Alintilanan mesaj ve tek satirlik alanlar bozulmasin */
+.msg .reply-box,
+.msg .msg-meta,
+.msg time{
+  white-space:normal;
+}
+
 /* WHAPI PANEL GORUNUMU — panel kullanicisi mesaj balonu */
 .msg.panel-msg{
   background:linear-gradient(0deg,rgba(37,99,235,.10),rgba(37,99,235,.10)),var(--balon,#fff);
