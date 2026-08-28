@@ -807,7 +807,7 @@ function zarfIsle(zarf, telafiMi = false) {
     log('UYARI: kanal numarasi henuz bilinmiyor — kendi mesajlarin GELEN gorunebilir. /health sorgusu bekleniyor.');
   }
   const isler = zarfCevir(zarf, benim);
-  const ozet = { mesaj: 0, mukerrer: 0, tepki: 0, sil: 0, duzenle: 0, durum: 0, eski: 0, atla: 0, hedefYok: 0, hata: 0, sebepler: {} };
+  const ozet = { mesaj: 0, mukerrer: 0, tepki: 0, sil: 0, duzenle: 0, durum: 0, eski: 0, atla: 0, hedefYok: 0, hata: 0, medyaKurtarma: 0, sebepler: {} };
 
   // TANINMAYAN ZARF: zarfCevir SADECE 'messages' ve 'statuses' okuyor.
   // Whapi panelinde 'chats', 'contacts', 'groups', 'users' de acik olabilir.
@@ -838,7 +838,30 @@ function zarfIsle(zarf, telafiMi = false) {
     if (is.tur === 'duzenle') { if (duzenlemeUygula(is))  ozet.duzenle += 1; else { ozet.hedefYok += 1; bosluktanTetikle(is.jid); } continue; }
 
     // ── NORMAL MESAJ ──
-    if (gorulen.has(is.message.id)) { ozet.mukerrer += 1; continue; }
+    if (gorulen.has(is.message.id)) {
+      ozet.mukerrer += 1;
+      // ═══ INMEMIS MEDYAYI KURTAR (2026-08) ═══════════════════════
+      // OLCULDU: panelde foto sadece kucuk onizleme olarak kaliyordu.
+      //   Whapi /messages/list  -> link ALANI VAR (olculdu)
+      //   log                   -> ne basari ne hata satiri (hic denenmemis)
+      //   gorulen dosyasi       -> mesaj kimligi VAR
+      // Yani foto ilk gelisinde inmedi; sonraki turlarda mesaj "mukerrer"
+      // sayilip DONGU BURADA KESILIYOR ve indirme koduna hic ulasilmiyordu.
+      // Sonuc: o medya KALICI olarak inmemis kaliyordu.
+      // Artik mukerrer olsa bile MEDYASI EKSIKSE tekrar deniyoruz.
+      // Mesaj YENIDEN EKLENMEZ (addMessage kimlik kontrolu var), sadece
+      // mediaUrl alani doldurulur -> panelde foto belirir.
+      try {
+        if (is.indir && is.indir.link) {
+          const { mesaj } = hedefMesajBul(is.jid, is.message.id);
+          if (mesaj && !mesaj.mediaUrl) {
+            ozet.medyaKurtarma += 1;
+            medyaArkaPlanda(is.jid, is.message.id, is.indir, 1, false, is.ts);
+          }
+        }
+      } catch (_) {}
+      continue;
+    }
 
     // ═══ MUKERRER ISARETI YAZMADAN SONRA (2026-08) ═══════════════════
     // ESKI HATA: gorulenEkle(id) addMessage'tan ONCE cagriliyordu.
@@ -1175,7 +1198,7 @@ function kancaKur(app, express) {
       const ozet = zarfIsle(req.body || {});
       // 200 = "kalici olarak aldik". Whapi bir daha yollamaz.
       res.json({ ok: true });
-      if (ozet.mesaj || ozet.tepki || ozet.sil || ozet.duzenle || ozet.durum || ozet.mukerrer || ozet.eski || ozet.atla) {
+      if (ozet.mesaj || ozet.tepki || ozet.sil || ozet.duzenle || ozet.durum || ozet.mukerrer || ozet.eski || ozet.atla || ozet.medyaKurtarma) {
         const parcalar = [];
         if (ozet.mesaj) parcalar.push(ozet.mesaj + ' mesaj');
         if (ozet.tepki) parcalar.push(ozet.tepki + ' tepki');
@@ -1185,6 +1208,7 @@ function kancaKur(app, express) {
         if (ozet.eski) parcalar.push(ozet.eski + ' ESKI mesaj elendi');
         if (ozet.mukerrer) parcalar.push(ozet.mukerrer + ' MUKERRER engellendi');
         if (ozet.hedefYok) parcalar.push(ozet.hedefYok + ' hedef bulunamadi');
+        if (ozet.medyaKurtarma) parcalar.push(ozet.medyaKurtarma + ' INMEMIS MEDYA yeniden deneniyor');
         // ELENEN: sebebiyle birlikte. Eskiden bu satir HIC yazilmiyordu.
         if (ozet.atla) {
           const s = Object.entries(ozet.sebepler).map(([k, v]) => k + ' x' + v).join(', ');
