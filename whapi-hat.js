@@ -214,8 +214,21 @@ async function medyaIndir(link, mime, dosyaAdi) {
 // Bayragi CAGRI ANINDA okuyor, onbellege almiyor. Kendi yolumuzu yazmayip
 // AYNI fonksiyonu cagirdigimiz icin paneldeki mevcut ac/kapa dugmesi
 // Whapi hattini da ANINDA kontrol eder. Kapaliyken belge kuyruga bile girmez.
-function robotaVer(jid, mesajId, kind, url, mime) {
+// ═══ ROBOT GUVENLIGI (2026-08 — CANLI OLAY) ═══════════════════
+// OLAN: surekli cekim/telafi ESKI belgeleri yeniden indiriyor, her indirme
+// IPTAL ROBOTU'nu tetikliyor ve robot alakasiz gruplara iptal mesaji atiyordu.
+// KURAL: robot SADECE canli webhook ile GERCEKTEN YENI gelen belgede calisir.
+//   • cekim/telafi ile gelen  -> ASLA
+//   • 10 dakikadan eski mesaj -> ASLA
+//   • WHAPI_ROBOT=0           -> hic calismaz (acil kapatma)
+const ROBOT_ACIK = String(process.env.WHAPI_ROBOT || '0') === '1';
+const ROBOT_TAZE_MS = 10 * 60 * 1000;
+
+function robotaVer(jid, mesajId, kind, url, mime, canliMi, ts) {
   if (!B.robotMedyaGeldi) return;
+  if (!ROBOT_ACIK) return;                       // varsayilan KAPALI
+  if (!canliMi) return;                          // cekim/telafi -> asla
+  if (ts && (Date.now() - Number(ts)) > ROBOT_TAZE_MS) return;   // eski belge -> asla
   try {
     // robotMedyaGeldi Baileys nesnesinden SADECE su ikisini okuyor:
     //   m.key.id                                  -> arac bilgisini mesaja islemek icin
@@ -230,20 +243,20 @@ function robotaVer(jid, mesajId, kind, url, mime) {
   } catch (e) { log('robot kancasi: ' + e.message); }
 }
 
-function medyaArkaPlanda(jid, mesajId, indir, deneme = 1) {
+function medyaArkaPlanda(jid, mesajId, indir, deneme = 1, canliMi = false, ts = 0) {
   const enFazla = String(jid).endsWith('@g.us') ? 4 : 3;   // grup medyasi is kritik
   medyaIndir(indir.link, indir.mime, indir.dosyaAdi)
     .then((url) => {
       if (!url) throw new Error('bos yol');
       B.addMessage(jid, { id: mesajId, mediaUrl: url, fromMe: false }, {}, LINE_ID);
       // Belge/foto indi -> IPTAL ROBOTU'na ver (acikssa isler, kapaliysa atlar)
-      robotaVer(jid, mesajId, indir.kind, url, indir.mime);
+      robotaVer(jid, mesajId, indir.kind, url, indir.mime, canliMi, ts);
     })
     .catch((e) => {
       if (deneme < enFazla) {
         const bekle = 3000 * Math.pow(2, deneme - 1);   // 3s, 6s, 12s
         log(`medya inmedi (${deneme}/${enFazla}), ${bekle / 1000}sn sonra tekrar: ${String(mesajId).slice(0, 10)} — ${e.message}`);
-        setTimeout(() => medyaArkaPlanda(jid, mesajId, indir, deneme + 1), bekle);
+        setTimeout(() => medyaArkaPlanda(jid, mesajId, indir, deneme + 1, canliMi, ts), bekle);
       } else {
         log(`MEDYA INDIRILEMEDI (${enFazla} deneme): ${String(mesajId).slice(0, 12)} — ${e.message}`);
       }
@@ -843,7 +856,7 @@ function zarfIsle(zarf, telafiMi = false) {
     // Ag isleri mesaji BEKLETMEZ, hepsi addMessage'tan SONRA.
     // Bunlar patlarsa mesaj ZATEN yazildi -> kayip yok, zarfi kesme.
     try {
-      if (is.indir && is.indir.link) medyaArkaPlanda(is.jid, is.message.id, is.indir);
+      if (is.indir && is.indir.link) medyaArkaPlanda(is.jid, is.message.id, is.indir, 1, !telafiMi, is.ts);
       if (is.isGroup) {
         // ADI HALA SAYI olan gruplar SIRANIN BASINA gecsin — kullanici
         // "grup adlari gec geliyor" dedi; adsiz grup en oncelikli is.

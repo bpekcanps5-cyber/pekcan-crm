@@ -10,6 +10,9 @@ fs.mkdirSync(path.join(GECICI, 'media'), { recursive: true });
 process.env.WHAPI_TOKEN = 'GIZLI_TOKEN_123';
 process.env.WHAPI_WEBHOOK_SECRET = 'dogru-gizli-dize';
 process.env.WHAPI_LINE_ID = 'whapi';
+// Robot artik VARSAYILAN KAPALI (canli olay: cekim eski belgeleri robota veriyordu).
+// Bu test robotun ac/kapa davranisini olctugu icin acikca aciyoruz.
+process.env.WHAPI_ROBOT = '1';
 
 // __dirname'i gecici klasore cevir ki guvence dosyasi oraya yazilsin
 const gercekYol = path.join(__dirname, 'whapi-hat.js');
