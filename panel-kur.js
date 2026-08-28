@@ -80,6 +80,26 @@ const KOY2 = `    ${ISARET}
 
 const ARA3 = `</style>`;
 const KOY3 = `
+/* WHAPI PANEL GORUNUMU — GRUP ACIKLAMASI ALT ALTA (2026-08)
+   DERT: aciklama WhatsApp'ta alt alta, panelde yan yana akiyordu.
+   OLCULDU: veri DOGRU — DB'de satir sonlari duruyor:
+     "HASAN YAVUZKURT \n\nANLIK ODEME\n\nOTOMOBIL 900\nKAMYONET 900"
+   whapi ve ofis hatlarinda BIREBIR ayni, yani Whapi'ye ozel degil.
+   SEBEP: sunucudaki public/index.html eski surum, 'white-space:pre-wrap'
+   satiri yok. Kod tarafi (dt.textContent = c.description) zaten dogru.
+   Burada kimlige DEGIL, birden fazla secicinin hepsine birden uyguluyoruz
+   ki dosyanin hangi surumu olursa olsun tutsun. */
+#groupDescText,
+.group-desc #groupDescText,
+.gd-icerik #groupDescText{
+  white-space:pre-wrap !important;
+  word-break:break-word;
+}
+/* Kisaltilmis halde de satir sonlari korunsun; 2 yerine 3 satir goster */
+.group-desc #groupDescText.collapsed{
+  -webkit-line-clamp:3;
+}
+
 /* WHAPI PANEL GORUNUMU — panel kullanicisi mesaj balonu */
 .msg.panel-msg{
   background:linear-gradient(0deg,rgba(37,99,235,.10),rgba(37,99,235,.10)),var(--balon,#fff);
