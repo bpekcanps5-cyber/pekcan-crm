@@ -187,6 +187,32 @@ const KOY5 = `    /* WHAPI PANEL GORUNUMU */
       if(_i===c.messages.length) c.messages.push(m); else c.messages.splice(_i,0,m); }
     if(c.messages.length>400) c.messages=c.messages.slice(-400);`;
 
+
+// ── ALTINCI YAMA: TARAYICI CEVIRISINI KAPAT ─────────────────
+// OLCULDU (2026-08, tarayici konsolu): Chrome'un otomatik cevirisi metin
+// dugumlerini <font dir="auto" style="vertical-align:inherit"> ile sariyor
+// ve bu sirada SATIR SONLARINI YUTUYOR.
+//   panel dizisinde : 7 satir sonu   (veri saglam)
+//   DOM'da          : 0              (Chrome silmis)
+// Sonuc: WhatsApp'ta alt alta yazilan fiyat/teminat listeleri panelde tek
+// paragraf gibi akiyordu. KODDA HATA YOKTU. "Arada duzeliyor" denmesinin
+// sebebi de buydu: ceviri bazen devreye giriyor bazen girmiyor.
+// Panel zaten Turkce, cevrilmesine gerek yok.
+const ARA6 = '<meta charset="UTF-8">';
+const KOY6 = '<meta charset="UTF-8">\n'
+  + '<!-- WHAPI PANEL GORUNUMU: tarayici cevirisi satir sonlarini yutuyordu -->\n'
+  + '<meta name="google" content="notranslate">';
+
+// ── YEDINCI YAMA: SOHBET LISTESI SABITLIGI ──────────────────
+// DERT: "gruplara tiklarken panel kiriliyormus gibi oynuyor".
+// SEBEP: _renderListRaw her cagrilisinda  list.innerHTML=html  ile 2000+
+// sohbetin DOM'u SIFIRDAN kuruluyor. Tiklama anina denk gelirse parmagin
+// altindaki satir yok olup yerine yenisi geliyor -> tiklama kayiyor,
+// kaydirma zipliyor, titreme oluyor. Whapi hatti surekli cekim yaptigi
+// icin bu cizim cok siklasti ve his belirginlesti.
+const ARA7 = "  document.getElementById('chatCount').textContent=nAll+' sohbet';\n}";
+const KOY7 = ARA7 + "\n\n/* WHAPI PANEL GORUNUMU — LISTE SABITLIGI\n   UC KATMAN. Hicbiri mevcut cizim mantigini DEGISTIRMEZ, sadece sarar:\n     1) AYNI HTML -> DOM'a HIC yazma. Cogu guncellemede liste ayni kaliyor;\n        boylece gereksiz yeniden cizimin buyuk kismi tamamen kalkar.\n     2) Kullanici DOKUNURKEN cizme. Son etkilesimden 450 ms gecmeden DOM'a\n        el surulmez, cizim ertelenir -> tiklama parmagin altindan kaymaz.\n     3) Kaydirma konumu korunur (cizim sonrasi geri yazilir).\n   Kaynak veri, siralama, filtreler ve sayaclar AYNEN calisir. */\n(function(){\n  if(window._whapiListeSabit) return; window._whapiListeSabit=1;\n  var asil=_renderListRaw;\n  var sonEtkilesim=0, bekleyen=false;\n\n  /* 1) Ayni HTML tekrar yazilmasin */\n  try{\n    var el0=document.getElementById('chatList');\n    var d=Object.getOwnPropertyDescriptor(Element.prototype,'innerHTML');\n    if(el0&&d&&d.set){\n      var son=null;\n      Object.defineProperty(el0,'innerHTML',{\n        configurable:true,\n        get:function(){ return d.get.call(this); },\n        set:function(v){ if(v===son) return; son=v; d.set.call(this,v); }\n      });\n    }\n  }catch(e){}\n\n  /* 2) Kullanici dokunurken/kaydirirken cizme */\n  ['pointerdown','pointerup','touchstart','touchend','wheel'].forEach(function(ev){\n    document.addEventListener(ev,function(){ sonEtkilesim=Date.now(); },{passive:true,capture:true});\n  });\n\n  _renderListRaw=function(){\n    var el=document.getElementById('chatList');\n    var kalan=450-(Date.now()-sonEtkilesim);\n    if(el&&kalan>0){\n      if(!bekleyen){ bekleyen=true; setTimeout(function(){ bekleyen=false; _renderListRaw(); }, kalan+30); }\n      return;\n    }\n    /* 3) Kaydirma konumunu koru */\n    var ust=el?el.scrollTop:0;\n    asil.apply(this,arguments);\n    if(el&&el.scrollTop!==ust) el.scrollTop=ust;\n  };\n})();";
+
 function geriAl() {
   if (!fs.existsSync(YEDEK)) { console.log('✗ yedek yok'); process.exit(1); }
   fs.copyFileSync(YEDEK, HEDEF);
@@ -199,7 +225,7 @@ function kur() {
   let s = fs.readFileSync(HEDEF, 'utf8');
   if (s.includes(ISARET)) { console.log('• Zaten kurulu, hicbir sey yapilmadi.'); return; }
   const say = (t) => s.split(t).length - 1;
-  const kontrol = [['isim etiketi', ARA], ['balon sinifi', ARA2], ['stil blogu', ARA3], ['gruplama', ARA4], ['sirali ekleme', ARA5]];
+  const kontrol = [['isim etiketi', ARA], ['balon sinifi', ARA2], ['stil blogu', ARA3], ['gruplama', ARA4], ['sirali ekleme', ARA5], ['ceviri kapatma', ARA6], ['liste sabitligi', ARA7]];
   for (const [ad, t] of kontrol) {
     const n = say(t);
     if (ad === 'stil blogu' ? n < 1 : n !== 1) {
@@ -208,7 +234,7 @@ function kur() {
     }
   }
   if (!fs.existsSync(YEDEK)) fs.copyFileSync(HEDEF, YEDEK);
-  s = s.replace(ARA, KOY).replace(ARA2, KOY2).replace(ARA4, KOY4).replace(ARA5, KOY5);
+  s = s.replace(ARA, KOY).replace(ARA2, KOY2).replace(ARA4, KOY4).replace(ARA5, KOY5).replace(ARA6, KOY6).replace(ARA7, KOY7);
   // stil: SON </style> etiketine ekle
   const sonStil = s.lastIndexOf(ARA3);
   s = s.slice(0, sonStil) + KOY3 + s.slice(sonStil + ARA3.length);
@@ -216,6 +242,8 @@ function kur() {
   console.log('✔ yedek: index.html.whapi-oncesi');
   console.log('✔ isim etiketi + balon rengi + gruplama ayrimi + stil eklendi');
   console.log('✔ sirali ekleme eklendi (gec gelen mesaj dogru yere oturuyor)');
+  console.log('✔ tarayici cevirisi kapatildi (satir sonlarini yutuyordu)');
+  console.log('✔ liste sabitligi eklendi (tiklarken kayma/titreme biter)');
   console.log('');
   console.log('Sonraki: pm2 restart pekcan  ->  panelde CTRL+F5');
   console.log('Geri alma: node panel-kur.js --geri');
