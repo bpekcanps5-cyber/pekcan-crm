@@ -206,9 +206,13 @@ const bekleMs = (n) => new Promise((c) => setTimeout(c, n));
   const ofisMsj = chats.get('120363423265440017@g.us').messages.find((m) => m.id === 'S_905399265440');
   bekle('ofis Baileys hatti EKIP olarak isaretlendi', ofisMsj.senderOfis, true);
 
+  // DAVRANIS DEGISTI (2026-08): rehberde kayitli olmak EKIP UYESI olmak DEGIL.
+  // Eskiden kosulsuz senderOfis=true yaziliyordu; sonucta ruhsat atan MUSTERI
+  // panelde ekip rozetiyle (mavi cerceve + bina ikonu) goruntuyordu.
+  // Artik ayrim ekipUyesiMi() ile yapiliyor. Kayitli ISIM yine kullanilir.
   await cagir('dogru-gizli-dize', yap('905111111111', 'yusuf'));
   const kayitli = chats.get('120363423265440017@g.us').messages.find((m) => m.id === 'S_905111111111');
-  bekle('rehberde kayitli kisi EKIP sayildi', kayitli.senderOfis, true);
+  bekle('rehberde kayitli MUSTERI ekip SAYILMAZ', !!kayitli.senderOfis, false);
   bekle('KAYITLI isim pushName yerine kullanildi', kayitli.sender, 'YUSUF (OFIS)');
 
   await cagir('dogru-gizli-dize', yap('905999888777', 'Bilinmeyen Musteri'));

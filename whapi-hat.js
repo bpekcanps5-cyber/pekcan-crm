@@ -472,9 +472,18 @@ function gonderenZenginlestir(message, jid) {
   // 1) CRM rehberinde kayitli mi? (savedContacts / contactNames)
   const rehber = (B.kisiAdiBul && B.kisiAdiBul(numara + '@s.whatsapp.net')) || '';
   if (rehber) {
-    message.senderOfis = true;                       // kayitli isim = ekip/taninan kisi
+    // ═══ MUSTERI, PANEL KULLANICISI DEGILDIR (2026-08) ═══════════
+    // ESKI HATA: burada kosulsuz  senderOfis = true  yaziliyordu.
+    // 'senderOfis' panelde EKIP/PANEL rozetini (mavi cerceve + kalkan)
+    // cizdiriyor. Ama rehberde kayitli olmak ekip uyesi olmak DEMEK DEGIL —
+    // musterilerin cogu da rehberde kayitli. Sonuc: ruhsat atan MUSTERI
+    // panel kullanicisi gibi goruntuyordu.
+    // DOGRU AYRIM: ekipUyesiMi() gercek panel kullanici listesine bakar.
+    // Kayitli isim yine kullanilir (musteri kendi adiyla gorunur), sadece
+    // EKIP ROZETI artik yalnizca gercek ekip uyelerine konur.
     message.sender = rehber;                         // KAYITLI isim once gelir (Baileys de boyle)
     message.senderPush = rehber;
+    message.senderOfis = !!(B.ekipUyesiMi && B.ekipUyesiMi(rehber));
     return;
   }
   // 2) Gonderenin adi panel kullanicisi mi? (ekip uyesi)
