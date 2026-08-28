@@ -58,7 +58,12 @@ function log(...a) { (B && B.log ? B.log : console.log)('[whapi]', ...a); }
 // Bu yuzden gorulen kimlikleri burada da tutuyoruz. Surec yeniden
 // baslarsa diskten geri yukleniyor.
 const GORULEN_DOSYA = path.join(__dirname, 'guvence', 'whapi-gorulen.txt');
-const GORULEN_TAVAN = 8000;
+// TAVAN (2026-08): surekli cekim 2000+ sohbetten 50'ser mesaj getiriyor
+// -> 100.000+ kimlik. Tavan 8000 iken eskiler tasip siliniyor, silinen mesaj
+// bir sonraki turda "yeni" sayilip TEKRAR isleniyordu. Panel her seferinde
+// yeniden ciziliyor ve sohbet listesi parmagin altinda kayiyordu.
+// 60.000 kimlik ~2 MB bellek; sorun degil.
+const GORULEN_TAVAN = 60000;
 const gorulen = new Set();
 let gorulenYazimSayaci = 0;
 
@@ -425,9 +430,27 @@ function panelKullanicisiSonradanAra(jid, message, deneme = 0) {
 }
 
 function gonderenZenginlestir(message, jid) {
-  // KENDI mesajimizsa DOKUNMA. Aksi halde rehberdeki isim 'Ben' yazisini
-  // eziyor ve panelde kendi mesajimiz baskasindan gelmis gibi gorunuyordu.
-  if (message.fromMe) { message.sender = 'Ben'; return; }
+  // ═══ AYNI TELEFON DURUMU (2026-08) ════════════════════════════
+  // Whapi kanali ofis hattiyla AYNI telefona bagliysa, ofis panelinden
+  // yazilan HER mesaj bize fromMe=true gelir. Eskiden burada 'Ben' yazip
+  // cikiyorduk; sonuc olarak Efe'nin yazdigi mesaj Emre'nin panelinde de
+  // "ben yazdim" gibi goruntuyordu ve kimin yazdigi kayboluyordu.
+  // Artik fromMe olsa bile PANEL KULLANICISINI ariyoruz.
+  // Bulamazsak 'Ben' kalir — eski davranis, yani hic bozulma yok.
+  if (message.fromMe) {
+    message.sender = 'Ben';
+    const panelAd = panelKullanicisiBul(jid, message);
+    if (panelAd) {
+      message.sender = panelAd;
+      message.senderPush = panelAd;
+      message.senderOfis = true;
+      message.panelKullanicisi = true;   // panel: kalkan rozeti + gorev rengi
+    } else {
+      // Ofis hatti mesaji henuz islememis olabilir — birkac kez daha bak
+      panelKullanicisiSonradanAra(jid, message);
+    }
+    return;
+  }
   const numara = String(message.senderJid || '').split('@')[0];
   if (!numara) return;
 
@@ -949,6 +972,8 @@ const CEKIM_SN   = Math.max(1, Number(process.env.WHAPI_CEKIM_SN) || 2);
 const CEKIM_ADET = Math.max(10, Number(process.env.WHAPI_CEKIM_ADET) || 50);
 const CEKIM_SOHBET_TUR = Math.max(1, Number(process.env.WHAPI_CEKIM_SOHBET) || 2);
 const CEKIM_CARPAN_TAVAN = 15;
+const CEKIM_ADET_SAKIN = 15;      // birikim bitince tur basina bu kadar
+let cekimAdet = CEKIM_ADET;       // su anki cekim adedi (uyarlanir)
 
 let cekimTimer = null;
 let cekimKip = 'bilinmiyor';   // 'genel' | 'sohbet'
@@ -960,7 +985,7 @@ let cekimSonRapor = Date.now();
 
 async function genelCekimDene() {
   // Whapi'de sohbet kimligi VERMEDEN son mesajlar
-  const c = await sock._istek('/messages/list?count=' + CEKIM_ADET, { zamanAsimi: 30000 });
+  const c = await sock._istek('/messages/list?count=' + cekimAdet, { zamanAsimi: 30000 });
   return (c && c.messages) || [];
 }
 
@@ -998,13 +1023,19 @@ async function surekliCekim() {
       for (let i = 0; i < CEKIM_SOHBET_TUR; i++) {
         const c = aktif[cekimSirasi % aktif.length];
         cekimSirasi += 1;
-        try { kurtarilan += await birSohbetiTelafiEt(c.jid, CEKIM_ADET); }
+        try { kurtarilan += await birSohbetiTelafiEt(c.jid, cekimAdet); }
         catch (e) { if (hizSiniriMi(e)) throw e; cekimSayac.hata += 1; }
       }
     }
 
     cekimSayac.kurtarilan += kurtarilan;
     if (kurtarilan) log('SUREKLI CEKIM: ' + kurtarilan + ' mesaj webhook ile GELMEMISTI, cekimle geldi');
+
+    // GERI YAKALAMA BITTI MI: acilista buyuk bir birikim var, o gecince
+    // her turda 50 mesaj cekmeye gerek yok. Az cekmek = az yayin = panel
+    // sakin. Yeni mesaj bulununca tekrar buyuruyoruz.
+    if (kurtarilan === 0) { if (cekimAdet > CEKIM_ADET_SAKIN) cekimAdet = CEKIM_ADET_SAKIN; }
+    else cekimAdet = CEKIM_ADET;
 
     cekimBasarili += 1;
     if (cekimCarpan > 1 && cekimBasarili >= 20) {
