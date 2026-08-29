@@ -377,8 +377,17 @@ function panelKullanicisiBul(jid, message) {
   if (!metin) return '';
   const ts = Number(message.ts || Date.now());
   try {
+    // ═══ KENDI HATTIMIZA DA BAK (2026-08) ════════════════════════
+    // ESKI HATA: burada `lid === LINE_ID` atlaniyordu.
+    // Whapi hattindaki bir panel kullanicisi mesaj attiginda server.js o
+    // mesaji WHAPI sohbetine DOGRU gonderen adiyla yaziyor. Sonra webhook
+    // yansimasi geliyor; kimlik eslesmesi tutmazsa yeni kayit aciliyor ve
+    // gonderen aranirken KENDI hattimiza bakilmadigi icin bulunamiyor,
+    // 'Ben' kaliyordu. Sonuc: BASKA bir panel kullanicisinin mesaji
+    // "ben gondermisim" gibi gorunuyordu.
+    // ARTIK kendi hattimiz da taraniyor; mesajin KENDISI haric.
     for (const [lid, l] of B.lines) {
-      if (!l || lid === LINE_ID) continue;
+      if (!l) continue;
       const C = B.hatChats(lid);
       const c = C && C.get ? C.get(jid) : null;
       if (!c || !c.messages) continue;
@@ -389,6 +398,7 @@ function panelKullanicisiBul(jid, message) {
       for (let i = ms.length - 1, n = 0; i >= 0 && n < 120; i--, n++) {
         const m = ms[i];
         if (!m || !m.fromMe) continue;
+        if (m.id && message.id && m.id === message.id) continue;   // KENDISI degil
         if (String(m.text || '') !== metin) continue;
         const fark = Math.abs(Number(m.ts || 0) - ts);
         if (fark > ES_ZAMAN_PENCERESI) continue;
@@ -1336,6 +1346,29 @@ async function hattiBaslat() {
     ofisYedek: (jid) => ofistenAninda(jid),
   });
   line.sock = sock;              // KRITIK: panelin gonderme kodu bunu kullanir
+
+  // ═══ GONDERIM HATASINI GORUNUR YAP (2026-08) ══════════════════
+  // Kullanici "panelden mesaj attik, panele dusmedi" dedi. server.js
+  // mesaji sendMessage DONDUKTEN SONRA ekliyor; gonderim patlarsa mesaj
+  // hic eklenmiyor ya da kirmizi unlemle ekleniyor — ama LOGDA IZ YOKTU,
+  // yani neden patladigini goremiyorduk.
+  // Sarmalayici: hatayi AYNEN firlatir (davranis DEGISMEZ), sadece loglar.
+  {
+    const _asilGonder = sock.sendMessage;
+    sock.sendMessage = async function (jid, icerik, secenek) {
+      try {
+        return await _asilGonder.call(sock, jid, icerik, secenek);
+      } catch (e) {
+        const tur = icerik && (icerik.text ? 'metin'
+          : icerik.image ? 'foto' : icerik.document ? 'belge'
+          : icerik.delete ? 'silme' : icerik.react ? 'tepki'
+          : icerik.edit ? 'duzenleme' : icerik.forward ? 'iletme' : 'bilinmiyor');
+        log('GONDERILEMEDI (' + tur + ') -> ' + String(jid).slice(0, 24)
+          + ' : ' + e.message);
+        throw e;                 // server.js kirmizi unlemi kendisi koyar
+      }
+    };
+  }
 
   // Kendi numarasini ogren — fromMe tespiti buna dayaniyor
   try {

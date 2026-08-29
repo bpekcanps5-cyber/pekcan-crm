@@ -109,20 +109,99 @@ const KOY_5 = `  ${ISARET} Iki degisiklik:
   }
   const username = _whedef;
   const tip = (_wtip === 'pazarlama' || _wtip === 'whapi') ? _wtip : 'ofis';
+  if (tip === 'ofis') setTimeout(() => _whapiOturumTazele(username, 'ofis', 'ofis'), 30);
   /* ═══ WHAPI KANCASI SONU ═══ */
 `;
+
+// Oturumu BELLEKTE tazele + o kullanicinin panelini otomatik yenile.
+// whoami lineId'yi yalnizca HIC yoksa DB'den okuyor; bu yuzden oturum
+// acikken DB'yi degistirmek YETMIYORDU, kullanici cikip girmek zorundaydi.
+const ARA_7 = "app.post('/api/users/setline', express.json(), async (req, res) => {";
+const KOY_7 = `${ISARET} Hat degisince oturumu BELLEKTE tazele ve paneli yenile.
+   Boylece kullanici cikip girmek ZORUNDA KALMAZ. */
+function _whapiOturumTazele(kullanici, hatId, hatTip) {
+  try {
+    for (const [, s] of sessions) {
+      if (s && s.username === kullanici) { s.lineId = hatId; s.lineTip = hatTip; }
+    }
+  } catch (_) {}
+  try {
+    wss.clients.forEach((c) => {
+      if (c.readyState === 1 && c._username === kullanici) {
+        c._lineId = hatId;
+        try { c.send(JSON.stringify({ type: 'hatDegisti', lineId: hatId, tip: hatTip })); } catch (_) {}
+      }
+    });
+  } catch (_) {}
+}
+/* ═══ WHAPI KANCASI SONU ═══ */
+app.post('/api/users/setline', express.json(), async (req, res) => {`;
 
 const ARA_6 = "    if (tip === 'pazarlama') {";
 const KOY_6 = `    ${ISARET} Whapi hattina alma dali. */
     if (tip === 'whapi') {
       const _wl = process.env.WHAPI_LINE_ID || 'whapi';
       await db.setUserLine(username, _wl, 'whapi');
+      _whapiOturumTazele(username, _wl, 'whapi');
       console.log('🔧 Kullanici ' + username + ' WHAPI hattina alindi -> hat: ' + _wl);
       return res.json({ ok: true, username, lineId: _wl, tip: 'whapi',
-        message: username + ' artik WHAPI hattinda. Yeniden giris yapmali.' });
+        message: username + ' artik WHAPI hattinda.' });
     }
     /* ═══ WHAPI KANCASI SONU ═══ */
     if (tip === 'pazarlama') {`;
+
+
+// ── ALTINCI KANCA: "HEPSINI OKUNDU YAP" ANINDA OLSUN ────────
+// DERT: dugmeye basinca sayaclar tek tek, cok yavas sifirlaniyordu.
+// SEBEP: dongu her sohbet icin  await SOCK.readMessages(...)  yapiyordu.
+// Okunmamis 200 sohbet varsa 200 AG ISTEGI ARKA ARKAYA beklenir; islem
+// dakikalar surer, kullanici yarisini gorup "calismiyor" der.
+// COZUM: panel durumunu ONCE ve TOPLUCA guncelle (aninda 0 olur), okundu
+// makbuzlarini ARKA PLANDA kucuk gruplar halinde yolla. Makbuz gitmese
+// bile panel dogru; WhatsApp tarafi birkac saniye icinde yetisir.
+const ARA_8 = `      else if (msg.type === 'markAllRead' && SOCK && CONNECTED) {
+        for (const chat of C.values()) {
+          if (chat.unread > 0 || chat.hasMention) {
+            chat.unread = 0;
+            chat.hasMention = false;
+            try {
+              const keys = chat.messages.filter(m => !m.fromMe && m.key).slice(-20).map(m => m.key);
+              if (keys.length) await SOCK.readMessages(keys);
+            } catch (e) {}
+            if (db.isReady()) db.saveChat(chat, _LID).catch(() => {});
+            broadcastHat(_LID, { type: 'message', jid: chat.jid, chat: stripRaw(chat) });
+          }
+        }
+      }`;
+
+const KOY_8 = `      else if (msg.type === 'markAllRead' && SOCK && CONNECTED) {
+        ${ISARET} Once ANINDA sifirla + panele bildir, makbuzlari SONRA yolla. */
+        const _okBekleyen = [];
+        for (const chat of C.values()) {
+          if (chat.unread > 0 || chat.hasMention) {
+            chat.unread = 0;
+            chat.hasMention = false;
+            if (db.isReady()) db.saveChat(chat, _LID).catch(() => {});
+            broadcastHat(_LID, { type: 'message', jid: chat.jid, chat: stripRaw(chat) });
+            try {
+              const keys = chat.messages.filter(m => !m.fromMe && m.key).slice(-20).map(m => m.key);
+              if (keys.length) _okBekleyen.push(keys);
+            } catch (e) {}
+          }
+        }
+        // Panel ARTIK 0 gosteriyor. Makbuzlar arka planda, 5'erli gruplar
+        // halinde gider; hata olsa bile panel dogru kalir.
+        (async () => {
+          for (let i = 0; i < _okBekleyen.length; i += 5) {
+            const grup = _okBekleyen.slice(i, i + 5);
+            await Promise.all(grup.map((k) => {
+              try { return SOCK.readMessages(k).catch(() => {}); } catch (e) { return null; }
+            }));
+            await new Promise((r) => setTimeout(r, 120));
+          }
+        })().catch(() => {});
+        console.log('👁 Hepsi okundu: ' + _okBekleyen.length + ' sohbet sifirlandi (makbuzlar arka planda)');
+      }`;
 
 // ── UCUNCU KANCA: addMessage EKSIK ARGUMAN HATASI ───────────
 // addMessage(jid, message, meta = {}, lineId = 'ofis')
@@ -181,16 +260,20 @@ function kur() {
   const n4 = kaynak.split(ARA_4).length - 1;
   const n5 = kaynak.split(ARA_5).length - 1;
   const n6 = kaynak.split(ARA_6).length - 1;
+  const n7 = kaynak.split(ARA_7).length - 1;
+  const n8 = kaynak.split(ARA_8).length - 1;
   if (n1 !== 1) { console.log(`✗ startWA baslangici ${n1} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
   if (n2 !== 1) { console.log(`✗ acilis satiri ${n2} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
   if (n4 !== 1) { console.log(`✗ 'message.ts = now' satiri ${n4} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
   if (n5 !== 1) { console.log(`✗ setline tip satiri ${n5} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
   if (n6 !== 1) { console.log(`✗ setline pazarlama dali ${n6} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
+  if (n7 !== 1) { console.log(`✗ setline ucu ${n7} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
+  if (n8 !== 1) { console.log(`✗ markAllRead blogu ${n8} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
 
   if (!fs.existsSync(YEDEK)) fs.copyFileSync(HEDEF, YEDEK);
   console.log('✔ yedek: server.js.whapi-oncesi');
 
-  kaynak = kaynak.replace(ARA_1, KOY_1).replace(ARA_2, KOY_2).replace(ARA_4, KOY_4).replace(ARA_5, KOY_5).replace(ARA_6, KOY_6);
+  kaynak = kaynak.replace(ARA_1, KOY_1).replace(ARA_2, KOY_2).replace(ARA_4, KOY_4).replace(ARA_7, KOY_7).replace(ARA_5, KOY_5).replace(ARA_6, KOY_6).replace(ARA_8, KOY_8);
   const u = ucuncuKanca(kaynak);
   kaynak = u.kaynak;
 
@@ -212,6 +295,7 @@ function kur() {
   console.log('✔ addMessage eksik arguman hatasi duzeltildi (' + u.n + ' yerde)');
   console.log('✔ zaman damgasi ezilmesi durduruldu (gercek ts korunuyor)');
   console.log('✔ kullanici WHAPI hattina alinabilir (kullanici yonetiminde dugme)');
+  console.log('✔ hepsini okundu yap ANINDA calisiyor (makbuzlar arka planda)');
   console.log('✔ soz dizimi saglam');
   console.log('');
   console.log('Sonraki adim:  pm2 restart pekcan --update-env');
