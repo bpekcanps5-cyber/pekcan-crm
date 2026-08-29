@@ -90,10 +90,24 @@ const KOY_4 = `  ${ISARET} Cevirici GERCEK WhatsApp zaman damgasi koyduysa EZME.
 // Baileys'e dondurebilmek icin. MEVCUT ucu genisletiyoruz (/api/users/setline)
 // — yeni uc acmiyoruz, yetki kontrolu ve akis aynen kaliyor.
 // GECICI GECIS: ayni dugme tekrar basilinca 'ofis' yapar.
-const ARA_5 = "  const tip = req.body?.tip === 'pazarlama' ? 'pazarlama' : 'ofis';";
-const KOY_5 = `  ${ISARET} 'whapi' tipi eklendi: kullanici Whapi hattina alinabilsin.
-     Ayni dugme tekrar basilinca 'ofis' doner -> gecis GERI ALINABILIR. */
+const ARA_5 = "  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });\n  const username = (req.body?.username || '').trim();\n  const tip = req.body?.tip === 'pazarlama' ? 'pazarlama' : 'ofis';";
+const KOY_5 = `  ${ISARET} Iki degisiklik:
+     1) 'whapi' tipi eklendi -> kullanici Whapi hattina alinabilsin.
+     2) KENDINI OFISE DONDURME yetki istemez. Whapi hatti koptugunda
+        kullanici kendi ekranindaki dugmeyle ANINDA Baileys'e donebilsin;
+        yoneticiyi beklemek zorunda kalmasin.
+        Bu YON GUVENLI: kimseye ekstra erisim vermez, herkesin zaten
+        varsayilan hatti olan 'ofis'e dondurur ve SADECE KENDISI icin.
+     Diger tum islemler eskisi gibi YONETICI ister. */
+  const _wsess = req.body?.token ? sessions.get(req.body.token) : null;
   const _wtip = req.body?.tip;
+  const _whedef = (req.body?.username || '').trim();
+  const _wkendiGeriDonus = !!(_wsess && _whedef && _wsess.username === _whedef
+    && (!_wtip || _wtip === 'ofis'));
+  if (!_wkendiGeriDonus && !isAdmin(req.body?.token)) {
+    return res.json({ ok: false, error: 'Yetki yok' });
+  }
+  const username = _whedef;
   const tip = (_wtip === 'pazarlama' || _wtip === 'whapi') ? _wtip : 'ofis';
   /* ═══ WHAPI KANCASI SONU ═══ */
 `;
