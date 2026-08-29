@@ -610,6 +610,74 @@ function grupKuyruguIsle() {
   }
 }
 
+// ── SOHBET LISTESI SENKRONU (2026-08) ────────────────────────
+// DERT: "etiketler Baileys ile ayni calismiyor".
+// OLCULDU: etiketler ZATEN ORTAK — db.js:653 diyor ki chat_labels
+// tablosunda line_id SUTUNU YOK, iki hat ayni kayitlari kullaniyor.
+// Fark SOHBET SAYISINDA: Baileys 5460, Whapi 2214. Panel etiket
+// sayaclarini YUKLU SOHBETLER uzerinden hesapladigi icin rakamlar
+// tutmuyordu.
+// SEBEP: Whapi hatti yalnizca webhook acildigindan beri hareket gormus
+// sohbetleri biliyor; Baileys'in tam gecmisi var.
+// COZUM: acilista Whapi'nin /chats ucundan TUM sohbetleri cekip eksik
+// olanlari olustur. Mesaj cekmiyoruz (agir olur), sadece sohbet kaydi
+// aciyoruz ki etiketler ve sayaclar ayni olsun.
+const SOHBET_SAYFA = 500;
+const SOHBET_TAVAN = 20;           // en fazla 20 sayfa = 10.000 sohbet
+let sohbetSenkronCalisti = false;
+
+async function sohbetleriSenkronla(sebep = 'acilis') {
+  if (!sock || !sonSaglik.bagli) return { atlandi: 'hat hazir degil' };
+  if (sohbetSenkronCalisti && sebep === 'acilis') return { atlandi: 'zaten yapildi' };
+  sohbetSenkronCalisti = true;
+  const C = B.hatChats(LINE_ID);
+  if (!C || !C.set) return { atlandi: 'sohbet haritasi yok' };
+  let eklenen = 0, bakilan = 0, sayfa = 0, ofset = 0;
+  try {
+    while (sayfa < SOHBET_TAVAN) {
+      const c = await sock._istek('/chats?count=' + SOHBET_SAYFA + '&offset=' + ofset,
+        { zamanAsimi: 45000 });
+      const liste = (c && (c.chats || c.list)) || [];
+      if (!liste.length) break;
+      for (const ch of liste) {
+        const jid = String(ch.id || ch.chat_id || '');
+        if (!jid || !jid.includes('@')) continue;
+        bakilan += 1;
+        if (C.get(jid)) continue;                       // zaten var
+        const grupMu = jid.endsWith('@g.us');
+        C.set(jid, {
+          jid,
+          name: ch.name || ch.subject || (grupMu ? jid.split('@')[0] : jid.split('@')[0]),
+          isGroup: grupMu,
+          messages: [],
+          unread: 0,
+          lastTime: '',
+          lastTs: Number(ch.timestamp ? ch.timestamp * 1000 : 0) || 0,
+          avatar: ch.chat_pic || ch.image || null,
+          members: [],
+        });
+        eklenen += 1;
+        if (B.db.isReady()) B.db.saveChat(C.get(jid), LINE_ID).catch(() => {});
+      }
+      if (liste.length < SOHBET_SAYFA) break;
+      ofset += liste.length;
+      sayfa += 1;
+      await bekleMs(300);                                // Whapi'yi yorma
+    }
+    if (eklenen) {
+      log('SOHBET SENKRONU (' + sebep + '): ' + eklenen + ' eksik sohbet eklendi ('
+        + bakilan + ' kontrol edildi) — etiket sayaclari artik Baileys ile ayni');
+      B.broadcastHat(LINE_ID, { type: 'chatsReload' });
+    } else {
+      log('SOHBET SENKRONU (' + sebep + '): eksik sohbet yok (' + bakilan + ' kontrol edildi)');
+    }
+  } catch (e) {
+    log('sohbet senkronu basarisiz: ' + e.message);
+    sohbetSenkronCalisti = false;                        // bir dahaki sefere tekrar dene
+  }
+  return { eklenen, bakilan };
+}
+
 // ── ADSIZ GRUP TARAYICISI ────────────────────────────────────
 // Adi hala ciplak kimlik olan gruplari periyodik olarak yeniden dener.
 // Boylece sessiz gruplarin adi da er gec dolar; yeni mesaj beklenmez.
@@ -1416,6 +1484,9 @@ async function hattiBaslat() {
   // Acilistan 30 sn sonra bir kez: surec kapaliyken gelenleri yakala
   setTimeout(() => { kacanTelafi('acilis').catch(() => {}); }, 30000).unref?.();
 
+  // SOHBET LISTESI SENKRONU — etiket sayaclari Baileys ile ayni olsun
+  setTimeout(() => { sohbetleriSenkronla('acilis').catch(() => {}); }, 20000).unref?.();
+
   // ADSIZ GRUP TARAYICISI
   if (adsizTimer) clearInterval(adsizTimer);
   adsizTimer = setInterval(adsizGruplariTara, ADSIZ_TARAMA_ARALIK);
@@ -1467,7 +1538,8 @@ function kur(baglam, app, express) {
   yenilemeKur(app, express);
   return { hattiBaslat, LINE_ID, durum: () => sonSaglik, sock: () => sock, telafi: kacanTelafi, birSohbet: birSohbetiTelafiEt, cekim: surekliCekim,
     cekimKip: () => cekimKip, bosalt: gorulenBosalt,
-    grupTazele: grupBilgisiTazele, adsizTara: adsizGruplariTara };
+    grupTazele: grupBilgisiTazele, adsizTara: adsizGruplariTara,
+    sohbetSenkron: sohbetleriSenkronla };
 }
 
 module.exports = { kur, LINE_ID };

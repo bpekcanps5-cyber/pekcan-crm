@@ -7835,6 +7835,25 @@ function applyUser(){
   const pzrYonetici = currentUser.role==='pzr_yonetici'; // pazarlama yöneticisi
   // ayarlar menusunde ismi goster
   const sn=document.getElementById('settingsName'); if(sn) sn.textContent=currentUser.displayName||currentUser.username;
+  /* WHAPI: hat rozeti — profil adinin altinda kucuk bir satir.
+     Hat degistirince hangi hatta oldugunu bilmek icin. */
+  try{
+    document.querySelectorAll('#settingsName').forEach(function(el){
+      var r = el.parentElement && el.parentElement.querySelector('.whapi-hat-rozet');
+      if(!r){
+        r = document.createElement('div');
+        r.className = 'whapi-hat-rozet';
+        r.style.cssText = 'font-size:10.5px;font-weight:700;letter-spacing:.3px;'
+          + 'margin-top:3px;padding:2px 7px;border-radius:20px;display:inline-block;';
+        el.parentElement.appendChild(r);
+      }
+      var whapiMi = (currentUser.lineTip === 'whapi');
+      r.textContent = whapiMi ? 'WHAPI' : 'BAILEYS';
+      r.style.background = whapiMi ? 'rgba(139,92,246,.18)' : 'rgba(16,185,129,.18)';
+      r.style.color      = whapiMi ? '#a78bfa' : '#34d399';
+      r.title = whapiMi ? 'Whapi hattindasin' : 'Baileys (ofis) hattindasin';
+    });
+  }catch(e){}
   // PAZARLAMA YÖNETİCİSİ: sadece Satış Kontrol görür. Sohbetler/İç Mesajlar gizlenir.
   if(pzrYonetici){
     pazarlamaYoneticiArayuzu();
