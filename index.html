@@ -2,6 +2,8 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
+<!-- Chrome cevirisi metin dugumlerini <font> ile sarip SATIR SONLARINI YUTUYORDU -->
+<meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -3546,6 +3548,42 @@
     left:8px !important; right:8px !important; max-width:none !important;
   }
 }
+
+/* WHAPI PANEL GORUNUMU — panel kullanicisi mesaj balonu */
+.msg.panel-msg{
+  background:linear-gradient(0deg,rgba(37,99,235,.10),rgba(37,99,235,.10)),var(--balon,#fff);
+  border:1px solid rgba(37,99,235,.32);
+  box-shadow:0 1px 3px rgba(37,99,235,.10);
+}
+.msg.panel-msg .msg-text{color:inherit}
+/* Panel kullanicisi isim hapi — panelden gonderilen mesajlarla AYNI gorunum */
+.msg.panel-msg .sender-name.team-name{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:2px 9px 2px 4px;border-radius:999px;
+  background:rgba(37,99,235,.16);border:1px solid rgba(37,99,235,.45);
+  font-weight:600;letter-spacing:.1px;
+}
+body.dark .msg.panel-msg .sender-name.team-name,
+.dark .msg.panel-msg .sender-name.team-name{
+  background:rgba(96,165,250,.20);border-color:rgba(96,165,250,.55);
+}
+.msg.panel-msg .meta{opacity:.75}
+body.dark .msg.panel-msg, .dark .msg.panel-msg{
+  background:linear-gradient(0deg,rgba(96,165,250,.16),rgba(96,165,250,.16)),var(--balon,#1f2937);
+  border-color:rgba(96,165,250,.42);
+  box-shadow:0 1px 3px rgba(0,0,0,.25);
+}
+
+/* WHAPI: satir sonlari korunsun.
+   .msg sinifinda 'white-space' yoktu; esc() de \n -> <br> yapmiyor.
+   HTML'de ciplak \n BOSLUGA doner -> alt alta yazilan fiyat/teminat
+   listeleri panelde tek paragraf gibi akiyordu. */
+.msg, .msg .im-caption, .msg-text{ white-space:pre-wrap; }
+.msg .reply-box, .msg .msg-meta, .msg time{ white-space:normal; }
+#groupDescText, .group-desc #groupDescText{
+  white-space:pre-wrap !important; word-break:break-word;
+}
+.group-desc #groupDescText.collapsed{ -webkit-line-clamp:3; }
 </style>
 <script>
   (function(){
@@ -4210,6 +4248,11 @@
       <div style="flex:1;min-width:220px">
         <h3 style="margin-bottom:6px">Kullanıcı Yönetimi</h3>
         <p style="color:var(--muted);font-size:13px;margin-bottom:18px">Ekibine kullanıcı aç, rol ver ya da sil. Herkes kendi kullanıcı adı ve şifresiyle girer.</p>
+        <!-- WHAPI: toplu hat dugmeleri -->
+        <div style="display:flex;gap:8px;margin:-8px 0 16px;flex-wrap:wrap">
+          <button class="btn ghost" style="font-size:12.5px;padding:7px 12px" onclick="whapiHepsiniDegistir(true)">🔁 Herkesi Whapi'ye al</button>
+          <button class="btn ghost" style="font-size:12.5px;padding:7px 12px" onclick="whapiHepsiniDegistir(false)">↩️ Herkesi Baileys'e al</button>
+        </div>
       </div>
       <button class="btn ghost" onclick="otoEtiketAc()" style="white-space:nowrap;font-size:12.5px;flex:0 0 auto;padding:7px 13px;height:34px;align-self:flex-start">🏷️ Otomatik etiket</button>
       <button class="btn ghost" onclick="sifreListeAc()" style="white-space:nowrap;font-size:12.5px;flex:0 0 auto;padding:7px 13px;height:34px;align-self:flex-start">🔑 Şifre listesi</button>
@@ -5436,8 +5479,15 @@ function connect(){
       renderList();
     }
     else if(d.type==='coklisession'){
-      // Ayni kullanici birden fazla yerde acik -> WhatsApp oturumunu bozabilir, uyar.
-      cokliSessionUyar(d.adet);
+      /* WHAPI: coklu oturum uyarisi KAPATILDI. WhatsApp'tan degil panelin
+         kendisinden geliyordu; sadece konsola bilgi olarak yaziliyor. */
+      try{ console.log('[bilgi] bu hesap '+d.adet+' yerde acik'); }catch(e){}
+    }
+    else if(d.type==='hatDegisti'){
+      /* WHAPI: hat degisti -> F5 GEREKMEDEN yenile. Sunucu oturumu bellekte
+         tazeledi, token gecerli; sayfa yeniden yuklenince yeni hat gelir. */
+      try{ if(typeof showToast==='function') showToast('Hat degisti ('+(d.tip==='whapi'?'WHAPI':'BAILEYS')+') — yenileniyor…'); }catch(e){}
+      setTimeout(function(){ location.reload(); }, 700);
     }
     else if(d.type==='teamList'){ teamGeldi(d.team); }
     else if(d.type==='labelsList'){ labelsGeldi(d.labels, d.chatLabels); }
@@ -8496,6 +8546,11 @@ function userListeCiz(){
       actions+='<button class="um-btn" onclick="userDuzenleAc('+u.id+',\''+esc(u.username).replace(/'/g,"\\'")+'\',\''+esc(u.display_name||'').replace(/'/g,"\\'")+'\')">Düzenle</button>';
       // ROL DEĞİŞTİR menüsü (yönetici / pazarlama yöneticisi / normal)
       actions+='<button class="um-btn" onclick="rolMenuAc(event,'+u.id+',\''+esc(u.role||'agent')+'\')">Rol ▾</button>';
+      /* WHAPI: satir hat dugmesi — tek tusla gecis, tekrar basinca geri. */
+      { const _wh=(u.tip==='whapi');
+        actions+='<button class="um-btn'+(_wh?' aktif':'')+'" onclick="whapiHatDegistir(\''
+          +esc(u.username).replace(/'/g,"\\'")+'\','+(_wh?'false':'true')+')">'
+          +(_wh?'🟢 Whapi':'⚪ Whapi\'ye al')+'</button>'; }
       const _ug=u.gorev||'';
       const _ugb=(typeof GOREV_BILGI!=='undefined'&&GOREV_BILGI[_ug])?GOREV_BILGI[_ug]:null;
       actions+='<button class="um-btn" onclick="gorevMenuAc(event,'+u.id+',\''+esc(_ug)+'\')"'
@@ -8512,6 +8567,62 @@ function userListeCiz(){
 }
 // ROL DEĞİŞTİRME menüsü (mevcut kullanıcıyı yönetici/pazarlama yöneticisi/normal yap)
 // GOREV ETIKETI menusu (2 AYLIK / KALICI / IPTAL / yok) — mevcut rolden bagimsiz
+/* WHAPI: hat degistirme. Mevcut /api/users/setline ucunu kullanir. */
+async function whapiHatDegistir(username, whapiYap){
+  const hedef = whapiYap ? 'WHAPI' : 'BAILEYS (ofis)';
+  if(!confirm(username+' -> '+hedef+' hattina alinacak. Devam?')) return;
+  try{
+    const r = await fetch('/api/users/setline',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({token:authToken, username:username, tip: whapiYap?'whapi':'ofis'})});
+    const d = await r.json();
+    if(!d.ok){ alert('Olmadi: '+(d.error||'bilinmeyen hata')); return; }
+    if(typeof userListeCiz==='function') userListeCiz();
+    const benim = (typeof currentUser!=='undefined' && currentUser && currentUser.username===username);
+    if(benim){ alert('Sen '+hedef+' hattina alindin. Sayfa yenileniyor.'); setTimeout(function(){location.reload();},600); }
+    else alert(username+' -> '+hedef+'  (acik paneli varsa otomatik yenilenir)');
+  }catch(e){ alert('Baglanti hatasi: '+e.message); }
+}
+
+/* TOPLU: herkesi tek tusla gecir. */
+async function whapiHepsiniDegistir(whapiYap){
+  const hedef = whapiYap ? 'WHAPI' : 'BAILEYS (ofis)';
+  const liste = (typeof _userListesi!=='undefined' && Array.isArray(_userListesi)) ? _userListesi : null;
+  if(!liste || !liste.length){ alert('Kullanici listesi bos. Once Kullanici Yonetimi ekranini ac.'); return; }
+  const adlar = liste.map(function(u){return u.username;}).filter(Boolean);
+  if(!confirm(adlar.length+' kullanicinin HEPSI '+hedef+' hattina alinacak. Devam?')) return;
+  var ok=0, hatali=[];
+  for(var i=0;i<adlar.length;i++){
+    try{
+      const r=await fetch('/api/users/setline',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:authToken,username:adlar[i],tip:whapiYap?'whapi':'ofis'})});
+      const d=await r.json();
+      if(d&&d.ok) ok++; else hatali.push(adlar[i]);
+    }catch(e){ hatali.push(adlar[i]); }
+  }
+  if(typeof userListeCiz==='function') userListeCiz();
+  var msj = ok+' kullanici '+hedef+' hattina alindi.';
+  if(hatali.length) msj += '\n'+hatali.length+' tanesi olmadi: '+hatali.slice(0,8).join(', ');
+  alert(msj);
+  const ben=(typeof currentUser!=='undefined'&&currentUser&&currentUser.username)||'';
+  if(ben && adlar.indexOf(ben)>-1) setTimeout(function(){location.reload();},900);
+}
+
+/* Hat koptugunda kullanici KENDINI Baileys'e dondurur (yetki gerekmez). */
+async function whapiBaileyseDon(){
+  if(!confirm('Baileys (ofis) hattina donulecek. Devam?')) return;
+  try{
+    const kim=(typeof currentUser!=='undefined'&&currentUser&&currentUser.username)||'';
+    if(!kim){ alert('Kullanici bilgisi okunamadi.'); return; }
+    const r=await fetch('/api/users/setline',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:authToken,username:kim,tip:'ofis'})});
+    const d=await r.json();
+    if(d.ok){ alert('Baileys hattina donuldu. Sayfa yenileniyor.'); setTimeout(function(){location.reload();},600); }
+    else alert('Olmadi: '+(d.error||'bilinmeyen hata'));
+  }catch(e){ alert('Baglanti hatasi: '+e.message); }
+}
 function gorevMenuAc(ev, id, suanki){
   ev.stopPropagation();
   document.querySelectorAll('.gorev-menu').forEach(x=>x.remove());
@@ -8979,6 +9090,13 @@ function showConnectPrompt(){
   const scr=document.getElementById('qrScreen');
   const wrap=document.getElementById('qrImgWrap');
   const sub=document.getElementById('qrSub');
+  /* WHAPI: kopuk ekran — Whapi hattinda QR YOK, bos ekranda beklemesin. */
+  if((window.currentUser&&window.currentUser.lineTip)==='whapi'){
+    if(sub) sub.textContent='Whapi hattı bağlı değil. Baileys hattına dönebilirsin.';
+    wrap.innerHTML='<button class="login-btn" style="width:auto;padding:14px 28px" onclick="whapiBaileyseDon()">↩️ Baileys hattına dön</button>';
+    scr.classList.add('show');
+    return;
+  }
   if(sub) sub.textContent='WhatsApp bağlı değil. Bağlanmak için aşağıdaki butona bas.';
   wrap.innerHTML='<button class="login-btn" style="width:auto;padding:14px 28px" onclick="startWhatsApp()">📱 WhatsApp\'a bağlan</button>';
   scr.classList.add('show');
@@ -10435,7 +10553,11 @@ function renderMessages(c, searchQ){
       // gelen mesaj: once senderJid, ikisi de doluysa karsilastir
       const pj=prev.senderJid||'', mj=m.senderJid||'';
       if(pj && mj){
-        ayniGonderen = (pj===mj);
+        /* WHAPI PANEL GORUNUMU */
+        // Ayni numara AMA farkli panel kullanicisi -> AYRI gonderen (isim gorunsun)
+        const _pAd=(prev.sender||''), _mAd=(m.sender||'');
+        ayniGonderen = (pj===mj) && (!_pAd || !_mAd || _pAd===_mAd);
+        /* WHAPI PANEL GORUNUMU SONU */
       } else {
         // senderJid eksik -> isimle karsilastir; isim de yoksa AYNI DEGIL (ismi goster)
         const pn=prev.sender||'', mn=m.sender||'';
@@ -10487,9 +10609,26 @@ function renderMessages(c, searchQ){
         const ofisMu = m.senderOfis || ofisIsmiMi(m.sender);
         const ofisRozet = ofisMu ? '<span class="ofis-rozet" title="Ofis ekibi (gruptan)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"/></svg></span>' : '';
         const sj=esc(m.senderJid||'');
+        /* WHAPI PANEL GORUNUMU */
+        // Bu mesaji BIZIM panel kullanicimiz yazdiysa (sunucu isaretledi ya da
+        // o isim icin panel profil fotosu var), panelden gonderilmis mesajlarla
+        // AYNI gorunumu kullan: kalkan rozeti + profil fotosu + gorev rengi.
+        const _pFoto = (typeof panelProfilFoto === 'function') ? (panelProfilFoto(sn) || '') : '';
+        if (m.panelKullanicisi || _pFoto) {
+          const _pGr = (typeof gorevRengi === 'function') ? gorevRengi(sn) : null;
+          const _pAv = _pFoto ? '<span class="tn-foto" style="background-image:url(\'' + _pFoto + '\')"></span>' : '';
+          const _pRz = '<span class="panel-rozet" title="Panel kullanıcısı"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></span>';
+          const _pEt = (typeof gorevEtiketi === 'function') ? gorevEtiketi(sn) : '';
+          name = '<div class="sender-name team-name clickable' + (_pGr ? ' gorevli' : '') + '"'
+               + (_pGr ? ' style="color:' + _pGr + ' !important;border-color:' + _pGr + '4d;background:' + _pGr + '1a"' : '')
+               + ' onclick="panelKisiGoster(\'' + sn.replace(/'/g, "\\'") + '\')" title="Panel kullanıcısı"'
+               + '>' + _pAv + _pRz + sn + _pEt + '</div>';
+        } else {
         name='<div class="sender-name clickable'+(ofisMu?' ofis-uye':'')+'" style="color:'+colorFor(m.sender)+'"'
              +' data-jid="'+sj+'" data-ad="'+sn+'" title="'+sn+' — kişi bilgisi"'
              +' onclick="gonderenAc(this)">'+ofisRozet+sn+'</div>';
+        }
+        /* WHAPI PANEL GORUNUMU SONU */
       }
     }
     let fwd='';
@@ -10659,7 +10798,11 @@ function renderMessages(c, searchQ){
     const secKutu = '<span class="sec-kutu'+(selectedMsgs.has(m.id)?' dolu':'')+'" onclick="event.stopPropagation();secimToggle(\''+esc(m.id||'')+'\')" title="Seç">'+(selectedMsgs.has(m.id)?'✓':'')+'</span>';
     // ACİL: mesajda siren/uyarı emojisi varsa kırmızı vurgulu göster
     const acilCls = acilMesajMi(m.text) ? ' acil-mesaj' : '';
-    return sep+'<div class="msg '+cls+grpCls+selCls+menCls+failCls+acilCls+(secimModu?' secim-modu':'')+'" data-mid="'+esc(m.id||'')+'">'+secKutu+actions+name+fwd+quote+body+reaction+'<span class="meta">'+editedTag+esc(m.time||'')+tik+'</span></div>';
+    /* WHAPI PANEL GORUNUMU */
+    // Panel kullanicisinin yazdigi mesaj: balonun TAMAMI farkli renkte.
+    const _pnlCls = (m.panelKullanicisi || (typeof panelProfilFoto === 'function' && panelProfilFoto(m.sender || ''))) ? ' panel-msg' : '';
+    /* WHAPI PANEL GORUNUMU SONU */
+    return sep+'<div class="msg '+cls+grpCls+selCls+menCls+failCls+acilCls+_pnlCls+(secimModu?' secim-modu':'')+'" data-mid="'+esc(m.id||'')+'">'+secKutu+actions+name+fwd+quote+body+reaction+'<span class="meta">'+editedTag+esc(m.time||'')+tik+'</span></div>';
    }catch(hata){
      // BİR MESAJ ÇİZİLEMEDİ -> tüm grubu kilitleme. O mesajı atla, diğerleri çalışsın.
      console.error('mesaj çizim hatası (atlandı):', hata, m && m.id);
@@ -11073,7 +11216,13 @@ function handleMsgAppend(d){
     if(d.prevId && sonId && d.prevId!==sonId && !c.messages.some(x=>x.id===d.prevId)){
       if(connected) ws.send(JSON.stringify({type:'syncChat', jid})); // mesaj kaçtı -> tam senkron
     }
-    c.messages.push(m);
+    /* WHAPI: gec gelen mesaj kendi zamanina otursun.
+       Baileys'te mesaj aninda geldigi icin gelis sirasi = gercek sira idi;
+       Whapi webhook'u gec gelince mesaj YANLIS YERE dusuyordu. */
+    { const _ts=Number(m.ts||0);
+      let _i=c.messages.length;
+      while(_i>0 && Number(c.messages[_i-1].ts||0)>_ts) _i--;
+      if(_i===c.messages.length) c.messages.push(m); else c.messages.splice(_i,0,m); }
     if(c.messages.length>400) c.messages=c.messages.slice(-400);
   }
   // bahsedilme (mention) — bana mı?
@@ -11905,10 +12054,28 @@ function railFilter(f, el){
 }
 
 // ---- Tümünü okundu yap ----
-document.getElementById('markAllBtn').onclick=()=>{
-  if(!connected){ alert('WhatsApp bağlı değil.'); return; }
-  ws.send(JSON.stringify({type:'markAllRead'}));
-};
+/* WHAPI: okundu — uc sayac birden sifirlanir.
+   etkinUnread() kullanicinin ROLUNE gore farkli alana bakiyor:
+     muhasebeci -> c.muhUnread | bagimsiz okuma -> c.ozelUnread | digeri -> c.unread
+   Eskiden YALNIZCA c.unread sifirlaniyordu; bagimsiz okuma acik kullanicida
+   sayac hic dusmuyordu (panelde 247 okunmamis kaliyordu).
+   Ayrica panel KENDI sayacini beklemeden sifirlar -> ekran ANINDA duzelir. */
+function whapiHepsiniOkunduYap(){
+  try{
+    var n=0;
+    for(var j in chats){
+      var c=chats[j]; if(!c) continue;
+      if((c.unread||0)>0||(c.ozelUnread||0)>0||(c.muhUnread||0)>0||c.hasMention){
+        c.unread=0; c.ozelUnread=0; c.muhUnread=0; c.hasMention=false; n++;
+      }
+    }
+    if(typeof renderList==='function') renderList();
+    if(typeof updateTitle==='function') updateTitle();
+    if(typeof showToast==='function') showToast(n+' sohbet okundu isaretlendi');
+  }catch(e){ console.log('[okundu]',e.message); }
+  try{ ws.send(JSON.stringify({type:'markAllRead'})); }catch(e){}
+}
+document.getElementById('markAllBtn').onclick=()=>{ whapiHepsiniOkunduYap(); };
 
 // ---- Emoji secici ----
 const emojiData={

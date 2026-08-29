@@ -2285,12 +2285,46 @@ app.post('/api/users/update', express.json(), async (req, res) => {
 // MEVCUT kullanicinin HAT TIPINI degistir (ofis <-> pazarlama). Sadece yonetici.
 // Kullanim: eski/yanlis eslenmis kullaniciyi pazarlamaya cevirmek icin
 // (orn. Volkan 'ofis'e dusmus -> pazarlamaya al, kendi hatti olsun).
+/* WHAPI: setline — hat degisince oturumu BELLEKTE tazele ve paneli yenile.
+   whoami lineId'yi yalnizca HIC yoksa DB'den okuyor; bu yuzden oturum
+   acikken DB'yi degistirmek YETMIYORDU, kullanici cikip girmek zorundaydi. */
+function _whapiOturumTazele(kullanici, hatId, hatTip) {
+  try {
+    for (const [, ss] of sessions) {
+      if (ss && ss.username === kullanici) { ss.lineId = hatId; ss.lineTip = hatTip; }
+    }
+  } catch (_) {}
+  try {
+    wss.clients.forEach((c) => {
+      if (c.readyState === 1 && c._username === kullanici) {
+        c._lineId = hatId;
+        try { c.send(JSON.stringify({ type: 'hatDegisti', lineId: hatId, tip: hatTip })); } catch (_) {}
+      }
+    });
+  } catch (_) {}
+}
 app.post('/api/users/setline', express.json(), async (req, res) => {
-  if (!isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
-  const username = (req.body?.username || '').trim();
-  const tip = req.body?.tip === 'pazarlama' ? 'pazarlama' : 'ofis';
+  /* WHAPI: setline yetki — KENDINI ofise dondurme yetki ISTEMEZ.
+     Guvenli yon: kimseye ekstra erisim vermez, herkesin varsayilan hatti
+     olan 'ofis'e ve SADECE kendisi icin. Digerleri yonetici ister. */
+  const _wsess = req.body?.token ? sessions.get(req.body.token) : null;
+  const _wtip = req.body?.tip;
+  const _whedef = (req.body?.username || '').trim();
+  const _wkendi = !!(_wsess && _whedef && _wsess.username === _whedef && (!_wtip || _wtip === 'ofis'));
+  if (!_wkendi && !isAdmin(req.body?.token)) return res.json({ ok: false, error: 'Yetki yok' });
+  const username = _whedef;
+  const tip = (_wtip === 'pazarlama' || _wtip === 'whapi') ? _wtip : 'ofis';
+  if (tip === 'ofis') setTimeout(() => _whapiOturumTazele(username, 'ofis', 'ofis'), 30);
   if (!username) return res.json({ ok: false, error: 'Kullanıcı adı gerekli' });
   try {
+    /* WHAPI: whapi dali */
+    if (tip === 'whapi') {
+      const _wl = process.env.WHAPI_LINE_ID || 'whapi';
+      await db.setUserLine(username, _wl, 'whapi');
+      _whapiOturumTazele(username, _wl, 'whapi');
+      console.log('🔧 ' + username + ' -> WHAPI hatti (' + _wl + ')');
+      return res.json({ ok: true, username, lineId: _wl, tip: 'whapi', message: username + ' artik WHAPI hattinda.' });
+    }
     if (tip === 'pazarlama') {
       const lineId = 'pzr_' + username; // her pazarlamaciya ozel hat
       await db.saveLine(lineId, username + ' (Pazarlama)', 'pazarlama', username);
@@ -4230,7 +4264,7 @@ wss.on('connection', (ws) => {
             _otoPanelUser: ws._username || null,   // otomatik etiket yetkisi icin
             durum: baslangicDurum,
             teamMentions: Array.isArray(msg.teamMentions) ? msg.teamMentions : undefined,
-          }, _LID);
+          }, {}, _LID);
           // PANEL EŞLEŞTİRME: panelde gösterilen geçici mesajı gerçek mesajla eşleştir.
           // (Yoksa geçici mesaj ekranda kalıp mesaj ÇİFT görünüyordu.)
           if (istekId) {
@@ -4261,7 +4295,7 @@ wss.on('connection', (ws) => {
             sender: msg.agent || 'Ben', time: nowTime(), replyTo,
             durum: -1, // GONDERILEMEDI (kirmizi unlem)
             gonderilemedi: true,
-          }, _LID);
+          }, {}, _LID);
           // panele ayrica bildir (toast + metni geri koymak istersen)
           ws.send(JSON.stringify({ type: 'sendError', jid: msg.jid, text: msg.text, error: 'Mesaj gönderilemedi! Kırmızı ünlemli mesajı silip tekrar deneyin.' }));
         }
@@ -4273,7 +4307,7 @@ wss.on('connection', (ws) => {
           id: hataId, fromMe: true, kind: 'text', text: msg.text,
           sender: msg.agent || 'Ben', time: nowTime(),
           durum: -1, gonderilemedi: true,
-        }, _LID);
+        }, {}, _LID);
         ws.send(JSON.stringify({ type: 'sendError', jid: msg.jid, text: msg.text, error: 'WhatsApp bağlı değil — mesaj gönderilemedi.' }));
       }
 
@@ -4721,18 +4755,36 @@ wss.on('connection', (ws) => {
 
       // 6) TUMUNU okundu yap (+ tum bahsedilme isaretlerini temizle)
       else if (msg.type === 'markAllRead' && SOCK && CONNECTED) {
+        /* WHAPI: markAllRead — ONCE aninda sifirla, makbuzlari SONRA yolla.
+           Eskiden her sohbet icin 'await SOCK.readMessages' bekleniyordu;
+           200 okunmamis sohbet = 200 istek arka arkaya, dakikalar suruyordu.
+           Ayrica UC sayac var (unread / ozelUnread / muhUnread) ama yalnizca
+           'unread' sifirlaniyordu -> bagimsiz okuma acik kullanicida sayac
+           hic dusmuyordu. */
+        const _okKuyruk = [];
         for (const chat of C.values()) {
-          if (chat.unread > 0 || chat.hasMention) {
+          if (chat.unread > 0 || chat.ozelUnread > 0 || chat.muhUnread > 0 || chat.hasMention) {
             chat.unread = 0;
+            chat.ozelUnread = 0;
+            chat.muhUnread = 0;
             chat.hasMention = false;
-            try {
-              const keys = chat.messages.filter(m => !m.fromMe && m.key).slice(-20).map(m => m.key);
-              if (keys.length) await SOCK.readMessages(keys);
-            } catch (e) {}
             if (db.isReady()) db.saveChat(chat, _LID).catch(() => {});
             broadcastHat(_LID, { type: 'message', jid: chat.jid, chat: stripRaw(chat) });
+            try {
+              const keys = chat.messages.filter(m => !m.fromMe && m.key).slice(-20).map(m => m.key);
+              if (keys.length) _okKuyruk.push(keys);
+            } catch (e) {}
           }
         }
+        (async () => {
+          for (let i = 0; i < _okKuyruk.length; i += 5) {
+            await Promise.all(_okKuyruk.slice(i, i + 5).map((k) => {
+              try { return SOCK.readMessages(k).catch(() => {}); } catch (e) { return null; }
+            }));
+            await new Promise((r) => setTimeout(r, 120));
+          }
+        })().catch(() => {});
+        console.log('👁 Hepsi okundu: ' + _okKuyruk.length + ' sohbet (makbuzlar arka planda)');
       }
 
       // 7) Mesaji ILET (forward) - baska sohbet(ler)e
@@ -4814,7 +4866,7 @@ wss.on('connection', (ws) => {
               mediaUrl: orig.mediaUrl || null,
               sender: msg.agent || 'Ben', time: nowTime(), forwarded: true,
               durum: 2,
-            }, _LID);
+            }, {}, _LID);
             okCount++;
           } catch (e) {
             console.error(`Iletme hatasi (${(tjid||'').split('@')[0]}):`, e.message);
@@ -7023,7 +7075,10 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
     if (message && !message.robot && message.text) robotKilidiAc(jid, message.text);
   } catch (e) {}
   const now = Date.now();
-  message.ts = now; // gercek zaman damgasi (siralama icin)
+  /* ═══ WHAPI KANCASI (whapi-kur.js) ═══ Cevirici GERCEK WhatsApp zaman damgasi koyduysa EZME.
+     Baileys yolu ts gecirmedigi icin orada davranis DEGISMEZ. */
+  message.ts = (typeof message.ts === 'number' && message.ts > 0) ? message.ts : now;
+  /* ═══ WHAPI KANCASI SONU ═══ */
   const C = hatChats(lineId); // bu hattin sohbetleri (ofis ise global chats)
   // AYNI mesaj iki kez eklenmesin (gonderdigimiz mesaji WhatsApp geri yansitir -> cift kayit)
   if (message.id && C.has(jid)) {
@@ -7843,6 +7898,13 @@ function yenidenBaglanPlanla(lineId, bekle, line) {
 // startWA(lineId): bir HATTI baslatir. Varsayilan 'ofis' (geriye uyumlu).
 // Her hat kendi auth klasorunu (auth/<lineId>) ve kendi line objesini kullanir.
 async function startWA(lineId = 'ofis') {
+  /* ═══ WHAPI KANCASI (whapi-kur.js) ═══ Bu hat Whapi ise Baileys yoluna HIC girme. */
+  if (lineId === (process.env.WHAPI_LINE_ID || 'whapi')) {
+    const _w = global._whapiKurulum;
+    if (!_w) { console.log('[whapi] kurulum henuz hazir degil, atlandi'); return; }
+    return _w.hattiBaslat().catch((e) => console.error('[whapi] baslatma hatasi:', e.message));
+  }
+  /* ═══ WHAPI KANCASI SONU ═══ */
   // DIS KABUK: icerideki HER hata yakalanir, kilit acilir, yeniden denenir.
   // Boylece bir hata hatti kalici olarak sagir birakamaz.
   try {
@@ -8842,7 +8904,13 @@ async function _startWAIc(lineId = 'ofis') {
           || savedContacts.get(m.key.participant || '');
         // KAYITLI isim varsa bu kisi OFIS EKIBI/elle kaydedilmis demektir -> isaretle.
         // Boylece panel, ofis ekibini gruptaki normal kisilerden ayirt edip rozet koyar.
-        senderOfis = !!kayitliIsim;
+        /* WHAPI: rehber != ekip.
+           Rehberde kayitli olmak EKIP UYESI olmak DEGIL — musterilerin cogu
+           da rehberde kayitli. senderOfis panelde EKIP rozetini (mavi cerceve
+           + bina ikonu) cizdiriyordu; ruhsat atan MUSTERI panel kullanicisi
+           gibi goruntuyordu. Kayitli ISIM yine kullanilir, sadece ROZET
+           gercek ekip uyelerine konur. */
+        senderOfis = !!(kayitliIsim && typeof ekipUyesiMi === 'function' && ekipUyesiMi(kayitliIsim));
         senderPush = kayitliIsim
           || m.pushName
           || contactNames.get(resolved.jid)
@@ -9797,6 +9865,30 @@ server.listen(PORT, async () => {
   } else {
     console.log('   📱 Oturum yok — QR uretiliyor, panelden okutun.');
   }
+  /* ═══ WHAPI KANCASI (whapi-kur.js) ═══ Whapi ikinci hat: webhook ucunu kaydet ve hatti ayaga kaldir.
+     Baileys yolu bu bloktan ETKILENMEZ; hata olsa bile ofis hatti calisir. */
+  try {
+    const whapiHat = require('./whapi-hat');
+    global._whapiKurulum = whapiHat.kur({
+      addMessage, broadcastHat, hatChats, stripBirMesaj,
+      lines, createLine, db, MEDIA_DIR,
+      iletimDenetleTamam,
+      kisiAdiBul: (jid) => savedContacts.get(jid) || contactNames.get(jid) || '',
+      ekipUyesiMi, getGroupMeta, robotMedyaGeldi,
+      kisiAdiKaydet: (jid, ad) => { try { contactNames.set(jid, ad); } catch (_) {} },
+    }, app, express);
+    if (process.env.WHAPI_TOKEN) {
+      global._whapiKurulum.hattiBaslat()
+        .then(() => console.log('[whapi] ikinci hat hazir'))
+        .catch((e) => console.error('[whapi] hat baslatilamadi:', e.message));
+    } else {
+      console.log('[whapi] WHAPI_TOKEN yok — ikinci hat KAPALI (ofis normal calisiyor)');
+    }
+  } catch (e) {
+    console.error('[whapi] kurulum atlandi:', e.message);
+  }
+  /* ═══ WHAPI KANCASI SONU ═══ */
+
   startWA(); // <-- veri yüklendikten SONRA
 });
 
