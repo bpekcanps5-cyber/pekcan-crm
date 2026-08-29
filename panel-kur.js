@@ -213,6 +213,17 @@ const KOY6 = '<meta charset="UTF-8">\n'
 const ARA7 = "  document.getElementById('chatCount').textContent=nAll+' sohbet';\n}";
 const KOY7 = ARA7 + "\n\n/* WHAPI PANEL GORUNUMU — LISTE SABITLIGI (v2)\n   DERT: \"gruplara tiklarken panel kiriliyormus gibi oynuyor\".\n   SEBEP: _renderListRaw her cagrilisinda list.innerHTML=html ile 1600+\n   sohbetin DOM'u sifirdan kuruluyor; tiklama anina denk gelirse parmagin\n   altindaki satir yok olup yerine yenisi geliyor.\n\n   v1 GERI ALINDI: 450 ms'lik zaman penceresi ve 'ayni HTML ise yazma'\n   katmani yuzunden liste BOS KALIYORDU. Iki hata vardi:\n     - ilk cizimde innerHTML iki kez ayarlaniyor, ikincisi yutuluyordu\n     - erteleme bayragi takilinca cizim bir daha hic yapilmiyordu\n   v2'de ikisi de yok:\n     - DOM yazimina HIC karisilmiyor\n     - erteleme SADECE parmak BASILIYKEN, pointerup gelince hemen cizilir\n     - BEKCI: 1200 ms icinde cizim yapilmadiysa erteleme iptal, zorla ciz\n       -> liste hicbir kosulda bos kalamaz */\n(function(){\n  if(window._whapiListeSabit2) return; window._whapiListeSabit2=1;\n  var asil=_renderListRaw;\n  var basili=false, kirli=false, ilkCizimYapildi=false, sonIstek=0;\n\n  function serbestBirak(){\n    basili=false;\n    if(kirli){ kirli=false; _renderListRaw(); }\n  }\n  ['pointerdown','touchstart','mousedown'].forEach(function(ev){\n    document.addEventListener(ev,function(){\n      basili=true;\n      /* EMNIYET: pointerup gelmese bile 1200 ms sonra serbest birak */\n      setTimeout(serbestBirak,1200);\n    },{passive:true,capture:true});\n  });\n  ['pointerup','touchend','touchcancel','pointercancel','mouseup'].forEach(function(ev){\n    document.addEventListener(ev,serbestBirak,{passive:true,capture:true});\n  });\n\n  _renderListRaw=function(){\n    var el=document.getElementById('chatList');\n    /* ILK cizimi ASLA erteleme — liste bos acilmasin */\n    if(basili && ilkCizimYapildi && (Date.now()-sonIstek)<1200){\n      kirli=true; return;\n    }\n    sonIstek=Date.now();\n    var ust=el?el.scrollTop:0;\n    asil.apply(this,arguments);\n    ilkCizimYapildi=true;\n    if(el&&ust&&el.scrollTop!==ust) el.scrollTop=ust;\n  };\n})();";
 
+
+// ── SEKIZINCI YAMA: HAT DEGISTIR DUGMESI ────────────────────
+// Kullanici yonetiminde her satira "Whapi'ye al / Whapi ✓" dugmesi koyar.
+// Geri alinabilir: ayni dugme tekrar basilinca ofis (Baileys) hattina doner.
+const ARA8 = "      actions+='<button class=\"um-btn\" onclick=\"rolMenuAc(event,'+u.id+',\\''+esc(u.role||'agent')+'\\')\">Rol ▾</button>';";
+const KOY8 = ARA8 + "\n      /* WHAPI PANEL GORUNUMU — HAT DEGISTIR DUGMESI (2026-08)\n         Kullaniciyi Whapi hattina alir, tekrar basilinca Baileys'e (ofis)\n         dondurur. Mevcut /api/users/setline ucunu kullanir — yeni uc YOK,\n         yetki kontrolu ayni. Kullanici YENIDEN GIRIS yapmali. */\n      {\n        const _wh = (u.tip==='whapi');\n        actions+='<button class=\"um-btn'+(_wh?' aktif':'')+'\" '\n          +'onclick=\"whapiHatDegistir(\\''+esc(u.username).replace(/'/g,\"\\\\'\")+'\\','+(_wh?'false':'true')+')\" '\n          +'title=\"'+(_wh?'Whapi hattinda. Basinca Baileys (ofis) hattina geri doner.'\n                        :'Baileys (ofis) hattinda. Basinca Whapi hattina alinir.')+'\">'\n          +(_wh?'🔁 Whapi ✓':'🔁 Whapi\\'ye al')+'</button>';\n      }";
+
+// Dugmenin cagirdigi fonksiyon. Mevcut /api/users/setline ucunu kullanir.
+const ARA9 = 'function gorevMenuAc(ev, id, suanki){';
+const KOY9 = "/* WHAPI PANEL GORUNUMU — hat degistirme */\nasync function whapiHatDegistir(username, whapiYap){\n  const hedef = whapiYap ? 'WHAPI' : 'BAILEYS (ofis)';\n  if(!confirm(username+' kullanicisi '+hedef+' hattina alinacak.\\n\\nBu kisi ACIKSA yeniden giris yapmali. Devam edilsin mi?')) return;\n  try{\n    const r = await fetch('/api/users/setline',{\n      method:'POST', headers:{'Content-Type':'application/json'},\n      body: JSON.stringify({ token: localStorage.getItem('token'),\n        username: username, tip: whapiYap ? 'whapi' : 'ofis' })\n    });\n    const d = await r.json();\n    if(d.ok){ alert(d.message || (username+' -> '+hedef)); if(typeof loadUsers==='function') loadUsers(); }\n    else alert('Olmadi: '+(d.error||'bilinmeyen hata'));\n  }catch(e){ alert('Baglanti hatasi: '+e.message); }\n}\nfunction gorevMenuAc(ev, id, suanki){";
+
 function geriAl() {
   if (!fs.existsSync(YEDEK)) { console.log('✗ yedek yok'); process.exit(1); }
   fs.copyFileSync(YEDEK, HEDEF);
@@ -223,7 +234,7 @@ function geriAl() {
 function kur() {
   console.log('yamalanan dosya: ' + HEDEF);
   let s = fs.readFileSync(HEDEF, 'utf8');
-  const kontrol = [['isim etiketi', ARA], ['balon sinifi', ARA2], ['stil blogu', ARA3], ['gruplama', ARA4], ['sirali ekleme', ARA5], ['ceviri kapatma', ARA6], ['liste sabitligi', ARA7]];
+  const kontrol = [['isim etiketi', ARA], ['balon sinifi', ARA2], ['stil blogu', ARA3], ['gruplama', ARA4], ['sirali ekleme', ARA5], ['ceviri kapatma', ARA6], ['liste sabitligi', ARA7], ['hat dugmesi', ARA8], ['hat fonksiyonu', ARA9]];
 
   // KISMI KURULUM (2026-08): dosya ESKI bir yama surumu tasiyabilir.
   // Eskiden burada kosulsuz cikiliyordu; sonuc olarak yeni yamalar (sirali
@@ -251,7 +262,8 @@ function kur() {
   else console.log('ℹ  yedek zaten var, uzerine YAZILMADI: ' + YEDEK);
   const eslesme = { 'isim etiketi': [ARA, KOY], 'balon sinifi': [ARA2, KOY2],
     'stil blogu': [ARA3, KOY3], 'gruplama': [ARA4, KOY4], 'sirali ekleme': [ARA5, KOY5],
-    'ceviri kapatma': [ARA6, KOY6], 'liste sabitligi': [ARA7, KOY7] };
+    'ceviri kapatma': [ARA6, KOY6], 'liste sabitligi': [ARA7, KOY7],
+    'hat dugmesi': [ARA8, KOY8], 'hat fonksiyonu': [ARA9, KOY9] };
   // DIKKAT: ARA3 ('</style>') dosyada BIRDEN COK var. Her yamayi TEK KEZ
   // uygula ve uygulandigini isaretle — aksi halde ayni CSS iki kez giriyordu
   // (zararsizdi ama dosyayi kirletiyordu ve geri almayi zorlastiriyordu).
@@ -274,6 +286,7 @@ function kur() {
   console.log('✔ sirali ekleme eklendi (gec gelen mesaj dogru yere oturuyor)');
   console.log('✔ tarayici cevirisi kapatildi (satir sonlarini yutuyordu)');
   console.log('✔ liste sabitligi eklendi (tiklarken kayma/titreme biter)');
+  console.log('✔ hat degistir dugmesi eklendi (kullanici yonetiminde)');
   console.log('');
   console.log('Sonraki: pm2 restart pekcan  ->  panelde CTRL+F5');
   console.log('Geri alma: node panel-kur.js --geri');

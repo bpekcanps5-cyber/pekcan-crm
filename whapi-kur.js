@@ -84,6 +84,32 @@ const KOY_4 = `  ${ISARET} Cevirici GERCEK WhatsApp zaman damgasi koyduysa EZME.
 `;
 
 
+
+// ── BESINCI KANCA: KULLANICIYI WHAPI HATTINA AL ─────────────
+// Kullanici yonetiminde tek dugmeyle kisiyi Whapi hattina alip geri
+// Baileys'e dondurebilmek icin. MEVCUT ucu genisletiyoruz (/api/users/setline)
+// — yeni uc acmiyoruz, yetki kontrolu ve akis aynen kaliyor.
+// GECICI GECIS: ayni dugme tekrar basilinca 'ofis' yapar.
+const ARA_5 = "  const tip = req.body?.tip === 'pazarlama' ? 'pazarlama' : 'ofis';";
+const KOY_5 = `  ${ISARET} 'whapi' tipi eklendi: kullanici Whapi hattina alinabilsin.
+     Ayni dugme tekrar basilinca 'ofis' doner -> gecis GERI ALINABILIR. */
+  const _wtip = req.body?.tip;
+  const tip = (_wtip === 'pazarlama' || _wtip === 'whapi') ? _wtip : 'ofis';
+  /* ═══ WHAPI KANCASI SONU ═══ */
+`;
+
+const ARA_6 = "    if (tip === 'pazarlama') {";
+const KOY_6 = `    ${ISARET} Whapi hattina alma dali. */
+    if (tip === 'whapi') {
+      const _wl = process.env.WHAPI_LINE_ID || 'whapi';
+      await db.setUserLine(username, _wl, 'whapi');
+      console.log('🔧 Kullanici ' + username + ' WHAPI hattina alindi -> hat: ' + _wl);
+      return res.json({ ok: true, username, lineId: _wl, tip: 'whapi',
+        message: username + ' artik WHAPI hattinda. Yeniden giris yapmali.' });
+    }
+    /* ═══ WHAPI KANCASI SONU ═══ */
+    if (tip === 'pazarlama') {`;
+
 // ── UCUNCU KANCA: addMessage EKSIK ARGUMAN HATASI ───────────
 // addMessage(jid, message, meta = {}, lineId = 'ofis')
 // Panelden gonderme yollarinda META ATLANMIS, hat kimligi onun yerine
@@ -139,14 +165,18 @@ function kur() {
   const n1 = kaynak.split(ARA_1).length - 1;
   const n2 = kaynak.split(ARA_2).length - 1;
   const n4 = kaynak.split(ARA_4).length - 1;
+  const n5 = kaynak.split(ARA_5).length - 1;
+  const n6 = kaynak.split(ARA_6).length - 1;
   if (n1 !== 1) { console.log(`✗ startWA baslangici ${n1} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
   if (n2 !== 1) { console.log(`✗ acilis satiri ${n2} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
   if (n4 !== 1) { console.log(`✗ 'message.ts = now' satiri ${n4} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
+  if (n5 !== 1) { console.log(`✗ setline tip satiri ${n5} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
+  if (n6 !== 1) { console.log(`✗ setline pazarlama dali ${n6} kez bulundu (1 olmaliydi). DOKUNULMADI.`); process.exit(1); }
 
   if (!fs.existsSync(YEDEK)) fs.copyFileSync(HEDEF, YEDEK);
   console.log('✔ yedek: server.js.whapi-oncesi');
 
-  kaynak = kaynak.replace(ARA_1, KOY_1).replace(ARA_2, KOY_2).replace(ARA_4, KOY_4);
+  kaynak = kaynak.replace(ARA_1, KOY_1).replace(ARA_2, KOY_2).replace(ARA_4, KOY_4).replace(ARA_5, KOY_5).replace(ARA_6, KOY_6);
   const u = ucuncuKanca(kaynak);
   kaynak = u.kaynak;
 
@@ -167,6 +197,7 @@ function kur() {
   console.log('✔ uc kanca eklendi (' + eski + ' -> ' + yeni + ' satir)');
   console.log('✔ addMessage eksik arguman hatasi duzeltildi (' + u.n + ' yerde)');
   console.log('✔ zaman damgasi ezilmesi durduruldu (gercek ts korunuyor)');
+  console.log('✔ kullanici WHAPI hattina alinabilir (kullanici yonetiminde dugme)');
   console.log('✔ soz dizimi saglam');
   console.log('');
   console.log('Sonraki adim:  pm2 restart pekcan --update-env');
