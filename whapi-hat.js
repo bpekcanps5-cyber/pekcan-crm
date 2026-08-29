@@ -576,15 +576,59 @@ function grupKuyruguIsle() {
   while (grupCalisan < GRUP_PARALEL && grupKuyruk.length) {
     const jid = grupKuyruk.shift();
     grupKuyruktakiler.delete(jid);
-    grupSonCekim.set(jid, Date.now());
     grupCalisan += 1;
+    // ═══ BASARISIZ CEKIMI TEKRAR DENE (2026-08) ══════════════════
+    // ESKI HATA: grupSonCekim.set(jid, now) CEKIMDEN ONCE yaziliyordu ve
+    // hata .catch(()=>{}) ile YUTULUYORDU. Cekim basarisiz olsa bile grup
+    // "az once cekildi" sayilip 30 dakika tekrar denenmiyordu. Ustelik
+    // grupBilgisiTazele yalnizca YENI MESAJ gelince cagriliyor; sessiz bir
+    // grupta ad hic duzelmiyor ve panelde '120363161070593814' gibi
+    // ciplak kimlik olarak kaliyordu.
+    // ARTIK: damga SADECE BASARIDA yazilir, hata loglanir ve grup bir
+    // sonraki taramada yeniden denenir.
     grupBilgisiCek(jid)
-      .catch(() => {})
+      .then(() => { grupSonCekim.set(jid, Date.now()); })
+      .catch((e) => {
+        // Kisa bekleme koy ki ayni turda tekrar tekrar denemesin
+        grupSonCekim.set(jid, Date.now() - GRUP_TAZELIK + 60000);
+        log('grup bilgisi alinamadi (' + String(jid).slice(0, 20) + '): ' + e.message);
+      })
       .then(() => {
         grupCalisan -= 1;
         if (grupKuyruk.length) setTimeout(grupKuyruguIsle, GRUP_ARALIK);
       });
   }
+}
+
+// ── ADSIZ GRUP TARAYICISI ────────────────────────────────────
+// Adi hala ciplak kimlik olan gruplari periyodik olarak yeniden dener.
+// Boylece sessiz gruplarin adi da er gec dolar; yeni mesaj beklenmez.
+const ADSIZ_TARAMA_ARALIK = 3 * 60 * 1000;
+const ADSIZ_TUR_TAVAN = 20;          // tur basina en fazla kac grup
+let adsizTimer = null;
+
+function adsizMi(c) {
+  const ad = String((c && c.name) || '').trim();
+  if (!ad) return true;
+  // '120363161070593814' ya da '120363...@g.us' gibi ciplak kimlik
+  return /^\d{8,}$/.test(ad) || /^\d+@g\.us$/.test(ad);
+}
+
+function adsizGruplariTara() {
+  if (!sock || !sonSaglik.bagli) return;
+  try {
+    const C = B.hatChats(LINE_ID);
+    if (!C || !C.values) return;
+    let n = 0;
+    for (const c of C.values()) {
+      if (n >= ADSIZ_TUR_TAVAN) break;
+      if (!c || !c.jid || !String(c.jid).endsWith('@g.us')) continue;
+      if (!adsizMi(c)) continue;
+      grupBilgisiTazele(c.jid, true);
+      n += 1;
+    }
+    if (n) log('ADSIZ GRUP TARAMASI: ' + n + ' grubun adi yeniden isteniyor');
+  } catch (e) { log('adsiz grup taramasi: ' + e.message); }
 }
 
 // ── ACIKLAMAYI OFIS (BAILEYS) HATTINDAN TAMAMLA ─────────────
@@ -1339,6 +1383,12 @@ async function hattiBaslat() {
   // Acilistan 30 sn sonra bir kez: surec kapaliyken gelenleri yakala
   setTimeout(() => { kacanTelafi('acilis').catch(() => {}); }, 30000).unref?.();
 
+  // ADSIZ GRUP TARAYICISI
+  if (adsizTimer) clearInterval(adsizTimer);
+  adsizTimer = setInterval(adsizGruplariTara, ADSIZ_TARAMA_ARALIK);
+  if (adsizTimer.unref) adsizTimer.unref();
+  setTimeout(adsizGruplariTara, 45000).unref?.();
+
   // SUREKLI CEKIM: webhook'a guvenmeden her mesaji biz isteyecegiz
   cekimPlanla();
   log('SUREKLI CEKIM acik — her ' + CEKIM_SN + ' sn, ' + CEKIM_ADET
@@ -1360,6 +1410,7 @@ function yenilemeKur(app, express) {
     try { if (cekimTimer) clearTimeout(cekimTimer); } catch (_) {}
     try { if (telafiTimer) clearInterval(telafiTimer); } catch (_) {}
     try { if (sagliTimer) clearInterval(sagliTimer); } catch (_) {}
+    try { if (adsizTimer) clearInterval(adsizTimer); } catch (_) {}
     // 2) Bellekteki kimlikleri KAYBETME
     try { gorulenBosalt(); } catch (_) {}
     // 3) Modul onbellegini temizle
@@ -1382,7 +1433,8 @@ function kur(baglam, app, express) {
   kancaKur(app, express);
   yenilemeKur(app, express);
   return { hattiBaslat, LINE_ID, durum: () => sonSaglik, sock: () => sock, telafi: kacanTelafi, birSohbet: birSohbetiTelafiEt, cekim: surekliCekim,
-    cekimKip: () => cekimKip, bosalt: gorulenBosalt };
+    cekimKip: () => cekimKip, bosalt: gorulenBosalt,
+    grupTazele: grupBilgisiTazele, adsizTara: adsizGruplariTara };
 }
 
 module.exports = { kur, LINE_ID };
