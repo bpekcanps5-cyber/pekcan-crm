@@ -221,7 +221,35 @@ function createLine(lineId, label, ownerUser) {
 // baglanma denemeleri (WhatsApp bunu cakisma sanip 440 veriyordu).
 // Tek motor Baileys oldugu icin oturum dosyalari HER ZAMAN silinebilir.
 // (WAHA doneminde bu kilit vardi; motor kalkti, kilit serbest kaldi.)
-function authSilinebilirMi() { return true; }
+// ═══ 401 KORUMASI (2026-08-31) ═════════════════════════════════════════
+// ESKIDEN: bu fonksiyon her zaman true donuyordu. Yani WhatsApp 401
+// (loggedOut) der demez auth klasoru ANINDA siliniyordu. Geri donusu yok:
+// QR okutmak ZORUNLU hale geliyor ve syncFullHistory:false oldugu icin
+// yeni oturuma eski mesajlar GELMIYOR.
+//
+// Ama 401 her zaman kalici degil. Ag kopmasinda, sunucu yeniden
+// baslarken veya WhatsApp tarafindaki gecici aksakliklarda da gelebiliyor.
+// Gecici bir 401, kullaniciya QR + mesaj gecmisi kaybettiriyordu.
+//
+// ARTIK: ILK 401'de auth KORUNUR ve ayni kimlikle bir kez daha baglanilir.
+// Oturum gercekten dustuyse WhatsApp ikinci kez 401 der; o zaman temizlenir.
+// Gecici idiyse ikinci deneme tutar ve hicbir sey kaybedilmez.
+const _401_PENCERE = 10 * 60 * 1000;   // bu sure icindeki ikinci 401 "gercek" sayilir
+function authSilinebilirMi(lineId) {
+  try {
+    const n = Date.now();
+    if (!global._son401) global._son401 = {};
+    const onceki = global._son401[lineId] || 0;
+    global._son401[lineId] = n;
+    if (n - onceki > _401_PENCERE) {
+      console.log(`   🛡️  ILK 401 [${lineId}] — auth KORUNUYOR, ayni oturumla bir kez daha denenecek.`);
+      console.log(`      (${_401_PENCERE / 60000} dk icinde ikinci 401 gelirse auth temizlenip QR uretilir.)`);
+      return false;   // SILME
+    }
+    console.log(`   🗑️  IKINCI 401 [${lineId}] — oturum gercekten dusmus, auth temizleniyor.`);
+    return true;      // SIL
+  } catch (_) { return true; }
+}
 
 function soketiKapat(sock, sebep) {
   if (!sock) return;
@@ -1283,8 +1311,19 @@ async function _pdfdenMetin(buf) {
 // cunku surec hata vermeden oldurulmus oluyor.
 let MESAJ_TAVAN = 400;          // sohbet basina bellekte tutulacak mesaj
 let RAW_TUT = 40;               // bunlarin kacinda ham veri saklanacak
-const BELLEK_UYARI_MB = 900;    // bu esikte sikilastir
-const BELLEK_KRITIK_MB = 1300;  // bu esikte agresif temizle
+// ═══ ESIKLER YUKSELTILDI (2026-08-31) ════════════════════════════════
+// ESKI DEGERLER: 900 / 1300. Bunlar node --max-old-space-size=1024
+// (1 GB yigin) icin konmustu. Sunucuda 31 GB RAM var ve yigin artik
+// 6 GB. Eski esiklerle sistem, bol bellegi varken bile 2 gunde 76 kez
+// "kritik" deyip agresif temizlik yapiyordu.
+//
+// AGRESIF TEMIZLIK ZARARLIYDI: RAW_TUT'u 12'ye dusurup mesajlarin ham
+// WhatsApp verisini siliyordu. Oysa getMessage() tam o veriye bakiyor.
+// Ham veri yoksa WhatsApp'in "tekrar gonder" istegine BOS donuyorduk ve
+// WhatsApp baglantiyi dusuruyordu. Yani bellek korumasi, korumaya
+// calistigi baglantiyi kendisi kesiyordu.
+const BELLEK_UYARI_MB = 3000;   // bu esikte sikilastir
+const BELLEK_KRITIK_MB = 5000;  // bu esikte agresif temizle
 
 function bellekMB() { try { return Math.round(process.memoryUsage().rss / 1048576); } catch (_) { return 0; } }
 
@@ -1339,6 +1378,52 @@ setInterval(() => {
     }
   } catch (e) { console.log('bellek bekcisi: ' + e.message); }
 }, 60 * 1000);
+
+// ═══ ILK KURULUM DAMGASI — DISKTE (2026-08-31) ══════════════════════════
+// SORUN: 'global._ilkGrupCekimiYapildi' BELLEKTE tutuluyordu. Her restart
+// onu siliyor, sistem her acilisi "ilk kurulum" saniyordu. Sonuc: her
+// restart'ta 4000+ grubun tamami yeniden cekiliyor, aciklama imleci
+// sifirlanip bastan taraniyordu. Bu, WhatsApp'a atilabilecek EN AGIR
+// trafik ve dogrudan "rate-overlimit" sebebi.
+//
+// Olculen: 2 gunde 13 kez agir cekim calismis. Bunlarin cogu, mesajlar
+// durdugu icin elle atilan restart'lardi -> restart cozmek yerine
+// cezayi buyutuyordu.
+//
+// ARTIK: damga DISKE yaziliyor. Restart onu silemez. Yine de gruplar
+// sonsuza kadar bayatlamasin diye 12 saatte bir tam cekim serbest.
+// Grup adi/aciklama degisiklikleri zaten 'groups.update' ile anlik gelir;
+// bu toplu cagri sadece kacanlari toplayan yedek yoldur.
+const _ILK_KURULUM_DOSYA = path.join(__dirname, 'guvence', 'ilk-kurulum.damga');
+const _ILK_KURULUM_TAZELIK = 12 * 60 * 60 * 1000;   // 12 saat
+
+function _ilkKurulumGerekliMi() {
+  try {
+    if (global._ilkGrupCekimiYapildi) return false;   // bu surecte zaten yapildi
+    const ham = fs.readFileSync(_ILK_KURULUM_DOSYA, 'utf8').trim();
+    const t = Number(ham);
+    if (!t || !isFinite(t)) return true;              // damga bozuk -> tam cekim yap
+    const yas = Date.now() - t;
+    if (yas > _ILK_KURULUM_TAZELIK) return true;      // 12 saatten eski -> tazele
+    console.log(`   💾 Ilk kurulum damgasi diskte (${Math.round(yas / 60000)} dk once) — ` +
+                'agir grup cekimi ATLANIYOR (restart artik WhatsApp\'i yormuyor).');
+    global._ilkGrupCekimiYapildi = true;
+    return false;
+  } catch (_) {
+    return true;   // damga yok (ilk kurulum gercekten) -> tam cekim
+  }
+}
+
+function _ilkKurulumDamgala() {
+  global._ilkGrupCekimiYapildi = true;
+  try {
+    fs.mkdirSync(path.dirname(_ILK_KURULUM_DOSYA), { recursive: true });
+    fs.writeFileSync(_ILK_KURULUM_DOSYA, String(Date.now()));
+  } catch (e) {
+    console.log('   ⚠️  ilk kurulum damgasi yazilamadi: ' + e.message +
+                ' (sistem calisir, sadece restart\'ta tekrar tam cekim yapar)');
+  }
+}
 
 // ═══ BAGLANTI GUNLUGU (2026-08) ═══════════════════════════════════════
 // "Bazen uyari geliyor bazen gelmiyor" sikayetinin sebebi: kopma cok kisa
@@ -3756,12 +3841,19 @@ function yayinlaGrup(obj) {
 function broadcastHat(lineId, obj) {
   const hedef = lineId || 'ofis';
   const data = JSON.stringify(obj);
+  let gonderilen = 0;
   wss.clients.forEach((c) => {
     if (c.readyState !== 1) return;
     // ws'in hatti belirlenmemisse (eski/kimliksiz baglanti) ofis say (geriye uyumlu).
     const wsLine = c._lineId || 'ofis';
-    if (wsLine === hedef) c.send(data);
+    if (wsLine === hedef) { c.send(data); gonderilen++; }
   });
+  // ═══ BORU HATTI CIKISI ═══════════════════════════════════════════════
+  // Mesaj panele GERCEKTEN gitti (en az bir panel aldi) -> takip listesinden
+  // dus. Hic panel yoksa dusurmeyiz; denetci zaten panelsizken alarm calmaz.
+  try {
+    if (gonderilen > 0 && obj && obj.type === 'message' && obj.jid) boruCikis(obj.jid);
+  } catch (_) {}
 }
 
 wss.on('connection', (ws) => {
@@ -7068,6 +7160,140 @@ function hatChats(lineId) {
   return line ? line.chats : chats; // hat yoksa guvenli sekilde global'e dus
 }
 
+/* WHAPI: capraz gonderen.
+   Ayni WhatsApp numarasi hem Baileys hem Whapi hattina bagliysa, bir hattan
+   atilan mesaj DIGER hatta fromMe olarak geliyor ve kim yazdi bilgisi
+   kayboluyor -> panelde adsiz balon.
+   Burada DIGER hatlarin ayni sohbetinde, ayni metinli ve yakin zamanli bir
+   mesaj arayip GERCEK gonderen adini donduruyoruz.
+   Bulamazsa null doner ve cagiran taraf 'Ben' yazar (eski davranis). */
+const _WHAPI_CAPRAZ_PENCERE = 8000;   // ms
+function _whapiCaprazGonderen(jid, metin, buHat) {
+  try {
+    const t = String(metin || '');
+    if (!t) return null;
+    const simdi = Date.now();
+    for (const [lid] of lines) {
+      if (lid === buHat) continue;
+      const L = lines.get(lid);
+      if (!L || !L.chats) continue;
+      const c = L.chats.get(jid);
+      if (!c || !c.messages) continue;
+      const ms = c.messages;
+      for (let i = ms.length - 1, n = 0; i >= 0 && n < 60; i--, n++) {
+        const m = ms[i];
+        if (!m || !m.fromMe) continue;
+        if (String(m.text || '') !== t) continue;
+        if (Math.abs(Number(m.ts || 0) - simdi) > _WHAPI_CAPRAZ_PENCERE) continue;
+        if (!m.sender || m.sender === 'Ben') continue;
+        return m.sender;
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+// ═══ MESAJ BORU HATTI DENETCISI (2026-08-31) ════════════════════════════
+// KULLANICININ TESHISI: "ben 5 saniyede anliyorum — WhatsApp'ta var, panelde
+// yok." Dogru teshis. Kullanici IKI kaynagi karsilastiriyor; sistem tek
+// kaynaga bakiyordu ve bu yuzden kordu.
+//
+// Mevcut kalp atisi SOKETI olcuyor, MESAJ AKISINI degil. Dahasi satir 6403'te
+// kalp atisi basarili olunca 'sonAktivite'yi KENDISI taziyor — yani soket
+// saglikli ama mesaj akmiyorsa sayac hic dolmuyor, alarm hic calmiyor.
+//
+// SESSIZLIK BEKLEMEK COZUM DEGIL: hatta saniyede mesaj dusuyor, ama sakin bir
+// anda 15 sn sessizlik de normal. Tek bir sure hem hizli hem dogru olamaz.
+//
+// BU YUZDEN SESSIZLIGI DEGIL, TUTARSIZLIGI OLCUYORUZ:
+//   "WhatsApp'tan ALDIK ama panele ULASTIRAMADIK" -> beklemeye gerek yok,
+//   bu bir YOKLUK degil, olcurulebilir bir OLAY. Aninda bellidir.
+//
+// Yanlis alarm riski yok: sadece GERCEKTEN alinmis bir mesaj takildiginda
+// caliyor. Sakin saatte hic mesaj yoksa denetci de sessiz kalir.
+const _boru = new Map();               // mesajId -> { jid, lineId, t }
+const BORU_ESIK_MS = 4000;             // panele bu surede ulasmadiysa TAKILI
+const BORU_TAVAN = 3000;               // bellek guvenligi
+let _boruAlinan = 0, _boruIletilen = 0, _boruTakilan = 0, _boruKurtarilan = 0;
+
+function boruGiris(id, jid, lineId, ts) {
+  try {
+    if (!id || !jid) return;
+    // Sadece CANLI mesajlar. Gecmis yukleme / senkron eski damgali gelir,
+    // onlar panele anlik gitmek zorunda degil.
+    if (ts && (Date.now() - ts) > 60000) return;
+    if (_boru.size >= BORU_TAVAN) return;
+    if (_boru.has(id)) return;
+    _boru.set(id, { jid, lineId, t: Date.now() });
+    _boruAlinan++;
+  } catch (_) {}
+}
+
+function boruCikis(jid) {
+  try {
+    if (!jid || _boru.size === 0) return;
+    for (const [id, k] of _boru) {
+      if (k.jid === jid) { _boru.delete(id); _boruIletilen++; }
+    }
+  } catch (_) {}
+}
+
+// Denetim turu: 2 saniyede bir. Takilan mesaj bulursa ONCE yeniden yayinlar
+// (kurtarma), duzelmezse hattin gercekten olu olup olmadigini test eder.
+if (!global._boruTimer) {
+  global._boruTimer = setInterval(() => {
+    try {
+      if (_boru.size === 0) return;
+      // Panel bagli degilse "ulasmadi" demek anlamsiz — kimseye gitmiyor zaten.
+      let panelVar = 0;
+      try { wss.clients.forEach((c) => { if (c.readyState === 1) panelVar++; }); } catch (_) {}
+      const n = Date.now();
+      const takilanlar = [];
+      for (const [id, k] of _boru) {
+        if (n - k.t > BORU_ESIK_MS) takilanlar.push([id, k]);
+      }
+      if (!takilanlar.length) return;
+      if (!panelVar) { for (const [id] of takilanlar) _boru.delete(id); return; }
+
+      const hatlar = new Set();
+      for (const [id, k] of takilanlar) {
+        _boru.delete(id);
+        _boruTakilan++;
+        hatlar.add(k.lineId + '|' + k.jid);
+      }
+      console.log(`🚨 BORU HATTI: ${takilanlar.length} mesaj WhatsApp'tan ALINDI ama ` +
+                  `${BORU_ESIK_MS / 1000} sn icinde panele ULASMADI — yeniden yayinlaniyor. ` +
+                  `(toplam alinan: ${_boruAlinan}, iletilen: ${_boruIletilen}, takilan: ${_boruTakilan})`);
+
+      // KURTARMA: sohbeti panele yeniden yayinla. Yayin kaybolduysa bu duzeltir.
+      for (const anahtar of hatlar) {
+        const [lineId, jid] = anahtar.split('|');
+        try {
+          const C = hatChats(lineId);
+          const chat = C && C.get(jid);
+          if (chat) {
+            broadcastHat(lineId, { type: 'message', jid, chat: stripRaw(chat) });
+            _boruKurtarilan++;
+          }
+        } catch (e) { console.log('   boru kurtarma hatasi: ' + e.message); }
+      }
+      console.log(`   ↻ ${hatlar.size} sohbet yeniden yayinlandi (kurtarilan toplam: ${_boruKurtarilan})`);
+
+      // Takilma SURUYORSA hat gercekten olu olabilir -> kalp atisini zorla.
+      // sonAktivite'yi sifirlayinca bir sonraki tur (max 15 sn) hemen test eder.
+      if (takilanlar.length >= 3) {
+        for (const anahtar of hatlar) {
+          const lineId = anahtar.split('|')[0];
+          const line = lines.get(lineId);
+          if (line) {
+            line.sonAktivite = 0;
+            console.log(`   ⚠️  [${lineId}] cok sayida takilma — kalp atisi ZORLANIYOR (hat olu mu test edilecek).`);
+          }
+        }
+      }
+    } catch (e) { console.log('boru denetcisi: ' + e.message); }
+  }, 2000);
+}
+
 function addMessage(jid, message, meta = {}, lineId = 'ofis') {
   // ROBOT KILIDI: grupta ayirac (-----, =====) gorunduyse "islem bitti" demektir,
   // kilidi ac ki sonraki sozlesme yeniden islensin. (Robotun kendi mesaji haric.)
@@ -7079,6 +7305,10 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
      Baileys yolu ts gecirmedigi icin orada davranis DEGISMEZ. */
   message.ts = (typeof message.ts === 'number' && message.ts > 0) ? message.ts : now;
   /* ═══ WHAPI KANCASI SONU ═══ */
+  // ═══ BORU HATTI GIRISI ═══════════════════════════════════════════════
+  // Mesaj sisteme girdi. Artik panele ulasmasini BEKLIYORUZ. Ulasmazsa
+  // denetci 4 saniye icinde yakalar. Sadece kayit tutar, akisa dokunmaz.
+  try { boruGiris(message.id, jid, lineId, message.ts); } catch (_) {}
   const C = hatChats(lineId); // bu hattin sohbetleri (ofis ise global chats)
   // AYNI mesaj iki kez eklenmesin (gonderdigimiz mesaji WhatsApp geri yansitir -> cift kayit)
   if (message.id && C.has(jid)) {
@@ -8127,9 +8357,9 @@ async function _startWAIc(lineId = 'ofis') {
         // ARTIK: ILK baglantida bir kez tam cekim yapilir. Sonraki yeniden
         // baglanmalarda gruplar zaten bellekte/veritabaninda oldugu icin
         // tekrar cekilmez — degisiklikler 'groups.update' ile anlik geliyor.
-        const ilkKurulum = !global._ilkGrupCekimiYapildi;
+        const ilkKurulum = _ilkKurulumGerekliMi();   // DISK damgasi (restart'a dayanikli)
         if (ilkKurulum) {
-          global._ilkGrupCekimiYapildi = true;
+          _ilkKurulumDamgala();
           setTimeout(() => fetchAllGroups(), 8000);
           setTimeout(() => ofisAciklamaTaramasi(), 60000);
           _aciklamaImlec.set('ofis', 0);
@@ -8285,17 +8515,30 @@ async function _startWAIc(lineId = 'ofis') {
         // Bozuk auth ile tekrar denemek ayni hataya dusurur (sonsuz dongü) — bu yuzden
         // auth klasorunu OTOMATIK temizle ki temiz bir QR uretebilelim.
         // Boylece elle "auth klasorunu sil" yapmaya gerek kalmaz.
-        console.log('⚠️  Oturum gecersiz oldu (telefondan cikis/cakisma olabilir). Auth temizleniyor, yeni QR uretilecek...');
+        console.log('⚠️  WhatsApp 401 (oturum gecersiz) dedi — telefondan cikis, cakisma veya GECICI bir aksaklik olabilir.');
+        let _authSilindi = false;
         try {
-          if (authSilinebilirMi()) fs.rmSync(line.authDir, { recursive: true, force: true }); // bu HATTIN auth'u
-          console.log('   🗑️  auth klasoru temizlendi.');
+          if (authSilinebilirMi(lineId)) {
+            fs.rmSync(line.authDir, { recursive: true, force: true }); // bu HATTIN auth'u
+            _authSilindi = true;
+            console.log('   🗑️  auth klasoru temizlendi — yeni QR uretilecek.');
+          }
         } catch (e) { console.error('   auth temizlenemedi:', e.message); }
-        if (lineId === 'ofis') { myNumber = null; myLID = null; lastQR = null; }
-        line.myNumber = null; line.myLID = null; line.lastQR = null;
+        // ═══ AUTH KORUNDUYSA KIMLIGI DE KORU ═══════════════════════════
+        // Ayni oturumla tekrar denenecek; numara/LID bilgisini simdiden
+        // silmenin anlami yok. Panel de bosuna QR ekranina dusmesin —
+        // deneme tutarsa kullanici hicbir kesinti fark etmez.
+        if (_authSilindi) {
+          if (lineId === 'ofis') { myNumber = null; myLID = null; lastQR = null; }
+          line.myNumber = null; line.myLID = null; line.lastQR = null;
+          broadcastHat(lineId, { type: 'status', connected: false, loggedOut: true });
+        } else {
+          broadcastHat(lineId, { type: 'status', connected: false });
+        }
         _reconnectGecikme = 1500;
-        // panele bildir: baglanti gitti, yeni QR geliyor
-        broadcastHat(lineId, { type: 'status', connected: false, loggedOut: true });
-        if (!line.manualLogout) setTimeout(() => startWA(lineId), 2000); // bu HATTI yeniden baslat
+        // Auth korunduysa biraz daha bekle: WhatsApp tarafi gecici bir durumdaysa
+        // otursun. Silindiyse hemen QR uretmeye gecelim.
+        if (!line.manualLogout) setTimeout(() => startWA(lineId), _authSilindi ? 2000 : 6000);
       } else if (code === 440) {
         // ═══ ÇAKIŞMA: Aynı oturum BAŞKA bir yerde açıldı (telefonda WhatsApp Web,
         //     başka panel, ya da ikinci bir sunucu). Hemen yeniden bağlanırsak iki taraf
@@ -9059,7 +9302,7 @@ async function _startWAIc(lineId = 'ofis') {
         thumb: thumbUrl,
         contact: info._contact || null,
         contacts: info._contacts || null,
-        sender: fromMe ? 'Ben' : senderName,
+        sender: fromMe ? (_whapiCaprazGonderen(jid, info.text, lineId) || 'Ben') : senderName,
         senderJid,
         // OTOMATIK ETIKET: LID cozulemezse yedek kimlik olarak ham
         // participant/alternatif numara da tasinsin.
