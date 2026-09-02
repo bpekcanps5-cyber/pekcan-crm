@@ -309,6 +309,13 @@ const ESZAMANLI_KISITLI = 1;      // WhatsApp şikayet ederse TEK SIRA (2 bile f
 //  • Soguma sirasinda TUM arka plan islerinin (aciklama taramasi, grup
 //    bilgisi cekme, avatar taramasi) WhatsApp'a sorgu atmasi DURUR.
 const RATE_SOGUMA = [30 * 1000, 2 * 60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000];
+// "Bu hata bir hiz limiti mi?" deseni. TEK YERDE tanimli olmasi onemli:
+// hem karar hem olcum ayni deseni kullansin, ayrismasinlar.
+// 'g' bayragi YOK — global regex .test() cagrilari arasinda lastIndex tasir
+// ve bir cagriyi dogru, sonrakini YANLIS dondururdu.
+// NOT: desen ciplak "429" iceriyor ve metne e.data JSON'u da katiliyor.
+// Yanlis eslesme suphesi var, gozlem satiri bunu olcuyor (bkz. kuyrukluGonder).
+const _RATE_DESEN = /rate.?overlimit|429|too many|rate.?limit/i;
 const _gonderimDurum = new Map(); // lineId -> { aktif, bekleyen, kisitliBitis, ustUste, sonRate }
 
 function _gd(lineId) {
@@ -433,9 +440,29 @@ async function kuyrukluGonder(lineId, gonderFn, medyaMi = false, _deneme = 0) {
     return sonuc;
   } catch (e) {
     const m = (e && e.message ? e.message : '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
-    const rateMi = /rate.?overlimit|429|too many|rate.?limit/i.test(m);
+    const rateMi = _RATE_DESEN.test(m);
     kanalBirak(); // her durumda kanalı bırak
     if (rateMi) {
+      // ═══ GOZLEM MODU (2026-09) — DAVRANIS DEGISMIYOR ══════════════════
+      // OLCULEN CELISKI: gunde 64 "HIZ SINIRI" tetiklendi ama loglarda
+      // "rate-overlimit" metni sadece 8 kez gecti. Fren basildiginda kod
+      // GERCEK hata metnini hic yazmiyordu, bu yuzden 64 frenin kaci gercek
+      // WhatsApp limiti, kaci YANLIS ESLESME bilinmiyor.
+      //
+      // SUPHE: desen ciplak "429" ariyor ve `e.data` JSON'unda grup JID'i de
+      // var. Ornek gercek grup: 1203634[429]013002261 -> o gruba giden
+      // SIRADAN bir zaman asimi "hiz limiti" sayilip tum hatti 30 sn tek
+      // siraya dusurebilir. Yogunlukta zaman asimi artar -> sahte fren artar
+      // -> sistem yavaslar -> daha cok zaman asimi. Kendini besleyen dongu.
+      //
+      // Bu satir SADECE OLCER. Desen daraltilmadi, fren aynen calisiyor.
+      // Once kanit, sonra mudahale (DEVAM-4 §7 kural 6).
+      if (_deneme === 0) {
+        const es = m.match(_RATE_DESEN);
+        console.log(`🔬 RATE TESPIT [${lineId}] eslesen="${es ? es[0] : '?'}"` +
+                    ` | hata="${String((e && e.message) || '').slice(0, 90)}"` +
+                    ` | veri="${String((e && e.data) ? JSON.stringify(e.data) : '').slice(0, 140)}"`);
+      }
       _rateSinirinaTakildi(lineId, d, _deneme === 0, true);   // GERCEK mesaj takildi
       // ═══ YENIDEN DENEME — AMA SABIRLI ═══
       // ESKIDEN: 0.8 / 1.6 / 3.2 saniye. Bu kadar hizli tekrar denemek
@@ -6712,12 +6739,49 @@ async function mesajiAktifCek(jid) {
   } catch (e) { /* desteklenmiyorsa veya hata olursa sessizce gec */ }
 }
 
+// TELAFİ ÇAPASI (2026-09 — ÖLÇÜMLE BULUNDU)
+// fetchMessageHistory bir "son bilinen mesaj anahtarı" (çapa) ister. Eskiden çapa
+// SADECE bellekten alınıyordu. Ama loadFromDB() her sohbeti `messages: []` ile
+// yükler (mesajlar sohbet açılınca gelir — performans tercihi). Sonuç: yeniden
+// başlatmadan sonra 30 grubun 30'u da çapasız kalıyor, hepsi atlanıyor ve telafi
+// TAM DA EN GEREKLİ ANDA hiçbir şey yapmıyordu.
+//   Ölçüldü (1 Eylül, 4 çalışma): denendi = 0, 0, 1, 14
+//   0'lar restart sonrası, 14 ise süreç bir süredir ayaktayken olan yeniden bağlanma.
+// Çözüm: bellekte çapa yoksa veritabanından son mesajın anahtarını al.
+// Veritabanına sorulur, WhatsApp'a DEĞİL — ek rate-limit maliyeti yoktur.
+async function _telafiCapasi(c) {
+  const bellek = (c.messages && c.messages.length) ? c.messages[c.messages.length - 1] : null;
+  if (bellek && bellek.key) return { key: bellek.key, ts: bellek.ts || 0, kaynak: 'bellek' };
+  if (!db.isReady()) return null;
+  try {
+    const rows = await db.loadMessages(c.jid, 1, 'ofis');
+    if (!rows || !rows.length) return null;
+    const r = rows[rows.length - 1];
+    if (!r || !r.key_data) return null;
+    return { key: r.key_data, ts: Number(r.ts) || 0, kaynak: 'db' };
+  } catch (_) { return null; }
+}
+
 // KAÇAN MESAJ TELAFİSİ: bağlantı yeniden kurulunca, en son konuşulan aktif grupların
 // son mesajlarını proaktif çek. Bağlantı ölüyken (yarı-açık) gelen ve WhatsApp'ın otomatik
 // göndermediği mesajları (foto/belge dahil) telafi eder. Nazik: sadece en aktif 30 grup,
 // aralarında bekleme ile (soketi boğmadan).
+// KAPSAM KASITLI OLARAK DAR: sadece gruplar, sadece 30 tane, her birinden 3 mesaj.
+// Kullanıcı kararı — birebir sohbetler DAHİL EDİLMEYECEK. Öncelik, WhatsApp'ın
+// kopmaması ve hız limitine girilmemesi. Genişletme talebi gelirse önce ölç.
 async function kacanMesajTelafi(sock) {
   if (!sock) return;
+  // Baileys sürümünde yoksa sessizce atlama — logla ki bir daha tahmin etmeyelim.
+  if (typeof sock.fetchMessageHistory !== 'function') {
+    console.log('⚠️ Telafi atlandı: bu Baileys sürümünde fetchMessageHistory yok.');
+    return;
+  }
+  // HIZ LİMİTİ BEKÇİSİ: limitteyken WhatsApp'a 30 istek daha atmak, çözmeye
+  // çalıştığımız kopmayı doğrudan üretir. fetchAllGroups da aynı korumayı kullanır.
+  if (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) {
+    console.log('⏸️ Telafi ertelendi: hız limitindeyiz (WhatsApp yorulmasın).');
+    return;
+  }
   try {
     // en son konuşulan gruplar önce (kopukluk sırasında oralarda mesaj gelmiş olabilir)
     const aktifler = Array.from(chats.values())
@@ -6726,20 +6790,23 @@ async function kacanMesajTelafi(sock) {
       .slice(0, 30); // en aktif 30 grup (hepsini çekmek soketi boğar)
     if (!aktifler.length) return;
     console.log(`🔄 Kaçan mesaj telafisi: ${aktifler.length} aktif grup kontrol ediliyor (kopukluk sırasında düşen mesajlar için)...`);
-    let denendi = 0;
+    let denendi = 0, capaBellek = 0, capaDb = 0, capaYok = 0, durduruldu = false;
     for (const c of aktifler) {
+      // her turda yeniden bak — telafi 12 sn sürer, o arada limite girilebilir
+      if (typeof hizSinirindaMi === 'function' && hizSinirindaMi()) { durduruldu = true; break; }
       if (mesajTrafigiVar()) { await new Promise(r => setTimeout(r, 2000)); } // canlı trafik varsa bekle
-      const sonMesaj = c.messages && c.messages.length ? c.messages[c.messages.length - 1] : null;
-      if (!sonMesaj || !sonMesaj.key) continue;
+      const capa = await _telafiCapasi(c);
+      if (!capa) { capaYok++; continue; }
+      if (capa.kaynak === 'db') capaDb++; else capaBellek++;
       try {
-        if (typeof sock.fetchMessageHistory === 'function') {
-          await sock.fetchMessageHistory(3, sonMesaj.key, sonMesaj.ts ? Math.floor(sonMesaj.ts / 1000) : undefined);
-          denendi++;
-        }
+        await sock.fetchMessageHistory(3, capa.key, capa.ts ? Math.floor(capa.ts / 1000) : undefined);
+        denendi++;
       } catch (_) {}
       await new Promise(r => setTimeout(r, 400)); // gruplar arası nazik bekleme
     }
-    console.log(`   ✓ Telafi tamam: ${denendi} grubun son mesajları yeniden istendi (kaçanlar messages.upsert'ten düşecek)`);
+    console.log(`   ✓ Telafi tamam: ${denendi} grubun son mesajları yeniden istendi ` +
+                `(çapa: bellek ${capaBellek} / DB ${capaDb} / yok ${capaYok})` +
+                (durduruldu ? ' — HIZ LIMITI nedeniyle erken durduruldu' : ''));
   } catch (e) { console.log('⚠️ Kaçan mesaj telafisi hatası:', e.message); }
 }
 // Ayni anda binlerce sorgu yerine, kucuk partiler halinde aralarinda bekleyerek yazar.
@@ -8328,12 +8395,13 @@ async function _startWAIc(lineId = 'ofis') {
       broadcastHat(lineId, { type: 'status', connected: true, myJid, myName });
       // ═══ KAÇAN MESAJ TELAFİSİ ═══ (bağlantı ölüyken gelen mesajlar kaybolmasın)
       // Bağlantı yarı-açık/ölü olduğu sürede WhatsApp bazı mesajları iletemez. Yeniden
-      // bağlanınca bunları otomatik göndermeyebilir. Bu yüzden: bağlandıktan 6sn sonra,
-      // EN SON konuşulan grupların son mesajlarını proaktif çek (fetchMessageHistory).
-      // Böylece kopukluk sırasında düşen foto/mesajlar telafi edilir.
-      if (lineId === 'ofis') {
-        setTimeout(() => { kacanMesajTelafi(sock).catch(() => {}); }, 6000);
-      }
+      // bağlanınca bunları otomatik göndermeyebilir. Bu yüzden: bağlandıktan bir süre
+      // sonra EN SON konuşulan grupların son mesajlarını proaktif çek.
+      // ZAMANLAMA (2026-09): telafi buradan KALDIRILDI, asagidaki ilkKurulum
+      // dallarina tasindi. Sebep: telafi t+6sn'de basliyor ve ~12 sn suruyordu;
+      // ilk kurulumda fetchAllGroups t+8sn'de 4000+ grubu cekiyor. Capa
+      // duzeltmesinden ONCE telafi hep bos donduğu icin bu cakisma gorunmuyordu.
+      // Artik gercekten 30 istek atacagi icin, firtinaya denk gelmemeli.
       if (lineId === 'ofis') {
         // ---- OFIS HATTI (mevcut davranis, degismedi) ----
         // GUVENCE: bellek bossa DB'den sohbetleri geri yukle.
@@ -8362,7 +8430,11 @@ async function _startWAIc(lineId = 'ofis') {
           _aciklamaImlec.set('ofis', 0);
           _aciklamaDinlenme.delete('ofis');
           setTimeout(() => { aciklamaMotorTur().catch(() => {}); }, 15000);
-          console.log('   📋 Ilk kurulum: gruplar bir kez toplu cekilecek.');
+          // TELAFI: agir cekim t+8sn, aciklama motoru t+15sn, aciklama taramasi
+          // t+60sn. Telafiyi bunlarin ustune bindirmiyoruz — t+120sn'de calisir.
+          // Hiz limitine girilmisse zaten kendisi vazgeciyor.
+          setTimeout(() => { kacanMesajTelafi(sock).catch(() => {}); }, 120000);
+          console.log('   📋 Ilk kurulum: gruplar bir kez toplu cekilecek (telafi 120sn sonraya alindi).');
         } else {
           // Yeniden baglanma: SADECE bir kez hafif tazeleme, o da 45sn sonra
           // (baglantinin oturmasini bekle). Aciklama imleci SIFIRLANMAZ —
@@ -8373,6 +8445,10 @@ async function _startWAIc(lineId = 'ofis') {
               fetchAllGroups();
             }
           }, 45000);
+          // TELAFI: yeniden baglanmada agir cekim yok, tek is t+45sn'deki hafif
+          // tazeleme. Telafi t+6sn'de baslar, ~12 sn surer, t+18sn'de biter —
+          // cakisma yok. Kaçan mesajın en muhtemel olduğu durum burasıdır.
+          setTimeout(() => { kacanMesajTelafi(sock).catch(() => {}); }, 6000);
           global._senkronGerekli = true;   // kopukken kacirilan degisiklikler icin bir kez
           console.log('   ↻ Yeniden baglanma: agir toplu cekim ATLANDI (gruplar zaten elimizde).');
         }
@@ -10044,9 +10120,15 @@ app.post('/api/police/wa/gonder', express.json({ limit: POLICE_GOVDE_SINIRI }), 
       saatlik: policeButceDoldu() }); // son 1 saatte kac mesaj gitti
   } catch (e) {
     const m = (e && e.message ? e.message : '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
-    const rateMi = /rate.?overlimit|429|too many|rate.?limit/i.test(m);
+    // AYNI desen (bkz. _RATE_DESEN). Bu uc de _rateSinirinaTakildi cagiriyor,
+    // yani buradaki yanlis eslesme ANA HATTI de frenliyor. Olcum ikisini de kapsasin.
+    const rateMi = _RATE_DESEN.test(m);
     console.error(`[POLICE] gonderim hatasi (${ref}):`, e.message);
     if (rateMi) {
+      const es = m.match(_RATE_DESEN);
+      console.log(`🔬 RATE TESPIT [police] eslesen="${es ? es[0] : '?'}"` +
+                  ` | hata="${String((e && e.message) || '').slice(0, 90)}"` +
+                  ` | veri="${String((e && e.data) ? JSON.stringify(e.data) : '').slice(0, 140)}"`);
       // Ana hatti korumak icin CRM'in sogumasini da baslat — bu uc kuyrugu
       // atladigi icin sogumayi ELLE tetiklememiz gerekiyor.
       try { if (typeof _rateSinirinaTakildi === 'function') _rateSinirinaTakildi(POLICE_HAT, _gd(POLICE_HAT), true, true); } catch (_) {}
