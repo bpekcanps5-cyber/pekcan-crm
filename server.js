@@ -309,13 +309,35 @@ const ESZAMANLI_KISITLI = 1;      // WhatsApp şikayet ederse TEK SIRA (2 bile f
 //  • Soguma sirasinda TUM arka plan islerinin (aciklama taramasi, grup
 //    bilgisi cekme, avatar taramasi) WhatsApp'a sorgu atmasi DURUR.
 const RATE_SOGUMA = [30 * 1000, 2 * 60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000];
-// "Bu hata bir hiz limiti mi?" deseni. TEK YERDE tanimli olmasi onemli:
-// hem karar hem olcum ayni deseni kullansin, ayrismasinlar.
+// ═══ "Bu hata bir hiz limiti mi?" — 2026-09 DUZELTME ═══════════════════
+// OLCULEN: 1 Eylul'de 64 kez "HIZ SINIRI" tetiklendi, 375 kez mesaj freni
+// devreye girdi, en yavas gonderimler 20.6 / 20.5 sn surdu — yani tam olarak
+// MESAJ_BEKLE_TAVAN tavani. Mesajlari yavaslatan sey soket degil, KENDI
+// frenimizdi. Ama loglarda "rate-overlimit" metni sadece 8 kez geciyordu.
+//
+// HATA: eski desen ciplak "429" ariyordu ve arama metnine e.data'nin JSON'u
+// da katiliyor. WhatsApp grup JID'leri uzun sayilardir; ornegin kullanicinin
+// GERCEK grubu 1203634[429]013002261 -> icinde "429" GECIYOR. Sonuc: o gruba
+// giden SIRADAN bir zaman asimi "hiz limiti" sayilip TUM hatti 30 sn tek
+// siraya dusuruyordu. Yogunlukta zaman asimi artar -> sahte fren artar ->
+// sistem yavaslar -> daha cok zaman asimi. Kendini besleyen dongu.
+//
+// DUZELTME: 429 artik SADECE tek basina bir sayi olarak eslesir (durum kodu).
+// Onunde/arkasinda rakam varsa — yani daha uzun bir sayinin parcasiysa —
+// eslesmez. Metinsel isaretler ("rate-overlimit", "too many", "rate limit")
+// aynen duruyor, yani GERCEK hiz limitleri eskisi gibi yakalanmaya devam eder.
+//   "rate-overlimit"          -> EVET (degismedi)
+//   {"statusCode":429}        -> EVET (gercek durum kodu)
+//   grup 120363429013002261   -> HAYIR (eskiden EVET idi — hata buydu)
+//
 // 'g' bayragi YOK — global regex .test() cagrilari arasinda lastIndex tasir
 // ve bir cagriyi dogru, sonrakini YANLIS dondururdu.
-// NOT: desen ciplak "429" iceriyor ve metne e.data JSON'u da katiliyor.
-// Yanlis eslesme suphesi var, gozlem satiri bunu olcuyor (bkz. kuyrukluGonder).
-const _RATE_DESEN = /rate.?overlimit|429|too many|rate.?limit/i;
+const _RATE_DESEN = /rate.?overlimit|too many|rate.?limit|(?<![0-9])429(?![0-9])/i;
+// ESKI desen — SADECE OLCUM icin tutuluyor, karar vermede KULLANILMIYOR.
+// Eski "evet" derken yeni "hayir" diyorsa, o bir SAHTE FREN'di ve onlendi.
+// Boylece duzeltmenin gercekte kac kez ise yaradigini sayabiliyoruz.
+const _RATE_DESEN_ESKI = /rate.?overlimit|429|too many|rate.?limit/i;
+let _sahteFrenSayaci = 0;
 const _gonderimDurum = new Map(); // lineId -> { aktif, bekleyen, kisitliBitis, ustUste, sonRate }
 
 function _gd(lineId) {
@@ -442,21 +464,21 @@ async function kuyrukluGonder(lineId, gonderFn, medyaMi = false, _deneme = 0) {
     const m = (e && e.message ? e.message : '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
     const rateMi = _RATE_DESEN.test(m);
     kanalBirak(); // her durumda kanalı bırak
+    // ═══ SAHTE FREN SAYACI (2026-09) ═══════════════════════════════════
+    // Eski desen "hiz limiti" derken yeni desen demiyorsa, bu bir SAHTE
+    // FREN'di ve artik onlendi. Duzeltmenin gercekte kac kez ise yaradigini
+    // burada sayiyoruz — tahmine gerek kalmasin.
+    if (!rateMi && _deneme === 0 && _RATE_DESEN_ESKI.test(m)) {
+      _sahteFrenSayaci++;
+      console.log(`🛡️ SAHTE FREN ONLENDI [${lineId}] #${_sahteFrenSayaci}` +
+                  ` — bu hata eskiden hatti 30sn kilitlerdi, artik kilitlemiyor` +
+                  ` | hata="${String((e && e.message) || '').slice(0, 90)}"` +
+                  ` | veri="${String((e && e.data) ? JSON.stringify(e.data) : '').slice(0, 140)}"`);
+    }
     if (rateMi) {
-      // ═══ GOZLEM MODU (2026-09) — DAVRANIS DEGISMIYOR ══════════════════
-      // OLCULEN CELISKI: gunde 64 "HIZ SINIRI" tetiklendi ama loglarda
-      // "rate-overlimit" metni sadece 8 kez gecti. Fren basildiginda kod
-      // GERCEK hata metnini hic yazmiyordu, bu yuzden 64 frenin kaci gercek
-      // WhatsApp limiti, kaci YANLIS ESLESME bilinmiyor.
-      //
-      // SUPHE: desen ciplak "429" ariyor ve `e.data` JSON'unda grup JID'i de
-      // var. Ornek gercek grup: 1203634[429]013002261 -> o gruba giden
-      // SIRADAN bir zaman asimi "hiz limiti" sayilip tum hatti 30 sn tek
-      // siraya dusurebilir. Yogunlukta zaman asimi artar -> sahte fren artar
-      // -> sistem yavaslar -> daha cok zaman asimi. Kendini besleyen dongu.
-      //
-      // Bu satir SADECE OLCER. Desen daraltilmadi, fren aynen calisiyor.
-      // Once kanit, sonra mudahale (DEVAM-4 §7 kural 6).
+      // ═══ GERCEK HIZ LIMITI OLCUMU (2026-09) ══════════════════════════
+      // Daraltilmis desen yine de eslesti -> buyuk ihtimalle GERCEK limit.
+      // Yine de neyin eslestigini yaziyoruz ki bir daha tahmin yurutmeyelim.
       if (_deneme === 0) {
         const es = m.match(_RATE_DESEN);
         console.log(`🔬 RATE TESPIT [${lineId}] eslesen="${es ? es[0] : '?'}"` +
