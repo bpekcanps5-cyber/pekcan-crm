@@ -5680,7 +5680,44 @@ wss.on('connection', (ws) => {
           ws.send(JSON.stringify({ type: 'opError', error: 'WhatsApp bağlantısını kesme yetkiniz yok.' }));
           return;
         }
-        console.log(`🚪 Panelden cikis istendi... [hat: ${_LID}, kullanici: ${ws._username}]`);
+        // ═══ CIKIS DUGMESI KORUMASI (2026-09) — OLCUMLE GELDI ════════════
+        // 1 Eylul logu: iki kez "Panelden cikis istendi [ofis, irem123]" ->
+        // auth silindi + waSock.logout() cagrildi -> oturum GERCEKTEN oldu ->
+        // QR okutmak ZORUNLU hale geldi. WhatsApp kopmamisti; dugme oldurdu.
+        // Ustelik acilis logu yanlis yol yuzunden "QR okutun" diye yaziyordu,
+        // yani ekip dogru sandigi bir isi yaparken hatti kesiyordu.
+        //
+        // ARTIK: varsayilan davranis GUVENLI TAZELEME. Soket kapatilir ve
+        // AYNI oturumla yeniden baglanilir — auth SILINMEZ, WhatsApp'a logout
+        // GONDERILMEZ, QR GEREKMEZ. Panelin "cikis" dugmesi artik hatti
+        // olduremez; en kotu ihtimalle birkac saniyelik yeniden baglanma olur.
+        //
+        // GERCEK cikis (numara degistirme / yeni QR) hala mumkun: panel
+        // { type:'logout', gercektenCikis:true } gonderirse eski yikici yol
+        // calisir. Mevcut panel bunu GONDERMIYOR (index.html'e dokunulmadi),
+        // yani bugunku her dugme basisi guvenli tarafa duser.
+        const _gercekCikis = (msg.gercektenCikis === true);
+        if (!_gercekCikis) {
+          console.log(`🔄 GUVENLI TAZELEME [hat: ${_LID}, kullanici: ${ws._username}] — ` +
+                      'oturum KORUNUYOR, QR gerekmeyecek. (Gercek cikis icin gercektenCikis:true)');
+          try {
+            if (_LID === 'ofis') {
+              try { if (waSock) waSock.end(); } catch (_) {}
+              waConnected = false;
+              broadcastHat('ofis', { type: 'status', connected: false });
+            } else {
+              const _l = lines.get(_LID);
+              if (_l) {
+                try { if (_l.sock) _l.sock.end(); } catch (_) {}
+                _l.connected = false;
+              }
+              broadcastHat(_LID, { type: 'status', connected: false });
+            }
+          } catch (e) { console.log('   ⚠️  tazeleme hatasi: ' + e.message); }
+          setTimeout(() => { try { startWA(_LID); } catch (_) {} }, 1500);
+          return;
+        }
+        console.log(`🚪 GERCEK CIKIS istendi (oturum SILINECEK, QR gerekecek)... [hat: ${_LID}, kullanici: ${ws._username}]`);
         if (_LID === 'ofis') {
           // OFIS: mevcut davranis (global ofis hatti)
           manualLogout = true;
@@ -5708,7 +5745,11 @@ wss.on('connection', (ws) => {
             try { if (line.sock) await line.sock.logout(); } catch (e) {}
             try { if (line.sock) line.sock.end(); } catch (e) {}
             // bu hattin auth klasorunu sil
-            try { if (authSilinebilirMi()) fs.rmSync(line.authDir, { recursive: true, force: true }); }
+            // DUZELTME (2026-09): burada hat kimligi PARAMETRESIZ gecilmisti.
+            // Fonksiyon authSilinebilirMi(lineId) bekliyor; sayac 'undefined'
+            // anahtarinda tutuluyordu, yani hatlarin 401 korumasi birbirine
+            // karisiyordu. Artik dogru hat kimligi veriliyor.
+            try { if (authSilinebilirMi(_LID)) fs.rmSync(line.authDir, { recursive: true, force: true }); }
             catch (e) { console.error(`${_LID} auth silinemedi:`, e.message); }
             // baglanti durumunu sifirla (kendi sohbetleri DB'de korunur)
             line.connected = false; line.myNumber = null; line.myLID = null;
@@ -6383,6 +6424,76 @@ function retryGroupName(jid) {
 // mekanizma değil. Yeni ayarlar: gerçek ölü bağlantıyı ~2 dk içinde yakalar ama
 // geçici yavaşlamada bağlantıya DOKUNMAZ.
 // ────────────────────────────────────────────────────────────────────────────
+// ═══ UYARLANAN SESSIZLIK BEKCISI (2026-09) ═══════════════════════════════
+// SORUN: yari-acik sokette WebSocket ACIK gorunur, Baileys "bagliyim" der,
+// panel yesil yanar — ama hicbir veri gecmez. Giden mesaj bosluga gider,
+// gelen mesaj dusmez. Tek caresi yeniden baglanmak. Ekip bunu 20-30 saniyede
+// FARK EDIYOR ve panelden cikisa basiyordu (1 Eylul: iki kez, irem123).
+//
+// NEDEN BEKCI GEC KALIYORDU: sabit 60 sn sessizlik esigi + WS acikken 6
+// basarisizlik x 20 sn periyot = en kotu ~3 DAKIKA. Yani bekci insandan
+// yavasti; insan her zaman once davraniyordu.
+//
+// NEDEN SABIT ESIK YANLIS: DEVAM-4 §6 — "mesai icinde 10-15 sn'den uzun
+// sessizlik yok, sabit sureli bekci ise yaramaz, TUTARSIZLIK olculmeli."
+// Mesaide normal aralik ~1-2 sn; 60 sn beklemek 30 kat gec kalmaktir.
+// Gece ise normal aralik dakikalarca olabilir; 60 sn orada da YANLIS ALARM.
+//
+// COZUM: her hat kendi normal aralarini ogrenir, esik ona gore kayar.
+//   mesai (aralik ~2sn)  -> esik ~16 sn  (hizli yakalar)
+//   gece  (aralik ~90sn) -> esik 60 sn   (yanlis alarm yok, tavan korur)
+// Boylece hassasiyet trafige gore kendi ayarlanir, elle ayar gerekmez.
+//
+// NOT: cift tik ("iletildi") sinyali BILEREK kullanilmadi. server.js:8899
+// status guncellemelerini durum=2'de KIRPIYOR, bu yuzden bircok mesaj asla
+// durum>=3 olmuyor (DEVAM-4 §5.3 "tek tik: 371"). O sinyale dayanan bir
+// dedektor SAGLIKLI hatti surekli keserdi.
+const SESSIZLIK_ORNEK = 40;         // son 40 arayi hatirla (yaklasik son 1-2 dk)
+const SESSIZLIK_CARPAN = 8;         // normalin 8 kati sessizlik = ANORMAL
+const SESSIZLIK_TABAN = 12 * 1000;  // en erken 12 sn (asiri hassasiyet olmasin)
+const SESSIZLIK_TAVAN = 60 * 1000;  // en gec 60 sn (eski davranis — guvenli taraf)
+
+// Hatta veri geldi: normal araligi ogren. Kalp atisi disindaki HER gelen
+// olayda cagrilir (mesaj, makbuz, durum guncellemesi).
+function hatAktiviteKaydet(line) {
+  if (!line) return;
+  const n = Date.now();
+  const onceki = line.sonAktivite || 0;
+  if (onceki) {
+    const ara = n - onceki;
+    // 0-30 sn arasi aralari ogren. Daha uzunlar zaten sessizlik olayidir,
+    // onlari normale katmak esigi sisirir ve bekciyi korlestirir.
+    if (ara > 0 && ara <= 30000) {
+      if (!line._aralar) line._aralar = [];
+      line._aralar.push(ara);
+      if (line._aralar.length > SESSIZLIK_ORNEK) line._aralar.shift();
+    }
+  }
+  line.sonAktivite = n;
+}
+
+// Bu hat icin su anki sessizlik esigi (ms).
+// Ortanca (medyan) kullaniliyor: tek bir uzun bosluk ortalamayi sisirir,
+// ortanca sismez — bu yuzden daha durgun bir olcu.
+function uyarlananSessizlikEsigi(line) {
+  const a = line && line._aralar;
+  if (!a || a.length < 10) return SESSIZLIK_TAVAN;   // yeterli veri yok -> eski guvenli davranis
+  const s = a.slice().sort((x, y) => x - y);
+  const ortanca = s[Math.floor(s.length / 2)] || 0;
+  const esik = ortanca * SESSIZLIK_CARPAN;
+  return Math.max(SESSIZLIK_TABAN, Math.min(SESSIZLIK_TAVAN, esik));
+}
+
+// Yogun hatta sorgu 1 sn'de yanitlanir; 15 sn beklemek bosuna gecikme.
+// Sakin hatta ise tolerans lazim. Timeout'u da trafige gore ayarla.
+function uyarlananKalpTimeout(line) {
+  const a = line && line._aralar;
+  if (!a || a.length < 10) return KALP_TIMEOUT;
+  const s = a.slice().sort((x, y) => x - y);
+  const ortanca = s[Math.floor(s.length / 2)] || 0;
+  if (ortanca <= 5000) return 6 * 1000;   // yogun hat -> 6 sn yeter
+  return KALP_TIMEOUT;                    // sakin hat -> eski 15 sn
+}
 const KALP_PERIYOT = 20 * 1000;   // her 20 saniyede tur (12->20: gereksiz yük azaldı)
 const KALP_SESSIZLIK = 60 * 1000; // 60sn hiç veri yoksa test et (20->60: Baileys keep-alive 25sn, 60sn sessizlik GERÇEKTEN anormal)
 const KALP_TIMEOUT = 15 * 1000;   // yanıt için 15sn bekle (8->15: yavaş ağa tolerans, yanlış "ölü" teşhisi yok)
@@ -6409,7 +6520,10 @@ async function kalpAtisiTuru() {
     // ayni hatta iki test ust uste calismasin
     if (line.kalpTestCalisiyor) continue;
     const gecen = Date.now() - (line.sonAktivite || 0);
-    if (gecen < KALP_SESSIZLIK) continue; // yakinda veri geldi -> saglikli, test gereksiz
+    // UYARLANAN ESIK (2026-09): sabit 60 sn yerine hattin kendi normali.
+    // Mesaide ~16 sn'de, gece 60 sn'de tetiklenir. Ayni kod, kayan hassasiyet.
+    const _sessizlikEsigi = uyarlananSessizlikEsigi(line);
+    if (gecen < _sessizlikEsigi) continue; // yakinda veri geldi -> saglikli, test gereksiz
     // ═══ HIZ SINIRINDA SORGU ATMA (2026-08 — KRITIK) ══════════════════
     // WhatsApp bizi yavaslatmisken kalp atisi sorgusu da reddediliyordu.
     // Kod bunu "baglanti olmus" sanip SAGLIKLI baglantiyi kesiyordu.
@@ -6438,7 +6552,7 @@ async function kalpAtisiTuru() {
         // sendPresenceUpdate yetmez (yanit beklemez, olu baglantida bile "gecer").
         const test = await Promise.race([
           (num ? sock.onWhatsApp(num) : sock.query({ tag: 'iq', attrs: { to: '@s.whatsapp.net', type: 'get', xmlns: 'w:p' } })),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('kalp-timeout')), KALP_TIMEOUT)),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('kalp-timeout')), uyarlananKalpTimeout(line))),
         ]);
         if (test !== undefined) canli = true;
       } catch (e) {
@@ -6468,9 +6582,25 @@ async function kalpAtisiTuru() {
         // yasatiyordu. Ayirt edici olcu: WebSocket hala ACIK mi?
         //   WS KAPALI  -> gercekten olu, hemen kes (2 basarisizlik yeter)
         //   WS ACIK    -> muhtemelen sadece yavas/yogun, DAHA SABIRLI ol (6)
-        const esik = wsAcik ? KALP_MAX_BASARISIZ_WS_ACIK : KALP_MAX_BASARISIZ;
+        // ═══ EZICI KANIT KISAYOLU (2026-09) ═════════════════════════════
+        // WS acikken 6 basarisizlik beklemek, "yogunlukta gecikmeli yanit"
+        // ihtimaline karsi konmustu ve DOGRU bir korumaydi. Ama sessizlik
+        // hattin KENDI normalinin 3 katini da asmissa, bu artik yogunlukla
+        // aciklanamaz: hem hicbir veri gelmiyor hem sorgu yanitlanmiyor.
+        // Iki BAGIMSIZ kanit ust uste geldiginde 6 tur beklemek, ekibin
+        // 3 dakika mesajsiz kalmasi demek. O durumda 2 basarisizlik yeter.
+        const _ezici = wsAcik && gecen > (_sessizlikEsigi * 3);
+        const esik = wsAcik ? (_ezici ? 2 : KALP_MAX_BASARISIZ_WS_ACIK) : KALP_MAX_BASARISIZ;
         console.log(`💓 Kalp atışı başarısız [${lineId}] (${line.kalpBasarisiz}/${esik}) — ` +
-                    (wsAcik ? 'WebSocket AÇIK (muhtemelen yoğunluk, sabırlı olunuyor)' : 'WebSocket KAPALI (bağlantı gerçekten ölü)'));
+                    (wsAcik ? (_ezici
+                        ? `WebSocket açık AMA ${Math.round(gecen / 1000)}sn sessiz (normalin ${Math.round(gecen / Math.max(_sessizlikEsigi, 1))}x üstü) — YARI-AÇIK ŞÜPHESİ`
+                        : 'WebSocket AÇIK (muhtemelen yoğunluk, sabırlı olunuyor)')
+                      : 'WebSocket KAPALI (bağlantı gerçekten ölü)'));
+        // HIZLI TEKRAR: 20 sn'lik siradaki turu bekleme. Supheliyken 3 sn
+        // sonra yeniden test et — boylece 6 tur 120 sn degil ~18 sn surer.
+        if (line.kalpBasarisiz < esik) {
+          setTimeout(() => { kalpAtisiTuru().catch(() => {}); }, 3000);
+        }
         if (line.kalpBasarisiz >= esik) {
           // ÖLÜ BAĞLANTI: kapat + yeniden bağlan (bu hatta)
           console.log(`⚠️  [${lineId}] bağlantı ÖLÜ (yarı-açık) -> kapatılıp yeniden bağlanıyor. Mesaj kaybı önleniyor.`);
@@ -6719,6 +6849,98 @@ const _mesajCekKuyruk = [];
 const _mesajCekBekleyen = new Set(); // ayni sohbeti kuyruga 2 kez ekleme
 let _mesajCekCalisiyor = false;
 
+// ═══════════════════════════════════════════════════════════════════════
+// BOSLUK DENETCISI (2026-09) — "WhatsApp'ta var, panelimde yok"
+//
+// KULLANICININ SORUSU: "orijinal WhatsApp'tan veri cekiyoruz, 'bu mesaj
+// burada yok' diyemiyor muyuz?" — Diyebiliyoruz. Referans zaten geliyordu,
+// sadece OKUNMUYORDU.
+//
+// WhatsApp her 'chats.update' olayinda `conversationTimestamp` gonderir:
+// "bu sohbette en son su an konusuldu". Bu TAHMIN DEGIL, WhatsApp'in kendi
+// beyani. Eski kod bunu aliyordu ama SADECE liste siralamasi icin:
+//     chat.lastTs = ts;      // WhatsApp'in zamanini kendi uzerimize yaziyorduk
+// Boylece fark SILINIYORDU. Panel sohbeti dogru sirada, dogru saatle
+// gosteriyordu — ama mesajin kendisi bizde YOKTU. Kullanicinin tarif ettigi
+// "normal WhatsApp'ta dusmus ama panelimde yok" tam olarak buydu.
+//
+// Mesaj cekme ise `unreadCount` artisina bagliydi; o da guvenilmez:
+// sohbet acikken, mesaj baska cihazdan bizim gonderdigimizde, ya da grup
+// okundu durumu farkli senkronlandiginda okunmamis sayisi ARTMAZ -> hic
+// cekilmez -> mesaj sessizce kaybolur.
+//
+// ARTIK: WhatsApp'in bildirdigi zaman, BIZDE GERCEKTEN DURAN en yeni
+// mesajin zamaniyla karsilastirilir. Fark varsa orada kanitlanmis bir
+// delik vardir ve o sohbet hedefli olarak cekilir.
+//
+// SINIR (durustce): soket TAMAMEN olmusse bu olay da gelmez. Bu denetci
+// "baglanti calisiyor ama mesaj dusmuyor" halini yakalar; "hicbir sey
+// gelmiyor" halini uyarlanan sessizlik bekcisi yakalar. Ikisi FARKLI
+// arizalardir ve ikisi de gereklidir.
+const BOSLUK_ESIK = 10 * 1000;      // WhatsApp bizden bu kadar ileriyse delik say
+const BOSLUK_SOGUMA = 60 * 1000;    // ayni sohbet icin en fazla dakikada bir cekim
+const BOSLUK_DK_TAVAN = 20;         // dakikada en fazla 20 telafi cekimi (rate koruma)
+const BOSLUK_HASTA_ESIK = 5;        // 60sn icinde 5 FARKLI sohbette delik -> hat hasta
+const _boslukSonBakis = new Map();  // jid -> en son ne zaman delik icin cekildi
+const _boslukPencere = [];          // son deliklerin { jid, ts } listesi
+let _boslukToplam = 0;
+
+// WhatsApp'in beyani (waTs) ile bizdeki gercek son mesaj karsilastirilir.
+// Delik varsa true doner ve hedefli cekim kuyruga alinir.
+function boslukDenetle(lineId, jid, chat, waTs) {
+  try {
+    if (!waTs || !chat) return false;
+    // BIZDEKI GERCEK son mesaj zamani. DIKKAT: chat.lastTs KULLANILAMAZ —
+    // onu bu olayin kendisi WhatsApp'in zamaniyla eziyor, yani farki siler.
+    // sonMesajTs SADECE addMessage'da, gercek bir mesaj eklenince yazilir.
+    const bizdeki = chat.sonMesajTs || 0;
+    if (!bizdeki) return false;              // henuz bilmiyoruz -> yanlis alarm uretme
+    if (waTs - bizdeki <= BOSLUK_ESIK) return false;  // fark yok/onemsiz -> saglikli
+
+    const n = Date.now();
+    // ayni sohbeti dakikada birden fazla cekme
+    const son = _boslukSonBakis.get(jid) || 0;
+    if (n - son < BOSLUK_SOGUMA) return false;
+
+    // dakikalik tavan: WhatsApp'i yormayalim
+    while (_boslukPencere.length && n - _boslukPencere[0].ts > 60000) _boslukPencere.shift();
+    if (_boslukPencere.length >= BOSLUK_DK_TAVAN) {
+      if (!global._boslukTavanLog || n - global._boslukTavanLog > 60000) {
+        global._boslukTavanLog = n;
+        console.log(`⚠️ Boşluk denetçisi tavana dayandı (dakikada ${BOSLUK_DK_TAVAN}) — fazlası atlanıyor.`);
+      }
+      return false;
+    }
+
+    _boslukSonBakis.set(jid, n);
+    _boslukPencere.push({ jid, ts: n });
+    _boslukToplam++;
+    const fark = Math.round((waTs - bizdeki) / 1000);
+    console.log(`🕳️ BOSLUK [${lineId}] ${(chat.name || jid).slice(0, 28)} — ` +
+                `WhatsApp ${fark} sn ilerideyiz sanmiyor, BIZDE YOK -> mesaj isteniyor (#${_boslukToplam})`);
+    mesajCekKuyruguEkle(jid);
+
+    // ═══ HASTA BAGLANTI SINYALI ══════════════════════════════════════
+    // Tek sohbette delik olagan (gecikmis paket). Ama KISA surede BIRCOK
+    // FARKLI sohbette delik varsa, bu tek tek mesaj sorunu degil — soket
+    // yarim calisiyor demektir. Bu, sessizlik bekcisinin ASLA yakalayamadigi
+    // bir arizadir: veri AKIYOR ama eksik akiyor.
+    const farkliSohbet = new Set(_boslukPencere.map(x => x.jid)).size;
+    if (farkliSohbet >= BOSLUK_HASTA_ESIK) {
+      if (!global._boslukHastaLog || n - global._boslukHastaLog > 120000) {
+        global._boslukHastaLog = n;
+        console.log(`🚨 HAT HASTA [${lineId}] — son 60 sn'de ${farkliSohbet} FARKLI sohbette mesaj eksik. ` +
+                    'Soket yarim calisiyor olabilir; canlilik testi hemen tetikleniyor.');
+        // Yeni bir kesme yolu ACMIYORUZ: mevcut kalp atisi testini erken
+        // calistiriyoruz. Soket gercekten hastaysa o test zaten basarisiz
+        // olur ve var olan (denenmis) yeniden baglanma yolu devreye girer.
+        try { setImmediate(() => { kalpAtisiTuru().catch(() => {}); }); } catch (_) {}
+      }
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
 function mesajCekKuyruguEkle(jid) {
   if (!jid || _mesajCekBekleyen.has(jid)) return;
   _mesajCekBekleyen.add(jid);
@@ -6747,14 +6969,16 @@ async function mesajiAktifCek(jid) {
   if (!waSock || !waConnected) return;
   const chat = chats.get(jid);
   if (!chat) return;
-  // Bizde bu sohbetin EN SON mesaj key'i varsa, ondan sonrasini iste.
-  // Yoksa cekme yapilamaz (Baileys baslangic noktasi ister) — sorun degil, sohbet zaten isaretli.
-  const sonMesaj = chat.messages && chat.messages.length ? chat.messages[chat.messages.length - 1] : null;
-  if (!sonMesaj || !sonMesaj.key) return;
+  // ÇAPA DÜZELTMESİ (2026-09): burada da çapa SADECE bellekten alınıyordu.
+  // loadFromDB() sohbetleri `messages: []` ile yükler; yani yeniden başlatmadan
+  // sonra delik TESPİT EDİLSE BİLE bu fonksiyon sessizce hiçbir şey yapmıyordu.
+  // Artık telafi ile aynı çapayı kullanıyor: bellekte yoksa veritabanından.
+  const capa = await _telafiCapasi(chat);
+  if (!capa) return;
   try {
     if (typeof waSock.fetchMessageHistory === 'function') {
       // (adet, baslangicKey, baslangicTs) — son mesajdan itibaren birkac mesaj iste
-      await waSock.fetchMessageHistory(5, sonMesaj.key, sonMesaj.ts ? Math.floor(sonMesaj.ts / 1000) : undefined);
+      await waSock.fetchMessageHistory(5, capa.key, capa.ts ? Math.floor(capa.ts / 1000) : undefined);
       // Gelen mesajlar normal messaging-history.set / messages.upsert akisindan dusecek,
       // oradan addMessage + DB + broadcast zaten calisir.
     }
@@ -7472,6 +7696,11 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
   }
   chat.lastTime = message.time;
   chat.lastTs = now;
+  // BOSLUK DENETCISI ICIN GERCEK REFERANS (2026-09):
+  // lastTs, chats.update tarafindan WhatsApp'in zamaniyla EZILIYOR — bu yuzden
+  // "bizde gercekten ne var" sorusunun cevabi olamaz. sonMesajTs SADECE burada,
+  // yani gercek bir mesaj eklendiginde yazilir. Karsilastirma buna yapilir.
+  chat.sonMesajTs = Math.max(chat.sonMesajTs || 0, now);
   if (!message.fromMe) { chat.unread++; chat.ozelUnread = (chat.ozelUnread || 0) + 1; chat.muhUnread = (chat.muhUnread || 0) + 1; }
   // beni etiketleyen okunmamis mesaj geldiyse isaretle
   if (meta.mentionsMe) chat.hasMention = true;
@@ -8836,7 +9065,9 @@ async function _startWAIc(lineId = 'ofis') {
   // Karsi taraf bir mesaji silince / duzenleyince yakala
   sock.ev.on('messages.update', (updates) => {
     _sonWaAktivite = Date.now(); // WhatsApp aktivitesi
-    if (line) { line.sonAktivite = Date.now(); line.kalpBasarisiz = 0; }
+    // UYARLANAN BEKCI: sonAktivite'yi dogrudan yazmak yerine hatAktiviteKaydet
+    // kullaniliyor — hem damgayi atar hem hattin NORMAL araligini ogrenir.
+    if (line) { hatAktiviteKaydet(line); line.kalpBasarisiz = 0; }
     const CC = hatChats(lineId); // bu hattin sohbetleri
     for (const u of updates) {
       const jid = u.key?.remoteJid;
@@ -8913,7 +9144,7 @@ async function _startWAIc(lineId = 'ofis') {
 
   // MESAJ ALINDI BILGISI (receipt): iletildi/okundu durumunu daha guvenilir verir (ozellikle grup).
   sock.ev.on('message-receipt.update', (updates) => {
-    if (line) { line.sonAktivite = Date.now(); line.kalpBasarisiz = 0; } // makbuz geldi -> hat canli
+    if (line) { hatAktiviteKaydet(line); line.kalpBasarisiz = 0; } // makbuz geldi -> hat canli
     const CC = hatChats(lineId); // bu hattin sohbetleri
     for (const u of updates) {
       const jid = u.key?.remoteJid;
@@ -8958,6 +9189,12 @@ async function _startWAIc(lineId = 'ofis') {
         const ts = u.conversationTimestamp ? Number(u.conversationTimestamp) * 1000 : 0;
         let degisti = false;
 
+        // ═══ BOSLUK DENETIMI — lastTs EZILMEDEN ONCE ═══════════════════
+        // SIRA KRITIK: asagidaki blok chat.lastTs'i WhatsApp'in zamaniyla
+        // eziyor. Karsilastirma MUTLAKA ondan once yapilmali, yoksa fark
+        // silinir ve delik gorunmez olur (eski davranistaki hata buydu).
+        const _bosluk = boslukDenetle(lineId, jid, chat, ts);
+
         // --- 1) SIRALAMA SENKRONU (sahte hareket YARATMADAN) ---
         // WhatsApp bu sohbetin gercek son-aktivite zamanini (conversationTimestamp) gonderir.
         // Bunu lastTs'e yansitiriz ki LISTE SIRASI WhatsApp'la ayni olsun.
@@ -8981,7 +9218,10 @@ async function _startWAIc(lineId = 'ofis') {
           broadcastHat(lineId, { type: 'message', jid, chat: stripRaw(chat) });
           // AKTIF mesaj cekmeyi SADECE gercek yeni mesaj (okunmamis artisi) varsa dene.
           // Sadece siralama senkronu icin mesaj cekmeye gerek yok (gereksiz yuk olur).
-          if (gercekYeniMesaj) mesajCekKuyruguEkle(jid);
+          // unreadCount artisi ARTIK tek tetikleyici degil — guvenilmez oldugu
+          // icin (sohbet acikken / kendi mesajimizda / grup okundu senkronunda
+          // artmaz). Bosluk denetcisi zaten cektiyse ikinci kez cekme.
+          if (gercekYeniMesaj && !_bosluk) mesajCekKuyruguEkle(jid);
         }
         chat._oncekiUnread = chat.unread || 0;
       }
@@ -9081,7 +9321,7 @@ async function _startWAIc(lineId = 'ofis') {
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     _sonWaAktivite = Date.now(); // WhatsApp'tan veri geldi -> baglanti canli (ofis global)
-    if (line) { line.sonAktivite = Date.now(); line.kalpBasarisiz = 0; } // HAT BAZLI: bu hat canli
+    if (line) { hatAktiviteKaydet(line); line.kalpBasarisiz = 0; } // HAT BAZLI: bu hat canli
     if (type === 'notify') _sonMesajTrafigi = Date.now(); // MESAJ ÖNCELİĞİ: gelen mesaj da trafik
     // 'notify' yeni mesaj, 'append' senkronizasyon/ilk mesaj - ikisini de al
     if (type !== 'notify' && type !== 'append') return;
@@ -10203,9 +10443,19 @@ server.listen(PORT, async () => {
   }
 
   console.log('   (WhatsApp baglantisi baslatiliyor...)');
-  const credsPath = path.join(__dirname, 'auth', 'creds.json');
+  // ═══ YOL DUZELTMESI (2026-09) — YANLIS "QR OKUTUN" ALARMI ═════════════
+  // HATA: burada 'auth/creds.json' bakiliyordu. Ama hatlarin oturumu
+  // AUTH_BASE/<lineId>/creds.json icinde durur (ofis -> auth/ofis/creds.json).
+  // 'auth/creds.json' HICBIR ZAMAN olusmaz, yani bu kontrol HER restart'ta
+  // "Oturum yok — QR okutun" yaziyordu; oysa oturum sapasaglamdi ve hemen
+  // ardindan "WhatsApp baglandi" satiri geliyordu.
+  //
+  // ZARARI KOZMETIK DEGILDI: ekip bu satiri okuyup "QR tazelemek gerekiyor"
+  // sanip panelden CIKIS'a basiyordu — ve o dugme CALISAN oturumu siliyordu.
+  // 1 Eylul logunda bu zincir iki kez gerceklesti (kullanici: irem123).
+  const credsPath = path.join(AUTH_BASE, 'ofis', 'creds.json');
   if (fs.existsSync(credsPath)) {
-    console.log('   🔁 Kayitli oturum bulundu, otomatik baglaniliyor...');
+    console.log('   🔁 Kayitli oturum bulundu, otomatik baglaniliyor... (QR GEREKMIYOR)');
   } else {
     console.log('   📱 Oturum yok — QR uretiliyor, panelden okutun.');
   }
