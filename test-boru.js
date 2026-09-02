@@ -55,11 +55,10 @@ console.log('\n== 2) TAKILMA: alindi ama panele ULASMADI ==');
   const B = yeniOrtam();
   sahteChats.set('grup@g.us', { jid: 'grup@g.us', messages: [] });
   B.giris('m2', 'grup@g.us', 'ofis', Date.now());
-  B.boru.get('m2').t = Date.now() - 5000;   // 5 sn once geldi, hala takili
+  B.boru.get('m2').t = Date.now() - 12000;  // 12 sn once geldi, hala takili
   B.tur();
   ok('TAKILMA yakalandi', B.say().takilan === 1);
-  ok('sohbet panele YENIDEN yayinlandi (kurtarma)', yayinlar.length === 1);
-  ok('yayin dogru tipte', yayinlar[0].o.type === 'message' && yayinlar[0].o.jid === 'grup@g.us');
+  ok('GOZLEM MODU: yeniden yayin YAPILMADI', yayinlar.length === 0);
   ok('takip listesi temizlendi', B.boru.size === 0);
 }
 
@@ -67,8 +66,8 @@ console.log('\n== 3) YANLIS ALARM OLMAMALI: taze mesaj ==');
 {
   const B = yeniOrtam();
   B.giris('m3', 'a@s.whatsapp.net', 'ofis', Date.now());
-  B.tur();   // daha 4 sn gecmedi
-  ok('4 sn dolmadan alarm YOK', B.say().takilan === 0);
+  B.tur();   // daha 10 sn gecmedi
+  ok('10 sn dolmadan alarm YOK', B.say().takilan === 0);
   ok('mesaj hala takipte', B.boru.size === 1);
 }
 
@@ -84,25 +83,27 @@ console.log('\n== 5) PANEL KAPALI: alarm calmamali ==');
 {
   const B = yeniOrtam();
   B.giris('m5', 'x@g.us', 'ofis', Date.now());
-  B.boru.get('m5').t = Date.now() - 6000;
+  B.boru.get('m5').t = Date.now() - 12000;
   panelSayisi = 0;                          // kimse bagli degil
   B.tur();
   ok('panel yokken alarm YOK (dogru)', B.say().takilan === 0);
   ok('kayit temizlendi (bellek sismesin)', B.boru.size === 0);
 }
 
-console.log('\n== 6) COKLU TAKILMA: hat olu mu diye kalp atisi zorlanir ==');
+console.log('\n== 6) COKLU TAKILMA: gozlem modunda MUDAHALE YOK ==');
 {
   const B = yeniOrtam();
   sahteChats.set('g@g.us', { jid: 'g@g.us', messages: [] });
-  ortam.lines.get('ofis').sonAktivite = Date.now();
+  const t0 = Date.now();
+  ortam.lines.get('ofis').sonAktivite = t0;
   for (let i = 0; i < 5; i++) {
     B.giris('k' + i, 'g@g.us', 'ofis', Date.now());
-    B.boru.get('k' + i).t = Date.now() - 6000;
+    B.boru.get('k' + i).t = Date.now() - 12000;
   }
   B.tur();
   ok('5 takilma yakalandi', B.say().takilan === 5);
-  ok('kalp atisi ZORLANDI (sonAktivite sifirlandi)', ortam.lines.get('ofis').sonAktivite === 0);
+  ok('GOZLEM MODU: kalp atisi ZORLANMADI', ortam.lines.get('ofis').sonAktivite === t0);
+  ok('GOZLEM MODU: hic yayin yapilmadi', yayinlar.length === 0);
 }
 
 console.log('\n== 7) GECMIS YUKLEME takibe girmemeli ==');
@@ -110,6 +111,15 @@ console.log('\n== 7) GECMIS YUKLEME takibe girmemeli ==');
   const B = yeniOrtam();
   B.giris('eski1', 'g@g.us', 'ofis', Date.now() - 3600000);  // 1 saat once
   ok('eski mesaj takibe ALINMADI', B.boru.size === 0);
+}
+
+console.log('\n== 7b) BIZIM GONDERDIGIMIZ mesaj izlenmemeli (yanlis alarmin sebebi) ==');
+{
+  const B = yeniOrtam();
+  B.giris('giden1', 'g@g.us', 'ofis', Date.now(), true);   // fromMe = true
+  ok('fromMe mesaj takibe ALINMADI', B.boru.size === 0);
+  B.giris('gelen1', 'g@g.us', 'ofis', Date.now(), false);
+  ok('gelen mesaj takibe alindi', B.boru.size === 1);
 }
 
 console.log('\n== 8) BELLEK GUVENLIGI ==');

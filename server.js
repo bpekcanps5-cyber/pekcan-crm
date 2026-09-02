@@ -7211,15 +7211,26 @@ function _whapiCaprazGonderen(jid, metin, buHat) {
 // Yanlis alarm riski yok: sadece GERCEKTEN alinmis bir mesaj takildiginda
 // caliyor. Sakin saatte hic mesaj yoksa denetci de sessiz kalir.
 const _boru = new Map();               // mesajId -> { jid, lineId, t }
-const BORU_ESIK_MS = 4000;             // panele bu surede ulasmadiysa TAKILI
+const BORU_ESIK_MS = 10000;            // 4->10 sn: yanlis alarmi keser
 const BORU_TAVAN = 3000;               // bellek guvenligi
 let _boruAlinan = 0, _boruIletilen = 0, _boruTakilan = 0, _boruKurtarilan = 0;
+global._boruBaslangic = Date.now();
 
-function boruGiris(id, jid, lineId, ts) {
+function boruGiris(id, jid, lineId, ts, fromMe) {
   try {
     if (!id || !jid) return;
-    // Sadece CANLI mesajlar. Gecmis yukleme / senkron eski damgali gelir,
-    // onlar panele anlik gitmek zorunda degil.
+    // ═══ DARALTMA (2026-09-01) ═══════════════════════════════════════
+    // ILK SURUM COK GENISTI: addMessage'a giren HER SEY izleniyordu.
+    // Olculdu: 1327 alindi / 426 iletildi -> %68'i "takildi" sayildi.
+    // Gercek kayip degildi: bizim GONDERDIGIMIZ mesajlar, robot mesajlari
+    // ve medya guncellemeleri panele BASKA yollardan/tiplerden gidiyor,
+    // benim bekledigim type:'message' yayini olmuyor. Denetci onlari
+    // "kayip" sandi. 7,5 saatte 8258 yanlis alarm + 8258 gereksiz yeniden
+    // yayin uretti; BELLEK KRITIK 38'den 153'e cikti. Bu bir olcum hatasiydi.
+    //
+    // ARTIK SADECE: karsi taraftan gelen, canli, taze mesaj. Kullanicinin
+    // sikayeti zaten bu: "musteri yazdi, panelde yok."
+    if (fromMe) return;
     if (ts && (Date.now() - ts) > 60000) return;
     if (_boru.size >= BORU_TAVAN) return;
     if (_boru.has(id)) return;
@@ -7260,36 +7271,22 @@ if (!global._boruTimer) {
         _boruTakilan++;
         hatlar.add(k.lineId + '|' + k.jid);
       }
-      console.log(`🚨 BORU HATTI: ${takilanlar.length} mesaj WhatsApp'tan ALINDI ama ` +
-                  `${BORU_ESIK_MS / 1000} sn icinde panele ULASMADI — yeniden yayinlaniyor. ` +
-                  `(toplam alinan: ${_boruAlinan}, iletilen: ${_boruIletilen}, takilan: ${_boruTakilan})`);
 
-      // KURTARMA: sohbeti panele yeniden yayinla. Yayin kaybolduysa bu duzeltir.
-      for (const anahtar of hatlar) {
-        const [lineId, jid] = anahtar.split('|');
-        try {
-          const C = hatChats(lineId);
-          const chat = C && C.get(jid);
-          if (chat) {
-            broadcastHat(lineId, { type: 'message', jid, chat: stripRaw(chat) });
-            _boruKurtarilan++;
-          }
-        } catch (e) { console.log('   boru kurtarma hatasi: ' + e.message); }
-      }
-      console.log(`   ↻ ${hatlar.size} sohbet yeniden yayinlandi (kurtarilan toplam: ${_boruKurtarilan})`);
-
-      // Takilma SURUYORSA hat gercekten olu olabilir -> kalp atisini zorla.
-      // sonAktivite'yi sifirlayinca bir sonraki tur (max 15 sn) hemen test eder.
-      if (takilanlar.length >= 3) {
-        for (const anahtar of hatlar) {
-          const lineId = anahtar.split('|')[0];
-          const line = lines.get(lineId);
-          if (line) {
-            line.sonAktivite = 0;
-            console.log(`   ⚠️  [${lineId}] cok sayida takilma — kalp atisi ZORLANIYOR (hat olu mu test edilecek).`);
-          }
-        }
-      }
+      // ═══ GOZLEM MODU (2026-09-01) ════════════════════════════════════
+      // ILK SURUM her takilmada sohbeti YENIDEN YAYINLIYOR ve kalp atisini
+      // ZORLUYORDU. Olculdu: 8258 yeniden yayin + 4092 zorlama, ve bunlarin
+      // buyuk cogunlugu YANLIS ALARMDI (yukaridaki daraltma notuna bak).
+      // 400 mesajlik sohbeti 8258 kez JSON'a cevirmek bellegi 4 katina cikardi.
+      //
+      // Kural: teshis dogrulanmadan MUDAHALE ETME. Denetci artik sadece
+      // OLCUYOR. Yarinki veri daraltmanin dogru oldugunu gosterirse
+      // kurtarma davranisi geri acilir — o zaman gercek takilmalara calisir.
+      const dk = Math.max(1, Math.round((n - (global._boruBaslangic || n)) / 60000));
+      console.log(`📋 BORU HATTI [gozlem]: ${takilanlar.length} gelen mesaj ` +
+                  `${BORU_ESIK_MS / 1000} sn icinde panele ulasmadi — ` +
+                  `${[...hatlar].map(h => h.split('|')[1].split('@')[0]).slice(0, 3).join(', ')}` +
+                  ` | alinan:${_boruAlinan} iletilen:${_boruIletilen} takilan:${_boruTakilan}` +
+                  ` (dk basina ~${Math.round(_boruTakilan / dk)})`);
     } catch (e) { console.log('boru denetcisi: ' + e.message); }
   }, 2000);
 }
@@ -7308,7 +7305,7 @@ function addMessage(jid, message, meta = {}, lineId = 'ofis') {
   // ═══ BORU HATTI GIRISI ═══════════════════════════════════════════════
   // Mesaj sisteme girdi. Artik panele ulasmasini BEKLIYORUZ. Ulasmazsa
   // denetci 4 saniye icinde yakalar. Sadece kayit tutar, akisa dokunmaz.
-  try { boruGiris(message.id, jid, lineId, message.ts); } catch (_) {}
+  try { boruGiris(message.id, jid, lineId, message.ts, message.fromMe); } catch (_) {}
   const C = hatChats(lineId); // bu hattin sohbetleri (ofis ise global chats)
   // AYNI mesaj iki kez eklenmesin (gonderdigimiz mesaji WhatsApp geri yansitir -> cift kayit)
   if (message.id && C.has(jid)) {
