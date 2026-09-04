@@ -25,9 +25,10 @@ const kod = kaynak.slice(kaynak.indexOf('const EKIP_NUMARALAR = new Set()'),
 function kur(envDegeri, ekipIsimleri = []) {
   const adlar = new Set(ekipIsimleri.map(x => x.toLocaleLowerCase('tr').trim()));
   const process_ = { env: { EKIP_NUMARALAR: envDegeri } };
-  const f = new Function('process', 'panelKullaniciAdlari', '_normAd', 'lidToPn', 'console',
+  const f = new Function('process', 'panelKullaniciAdlari', '_normAd', 'lidToPn', 'console', '_envDosyasindanOku',
     kod + '\nreturn { ekipMi: ekipUyesiMi, yukle: ekipNumaralariYukle, set: EKIP_NUMARALAR, hane: _sonOnHane };');
-  return f(process_, adlar, (s) => (s || '').toLocaleLowerCase('tr').trim(), new Map(), { log: () => {} });
+  // .env dosyasi YOK taklidi -> process.env yoluna dussun
+  return f(process_, adlar, (s) => (s || '').toLocaleLowerCase('tr').trim(), new Map(), { log: () => {} }, () => '');
 }
 
 // ═══ TEST 1: SIKAYETIN TA KENDISI ══════════════════════════════════
@@ -88,10 +89,10 @@ console.log('\n== TEST 5: LID -> numara cevrimi ==');
 {
   const adlar = new Set(['mustafa']);
   const lidHarita = new Map([['77777@lid', '905321112233@s.whatsapp.net']]);
-  const f = new Function('process', 'panelKullaniciAdlari', '_normAd', 'lidToPn', 'console',
+  const f = new Function('process', 'panelKullaniciAdlari', '_normAd', 'lidToPn', 'console', '_envDosyasindanOku',
     kod + '\nreturn ekipUyesiMi;');
   const ekipMi = f({ env: { EKIP_NUMARALAR: '905321112233' } }, adlar,
-                   (s) => (s || '').toLocaleLowerCase('tr').trim(), lidHarita, { log: () => {} });
+                   (s) => (s || '').toLocaleLowerCase('tr').trim(), lidHarita, { log: () => {} }, () => '');
   ok('bilinen LID gercek numaraya cevrilip EKIP bulunuyor', ekipMi('Mustafa', '77777@lid') === true);
   ok('bilinmeyen LID -> isme dusuyor (guvenli)', ekipMi('Mustafa', '88888@lid') === true);
 }
@@ -133,6 +134,40 @@ console.log('\n== TEST 8: hicbir sey bozulmadi ==');
   ok('rate desen duzeltmesi duruyor', /\(\?<!\[0-9\]\)429\(\?!\[0-9\]\)/.test(kaynak));
   ok('gonderim merdiveni 5/15/45 aynen', /const BEKLEMELER = \[5000, 15000, 45000\]/.test(kaynak));
   ok('IPTAL ROBOTU hala ekip sayiliyor', /panelKullaniciAdlari\.add\(_normAd\('İPTAL ROBOTU'\)\)/.test(kaynak));
+}
+
+
+// ═══ TEST 9: pm2 ORTAM DEGISKENI TUZAGI ════════════════════════════
+console.log('\n== TEST 9: .env dosyasi dogrudan okunuyor mu? ==');
+{
+  const adlar = new Set(['mustafa']);
+  const mk = (envDosya, processEnv) => {
+    const f = new Function('process', 'panelKullaniciAdlari', '_normAd', 'lidToPn', 'console', '_envDosyasindanOku',
+      kod + '\nreturn { ekipMi: ekipUyesiMi, set: EKIP_NUMARALAR };');
+    return f({ env: { EKIP_NUMARALAR: processEnv } }, adlar,
+             (s) => (s || '').toLocaleLowerCase('tr').trim(), new Map(), { log: () => {} },
+             (ad) => (ad === 'EKIP_NUMARALAR' ? envDosya : ''));
+  };
+
+  // GERCEK SENARYO: .env'de numara VAR ama pm2 process.env'e enjekte ETMEMIS
+  const A = mk('905321112233', undefined);
+  ok('pm2 process.env bos olsa da .env DOSYASINDAN okunuyor', A.set.size === 1);
+  ok('=> duz "pm2 restart" ile ozellik CALISIYOR',
+     A.ekipMi('Mustafa', '905559998877@s.whatsapp.net') === false);
+  console.log('         -> kodun kendi uyarisi (satir ~9931) bu tuzagi anlatiyor');
+
+  // .env yoksa process.env yedegi
+  const B = mk('', '905321112233');
+  ok('.env okunamazsa process.env yedegi calisiyor', B.set.size === 1);
+
+  // ikisi de yoksa eski davranis
+  const C = mk('', undefined);
+  ok('ikisi de yoksa ISIM davranisina dusuyor', C.ekipMi('Mustafa', '905559998877@s.whatsapp.net') === true);
+
+  ok('kod once .env dosyasini deniyor', /_envDosyasindanOku\('EKIP_NUMARALAR'\)/.test(kaynak));
+  ok('process.env yedek olarak duruyor', /if \(!ham\) ham = process\.env\.EKIP_NUMARALAR/.test(kaynak));
+  ok('2 dakikada bir tazeleniyor (restart gerekmesin)', /ekipNumaralariYukle\(true\)/.test(kaynak));
+  ok('degisiklik yoksa log yazmiyor', /if \(onceki !== sonraki\)/.test(kaynak));
 }
 
 console.log('\n─────────────────────────────');

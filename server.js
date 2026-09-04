@@ -8057,9 +8057,18 @@ function _sonOnHane(x) {
   return s.slice(-10);
 }
 
-function ekipNumaralariYukle() {
+function ekipNumaralariYukle(sessiz) {
   EKIP_NUMARALAR.clear();
-  const ham = process.env.EKIP_NUMARALAR || '';
+  // ═══ pm2 ORTAM DEGISKENI TUZAGI (2026-09) ══════════════════════════
+  // Kodun kendi uyarisi (bkz. _envDosyasindanOku): pm2, uygulamayi ILK
+  // baslattigi andaki ortam degiskenlerini saklar ve her restart'ta ayni
+  // degerleri geri enjekte eder. EKIP_NUMARALAR pekcan ilk baslatildiginda
+  // YOKTU -> pm2'nin sakladigi ortamda da yok -> process.env ile okumak
+  // duz 'pm2 restart' sonrasi HER ZAMAN BOS doner ve ozellik sessizce
+  // calismaz. Bu yuzden ONCE .env DOSYASINI dogrudan okuyoruz.
+  let ham = '';
+  try { ham = _envDosyasindanOku('EKIP_NUMARALAR') || ''; } catch (_) {}
+  if (!ham) ham = process.env.EKIP_NUMARALAR || '';
   // SADECE virgul / noktali virgul / satir sonu ayirir — BOSLUK AYIRMAZ.
   // (Testin buldugu hata: bosluga da bolununce "+90 532 111 22 33" bes parcaya
   //  ayrilip hepsi cok kisa kaldigi icin numara HIC yuklenmiyordu.)
@@ -8078,6 +8087,7 @@ function ekipNumaralariYukle() {
     const n = _sonOnHane(parca);
     if (n) EKIP_NUMARALAR.add(n);
   }
+  if (sessiz) return;
   if (EKIP_NUMARALAR.size) {
     console.log(`   👥 Ekip numarasi yuklendi: ${EKIP_NUMARALAR.size} kisi — ` +
                 'rozet ve aktivite sayimi artik NUMARAYA gore (isim benzerligi aldatamaz).');
@@ -8119,6 +8129,18 @@ function ekipUyesiMi(ad, jid) {
 // başlangıçta + her 2 dakikada bir kullanıcı listesini tazele
 panelKullanicilariYenile();
 setInterval(panelKullanicilariYenile, 120000);
+// Ekip numaralari da 2 dakikada bir tazelenir: .env'e numara ekleyip
+// RESTART ATMADAN devreye girsin (degisiklik yoksa log yazmaz).
+setInterval(() => {
+  try {
+    const onceki = Array.from(EKIP_NUMARALAR).sort().join(',');
+    ekipNumaralariYukle(true);
+    const sonraki = Array.from(EKIP_NUMARALAR).sort().join(',');
+    if (onceki !== sonraki) {
+      console.log(`   👥 Ekip numaralari guncellendi: ${EKIP_NUMARALAR.size} kisi (.env degismis, restart gerekmedi)`);
+    }
+  } catch (_) {}
+}, 120000);
 const groupMetaCache = new Map(); // grup jid -> { meta, ts } (tekrar tekrar cekmeyi onler)
 // LID -> gercek numara (PN) esleme onbellegi
 const lidToPn = new Map(); // '...@lid' -> '...@s.whatsapp.net'
