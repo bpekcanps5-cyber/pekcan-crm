@@ -10632,8 +10632,20 @@ function renderMessages(c, searchQ){
         // Bu mesaji BIZIM panel kullanicimiz yazdiysa (sunucu isaretledi ya da
         // o isim icin panel profil fotosu var), panelden gonderilmis mesajlarla
         // AYNI gorunumu kullan: kalkan rozeti + profil fotosu + gorev rengi.
-        const _pFoto = (typeof panelProfilFoto === 'function') ? (panelProfilFoto(sn) || '') : '';
-        if (m.panelKullanicisi || _pFoto) {
+        /* KIMLIK DUZELTMESI (2026-09) ─────────────────────────────────
+           ESKI KOSUL: (m.panelKullanicisi || _pFoto)
+           m.panelKullanicisi'ni server.js HIC set etmiyor (sadece kapali olan
+           whapi hattinda var). Yani kosul pratikte SADECE "_pFoto"ydu: gelen
+           bir mesaj, gonderenin ADINDAN profil fotosu bulunabildigi icin
+           PANEL KULLANICISI gibi ciziliyordu — kalkan rozeti, ekip fotosu,
+           gorev etiketi (IPTAL / 2 AYLIK).
+           Sonuc: ekipte "Ekrem" varsa, gruba KENDI telefonundan yazan MUSTERI
+           "Ekrem Guler" o ekip uyesinin kimligini aliyordu. Isim kimlik degildir.
+           ARTIK: karari SUNUCU verir (senderOfis). Bu ekipte herkes panelden
+           yazar (fromMe), dolayisiyla gelen bir mesaj normalde ekip degildir. */
+        const _panelMi = !!(m.panelKullanicisi || m.senderOfis);
+        const _pFoto = _panelMi && (typeof panelProfilFoto === 'function') ? (panelProfilFoto(sn) || '') : '';
+        if (_panelMi) {
           const _pGr = (typeof gorevRengi === 'function') ? gorevRengi(sn) : null;
           const _pAv = _pFoto ? '<span class="tn-foto" style="background-image:url(\'' + _pFoto + '\')"></span>' : '';
           const _pRz = '<span class="panel-rozet" title="Panel kullanıcısı"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg></span>';
@@ -10819,7 +10831,9 @@ function renderMessages(c, searchQ){
     const acilCls = acilMesajMi(m.text) ? ' acil-mesaj' : '';
     /* WHAPI PANEL GORUNUMU */
     // Panel kullanicisinin yazdigi mesaj: balonun TAMAMI farkli renkte.
-    const _pnlCls = (m.panelKullanicisi || (typeof panelProfilFoto === 'function' && panelProfilFoto(m.sender || ''))) ? ' panel-msg' : '';
+    // KIMLIK DUZELTMESI (2026-09): burada da "isimden foto bulundu mu" sorulup
+    // musterinin balonu panel rengine boyaniyordu. Artik sunucunun karari.
+    const _pnlCls = (m.panelKullanicisi || m.senderOfis) ? ' panel-msg' : '';
     /* WHAPI PANEL GORUNUMU SONU */
     return sep+'<div class="msg '+cls+grpCls+selCls+menCls+failCls+acilCls+_pnlCls+(secimModu?' secim-modu':'')+'" data-mid="'+esc(m.id||'')+'">'+secKutu+actions+name+fwd+quote+body+reaction+'<span class="meta">'+editedTag+esc(m.time||'')+tik+'</span></div>';
    }catch(hata){
@@ -13784,11 +13798,25 @@ function _panelAra(harita, ad){
   const n=_panelNorm(ad);
   if(!n) return null;
   for(const k in harita){ if(_panelNorm(k)===n) return harita[k]; }
-  // son sans: ilk kelime (ornek "Efe Rıza Yılmaz" <-> "Efe Rıza")
-  const ilk=n.split(' ')[0];
-  if(ilk.length>=3){
-    for(const k in harita){ const kn=_panelNorm(k); if(kn===ilk || kn.split(' ')[0]===ilk) return harita[k]; }
+  /* KIMLIK DUZELTMESI (2026-09) ───────────────────────────────────────
+     ESKI: sadece ILK KELIME esitse eslestiriyordu. Amac "Efe Rıza Yılmaz"
+     ile "Efe Rıza"yi bulusturmakti, ama yan etkisi agirdi:
+        "Ekrem Güler" (musteri)  ~  "Ekrem Yılmaz" (panel kullanicisi)  -> ESLESIYORDU
+     Ayni ada sahip herkes birbirinin fotosunu/gorevini aliyordu.
+     ARTIK: biri digerinin TAM KELIME ONEKI olmali.
+        "efe riza yilmaz"  vs  "efe riza"   -> ESLESIR (onek)
+        "ekrem guler"      vs  "ekrem yilmaz" -> ESLESMEZ (soyadi farkli)
+     Ayrica birden fazla aday varsa BELIRSIZ sayilir ve hicbiri secilmez. */
+  let bulunan=null, adayAdet=0;
+  for(const k in harita){
+    const kn=_panelNorm(k);
+    if(!kn) continue;
+    if(kn.startsWith(n+' ') || n.startsWith(kn+' ')){
+      adayAdet++;
+      if(!bulunan) bulunan=harita[k];
+    }
   }
+  if(adayAdet===1) return bulunan;   // tek ve net aday
   return null;
 }
 window._panelAra=_panelAra;
