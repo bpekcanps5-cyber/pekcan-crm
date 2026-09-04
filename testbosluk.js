@@ -23,17 +23,23 @@ const kod = kaynak.slice(kaynak.indexOf('const BOSLUK_ESIK'),
 function kur() {
   const cekilenler = [];
   const kalpler = [];
-  const f = new Function('mesajCekKuyruguEkle', 'kalpAtisiTuru', 'console', 'global', 'setImmediate',
+  const f = new Function('mesajCekKuyruguEkle', 'kalpAtisiTuru', 'console', 'global', 'setImmediate', 'setInterval', 'setTimeout',
     kod + '\nreturn { denetle: boslukDenetle, ESIK: BOSLUK_ESIK, SOGUMA: BOSLUK_SOGUMA,' +
-    ' TAVAN: BOSLUK_DK_TAVAN, HASTA: BOSLUK_HASTA_ESIK, pencere: _boslukPencere };');
+    ' TAVAN: BOSLUK_DK_TAVAN, HASTA: BOSLUK_HASTA_ESIK, DOGRULAMA: BOSLUK_DOGRULAMA,' +
+    ' istekPencere: _boslukIstekPencere, gercekPencere: _boslukGercekPencere };');
+  const zamanlayicilar = [];
   const api = f(
     (jid) => cekilenler.push(jid),
     async () => { kalpler.push(Date.now()); },
     { log: () => {} },
     {},
-    (fn) => fn()
+    (fn) => fn(),
+    () => 0,                                   // setInterval: ozet turu testte calismasin
+    (fn, ms) => { zamanlayicilar.push(fn); }    // setTimeout: dogrulamayi ELLE tetikleyecegiz
   );
-  return { ...api, cekilenler, kalpler };
+  // dogrulama geri cagrilarini elle calistir
+  api.dogrula = () => { const l = zamanlayicilar.splice(0); for (const fn of l) fn(); };
+  return { ...api, cekilenler, kalpler, dogrula: api.dogrula };
 }
 
 const sohbet = (sonMesajTs, ad = 'GRUP') => ({ name: ad, sonMesajTs });
@@ -100,29 +106,71 @@ console.log('\n== TEST 4: rate-limit korumalari ==');
   ok('tavan asilinca WhatsApp\'a fazladan istek GITMIYOR', G.cekilenler.length === G.TAVAN);
 }
 
-// ═══ TEST 5: HASTA HAT SINYALI ═════════════════════════════════════
-console.log('\n== TEST 5: cok sohbette delik -> hat hasta sinyali ==');
+// ═══ TEST 5: DOGRULAMA — GERCEK DELIK mi, BOS ALARM mi? ════════════
+console.log('\n== TEST 5: dogrulama (1. gun: 410 tespit, 0 olu baglanti) ==');
 {
+  // GERCEK delik: cekimden sonra yeni mesaj DUSTU
   const F = kur();
-  // 4 farkli sohbet -> henuz hasta degil
-  for (let i = 0; i < 4; i++) F.denetle('ofis', 'k' + i + '@g.us', sohbet(1000000), 1060000);
-  ok('4 farkli sohbette delik -> canlilik testi TETIKLENMEDI', F.kalpler.length === 0);
-  // 5. sohbet -> hasta
-  F.denetle('ofis', 'k9@g.us', sohbet(1000000), 1060000);
-  ok('5 farkli sohbette delik -> canlilik testi TETIKLENDI', F.kalpler.length === 1);
-  ok('bu, sessizlik bekcisinin YAKALAYAMADIGI ariza (veri akiyor ama eksik)', true);
+  const c = sohbet(1000000, 'POLAT IPTAL GRUBU');
+  F.denetle('ofis', 'g@g.us', c, 1060000);
+  c.sonMesajTs = 1060000;          // eksik mesaj geldi
+  F.dogrula();
+  ok('yeni mesaj dustuyse delik GERCEK sayiliyor', F.gercekPencere.length === 1);
 
-  // ayni sohbetin tekrari hasta saydirmamali
+  // BOS ALARM: cekim yapildi ama yeni mesaj YOK
   const G = kur();
-  for (let i = 0; i < 10; i++) {
-    G.pencere.push({ jid: 'tek@g.us', ts: Date.now() });
-  }
-  G.denetle('ofis', 'tek2@g.us', sohbet(1000000), 1060000);
-  ok('ayni sohbetin tekrari "hasta" saydirmiyor (FARKLI sohbet sayiliyor)', G.kalpler.length === 0);
+  const c2 = sohbet(1000000, 'GELEN ODEMELER');
+  G.denetle('ofis', 'h@g.us', c2, 1060000);
+  G.dogrula();                     // sonMesajTs degismedi
+  ok('yeni mesaj gelmediyse BOS ALARM sayiliyor', G.gercekPencere.length === 0);
+  ok('bos alarm "hat hasta" uyarisi URETMIYOR', G.kalpler.length === 0);
+  console.log('         -> 410 tespitin kaci gercek, artik log soyleyecek');
 }
 
-// ═══ TEST 6: KOD BAGLANTILARI — SIRA KRITIK ════════════════════════
-console.log('\n== TEST 6: denetim lastTs EZILMEDEN once calisiyor mu? ==');
+// ═══ TEST 6: HASTA HAT SINYALI (sadece dogrulanmis deliklerle) ═════
+console.log('\n== TEST 6: cok sohbette GERCEK delik -> hat hasta ==');
+{
+  // 4 dogrulanmis delik -> henuz hasta degil
+  const F = kur();
+  const sohbetler = [];
+  for (let i = 0; i < 4; i++) {
+    const c = sohbet(1000000); sohbetler.push(c);
+    F.denetle('ofis', 'k' + i + '@g.us', c, 1060000);
+  }
+  sohbetler.forEach(c => { c.sonMesajTs = 1060000; });
+  F.dogrula();
+  ok('4 farkli sohbette gercek delik -> canlilik testi TETIKLENMEDI', F.kalpler.length === 0);
+
+  // 5 dogrulanmis delik -> hasta
+  const G = kur();
+  const s5 = [];
+  for (let i = 0; i < 5; i++) {
+    const c = sohbet(1000000); s5.push(c);
+    G.denetle('ofis', 'm' + i + '@g.us', c, 1060000);
+  }
+  s5.forEach(c => { c.sonMesajTs = 1060000; });
+  G.dogrula();
+  ok('5 farkli sohbette gercek delik -> canlilik testi TETIKLENDI', G.kalpler.length === 1);
+  ok('bu, sessizlik bekcisinin YAKALAYAMADIGI ariza (veri akiyor ama eksik)', true);
+
+  // 5 BOS ALARM -> hasta DEGIL (1. gunun 28 yanlis "hasta" uyarisi biter)
+  const H = kur();
+  for (let i = 0; i < 5; i++) H.denetle('ofis', 'n' + i + '@g.us', sohbet(1000000), 1060000);
+  H.dogrula();                     // hicbirinde yeni mesaj yok
+  ok('5 BOS ALARM "hat hasta" URETMIYOR (1. gunku 28 yanlis uyari biter)', H.kalpler.length === 0);
+
+  // ayni sohbetin tekrari FARKLI sohbet saydirmamali
+  const I = kur();
+  const tek = sohbet(1000000);
+  I.denetle('ofis', 'tek@g.us', tek, 1060000);
+  tek.sonMesajTs = 1060000;
+  for (let r = 0; r < 10; r++) I.dogrula();
+  ok('ayni sohbet tekrarlansa da FARKLI sohbet sayisi 1', new Set(I.gercekPencere.map(x => x.jid)).size === 1);
+  ok('tek sohbet "hasta" uyarisi uretmiyor', I.kalpler.length === 0);
+}
+
+// ═══ TEST 7: KOD BAGLANTILARI — SIRA KRITIK ════════════════════════
+console.log('\n== TEST 7: denetim lastTs EZILMEDEN once calisiyor mu? ==');
 {
   // SADECE chats.update bloguna bak (dosyanin baska yerinde de lastTs atamasi var)
   const bBas = kaynak.indexOf("sock.ev.on('chats.update'");
@@ -141,11 +189,11 @@ console.log('\n== TEST 6: denetim lastTs EZILMEDEN once calisiyor mu? ==');
   ok('unreadCount artik TEK tetikleyici degil',
      /if \(gercekYeniMesaj && !_bosluk\) mesajCekKuyruguEkle\(jid\)/.test(kaynak));
   ok('hasta sinyali YENI kesme yolu acmiyor, mevcut testi tetikliyor',
-     /kalpAtisiTuru\(\)\.catch/.test(kaynak.slice(kaynak.indexOf('HAT HASTA'), kaynak.indexOf('HAT HASTA') + 700)));
+     /kalpAtisiTuru\(\)\.catch/.test(kaynak.slice(kaynak.indexOf('HAT HASTA'), kaynak.indexOf('HAT HASTA') + 1400)));
 }
 
-// ═══ TEST 7: CEKIM CAPASI (restart sonrasi calisiyor mu?) ══════════
-console.log('\n== TEST 7: mesajiAktifCek capa duzeltmesi ==');
+// ═══ TEST 8: CEKIM CAPASI (restart sonrasi calisiyor mu?) ══════════
+console.log('\n== TEST 8: mesajiAktifCek capa duzeltmesi ==');
 {
   const blok = kaynak.slice(kaynak.indexOf('async function mesajiAktifCek'),
                             kaynak.indexOf('async function mesajiAktifCek') + 1200);
@@ -156,8 +204,8 @@ console.log('\n== TEST 7: mesajiAktifCek capa duzeltmesi ==');
   console.log('         -> restart sonrasi delik tespit edilirse cekim ARTIK gercekten calisiyor');
 }
 
-// ═══ TEST 8: ONCEKI DUZELTMELER YERINDE ════════════════════════════
-console.log('\n== TEST 8: hicbir sey bozulmadi ==');
+// ═══ TEST 9: ONCEKI DUZELTMELER YERINDE ════════════════════════════
+console.log('\n== TEST 9: hicbir sey bozulmadi ==');
 {
   ok('uyarlanan sessizlik bekcisi duruyor', /uyarlananSessizlikEsigi\(line\)/.test(kaynak));
   ok('cikis dugmesi korumasi duruyor', /GUVENLI TAZELEME/.test(kaynak));

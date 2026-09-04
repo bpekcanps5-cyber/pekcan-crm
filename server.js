@@ -6882,8 +6882,10 @@ const BOSLUK_SOGUMA = 60 * 1000;    // ayni sohbet icin en fazla dakikada bir ce
 const BOSLUK_DK_TAVAN = 20;         // dakikada en fazla 20 telafi cekimi (rate koruma)
 const BOSLUK_HASTA_ESIK = 5;        // 60sn icinde 5 FARKLI sohbette delik -> hat hasta
 const _boslukSonBakis = new Map();  // jid -> en son ne zaman delik icin cekildi
-const _boslukPencere = [];          // son deliklerin { jid, ts } listesi
-let _boslukToplam = 0;
+const _boslukIstekPencere = [];     // TUM denemeler (dakikalik tavan icin)
+const _boslukGercekPencere = [];    // SADECE dogrulanmis gercek delikler (hasta sinyali icin)
+let _boslukToplam = 0, _boslukKurtarilan = 0, _boslukBosAlarm = 0;
+const BOSLUK_DOGRULAMA = 20 * 1000; // cekim sonrasi bu kadar bekleyip sonuca bak
 
 // WhatsApp'in beyani (waTs) ile bizdeki gercek son mesaj karsilastirilir.
 // Delik varsa true doner ve hedefli cekim kuyruga alinir.
@@ -6903,8 +6905,8 @@ function boslukDenetle(lineId, jid, chat, waTs) {
     if (n - son < BOSLUK_SOGUMA) return false;
 
     // dakikalik tavan: WhatsApp'i yormayalim
-    while (_boslukPencere.length && n - _boslukPencere[0].ts > 60000) _boslukPencere.shift();
-    if (_boslukPencere.length >= BOSLUK_DK_TAVAN) {
+    while (_boslukIstekPencere.length && n - _boslukIstekPencere[0] > 60000) _boslukIstekPencere.shift();
+    if (_boslukIstekPencere.length >= BOSLUK_DK_TAVAN) {
       if (!global._boslukTavanLog || n - global._boslukTavanLog > 60000) {
         global._boslukTavanLog = n;
         console.log(`⚠️ Boşluk denetçisi tavana dayandı (dakikada ${BOSLUK_DK_TAVAN}) — fazlası atlanıyor.`);
@@ -6913,33 +6915,63 @@ function boslukDenetle(lineId, jid, chat, waTs) {
     }
 
     _boslukSonBakis.set(jid, n);
-    _boslukPencere.push({ jid, ts: n });
+    _boslukIstekPencere.push(n);
     _boslukToplam++;
     const fark = Math.round((waTs - bizdeki) / 1000);
-    console.log(`🕳️ BOSLUK [${lineId}] ${(chat.name || jid).slice(0, 28)} — ` +
-                `WhatsApp ${fark} sn ilerideyiz sanmiyor, BIZDE YOK -> mesaj isteniyor (#${_boslukToplam})`);
+    const ad = (chat.name || jid).slice(0, 28);
+    console.log(`🕳️ BOSLUK [${lineId}] ${ad} — WhatsApp ${fark} sn ileride, BIZDE YOK -> mesaj isteniyor (#${_boslukToplam})`);
     mesajCekKuyruguEkle(jid);
 
-    // ═══ HASTA BAGLANTI SINYALI ══════════════════════════════════════
-    // Tek sohbette delik olagan (gecikmis paket). Ama KISA surede BIRCOK
-    // FARKLI sohbette delik varsa, bu tek tek mesaj sorunu degil — soket
-    // yarim calisiyor demektir. Bu, sessizlik bekcisinin ASLA yakalayamadigi
-    // bir arizadir: veri AKIYOR ama eksik akiyor.
-    const farkliSohbet = new Set(_boslukPencere.map(x => x.jid)).size;
-    if (farkliSohbet >= BOSLUK_HASTA_ESIK) {
-      if (!global._boslukHastaLog || n - global._boslukHastaLog > 120000) {
-        global._boslukHastaLog = n;
-        console.log(`🚨 HAT HASTA [${lineId}] — son 60 sn'de ${farkliSohbet} FARKLI sohbette mesaj eksik. ` +
-                    'Soket yarim calisiyor olabilir; canlilik testi hemen tetikleniyor.');
-        // Yeni bir kesme yolu ACMIYORUZ: mevcut kalp atisi testini erken
-        // calistiriyoruz. Soket gercekten hastaysa o test zaten basarisiz
-        // olur ve var olan (denenmis) yeniden baglanma yolu devreye girer.
-        try { setImmediate(() => { kalpAtisiTuru().catch(() => {}); }); } catch (_) {}
-      }
-    }
+    // ═══ DOGRULAMA (2026-09) ═════════════════════════════════════════
+    // 1. gun olcumu: 410 "bosluk" gorundu ama 0 olu baglanti / 0 yari-acik.
+    // Yani deliklerin cogu GERCEK OLMAYABILIR: conversationTimestamp mesaj
+    // disi olaylarda da ilerliyor (arama, grup ayari, protokol mesaji...).
+    // Tahmin yurutmek yerine OLCUYORUZ: cekimden sonra gercekten yeni mesaj
+    // dustu mu? Dustuyse delik GERCEKTI ve kurtarildi. Dusmediyse bos alarmdi.
+    const oncekiTs = bizdeki;
+    setTimeout(() => {
+      try {
+        const simdiki = chat.sonMesajTs || 0;
+        if (simdiki > oncekiTs) {
+          _boslukKurtarilan++;
+          console.log(`   ✅ BOSLUK KURTARILDI: ${ad} — eksik mesaj(lar) geldi (toplam kurtarilan: ${_boslukKurtarilan})`);
+          // SADECE dogrulanmis delikler "hasta" sayimina girer. Boylece
+          // bos alarmlar yanlis "HAT HASTA" uyarisi uretemez.
+          const t = Date.now();
+          _boslukGercekPencere.push({ jid, ts: t });
+          while (_boslukGercekPencere.length && t - _boslukGercekPencere[0].ts > 60000) _boslukGercekPencere.shift();
+          const farkliSohbet = new Set(_boslukGercekPencere.map(x => x.jid)).size;
+          if (farkliSohbet >= BOSLUK_HASTA_ESIK) {
+            if (!global._boslukHastaLog || t - global._boslukHastaLog > 120000) {
+              global._boslukHastaLog = t;
+              console.log(`🚨 HAT HASTA [${lineId}] — son 60 sn'de ${farkliSohbet} FARKLI sohbette GERCEKTEN mesaj eksikti. ` +
+                          'Soket yarim calisiyor; canlilik testi tetikleniyor.');
+              // Yeni bir kesme yolu ACMIYORUZ: mevcut kalp atisi testini erken
+              // calistiriyoruz. Soket gercekten hastaysa o test basarisiz olur
+              // ve var olan (denenmis) yeniden baglanma yolu devreye girer.
+              try { kalpAtisiTuru().catch(() => {}); } catch (_) {}
+            }
+          }
+        } else {
+          _boslukBosAlarm++;
+          if (_boslukBosAlarm % 25 === 0) {
+            console.log(`   ℹ️ Bos alarm sayaci: ${_boslukBosAlarm} (kurtarilan: ${_boslukKurtarilan}) — ` +
+                        'oran yuksekse BOSLUK_ESIK yukseltilmeli.');
+          }
+        }
+      } catch (_) {}
+    }, BOSLUK_DOGRULAMA);
     return true;
   } catch (e) { return false; }
 }
+
+// Gunluk ozet: bosluk denetcisi ise yariyor mu, tek bakista gorunsun.
+setInterval(() => {
+  if (!_boslukToplam) return;
+  const oran = _boslukToplam ? Math.round((_boslukKurtarilan / _boslukToplam) * 100) : 0;
+  console.log(`📊 BOSLUK OZET: ${_boslukToplam} tespit | ${_boslukKurtarilan} GERCEK (kurtarildi) | ` +
+              `${_boslukBosAlarm} bos alarm | isabet %${oran}`);
+}, 30 * 60 * 1000);
 
 function mesajCekKuyruguEkle(jid) {
   if (!jid || _mesajCekBekleyen.has(jid)) return;
@@ -7990,8 +8022,100 @@ async function panelKullanicilariYenile(){
     }
   }catch(e){}
 }
-// bir kişi adı panel kullanıcısı (ekip üyesi) mı?
-function ekipUyesiMi(ad){ return ad ? panelKullaniciAdlari.has(_normAd(ad)) : false; }
+// ═══════════════════════════════════════════════════════════════════════
+// EKIP KIMLIGI: ISIM DEGIL NUMARA (2026-09)
+//
+// SORUN: ekipUyesiMi SADECE ISME bakiyordu. Ekipte "Mustafa" varsa,
+// rehberde "Mustafa" diye kayitli HER MUSTERI ekip rozeti aliyordu.
+// Iki yerde zarar veriyordu:
+//   1) panel rozeti (senderOfis)   -> musteri ekip uyesi gibi gorunuyor
+//   2) "ilgileniyorum" sayimi      -> musterinin mesaji ekip aktivitesi
+//      sayiliyor, RAPORLAR BOZULUYOR
+//
+// Isim ASLA kimlik olamaz: ayni isimden onlarca musteri var. Kimlik
+// numaradir. db.listUsers() telefon dondurmedigi icin numaralar .env'den
+// okunuyor (panel/DB degisikligi GEREKTIRMEZ).
+//
+//   .env:  EKIP_NUMARALAR=905321112233,905339998877,5324445566
+//
+// Yazim serbest: +90, bosluk, tire, parantez temizlenir; karsilastirma
+// SON 10 HANE uzerinden yapilir. Boylece 905321112233 / 05321112233 /
+// 5321112233 hepsi ayni kisiyi bulur.
+//
+// GERI UYUM: EKIP_NUMARALAR bos ise ESKI davranis (isim) aynen surer —
+// yani bu dosya kurulunca hicbir sey bozulmaz. Numaralar girilince
+// numara KESIN HUKUM olur: ismi tutsa bile numarasi listede degilse
+// EKIP DEGILDIR.
+const EKIP_NUMARALAR = new Set();   // son 10 hane
+let _sahteRozetSayaci = 0;
+
+// jid veya numara -> son 10 hane (yoksa '')
+function _sonOnHane(x) {
+  if (!x) return '';
+  let s = String(x).split('@')[0].split(':')[0].replace(/\D/g, '');
+  if (s.length < 7) return '';          // anlamsiz kisa -> guvenme
+  return s.slice(-10);
+}
+
+function ekipNumaralariYukle() {
+  EKIP_NUMARALAR.clear();
+  const ham = process.env.EKIP_NUMARALAR || '';
+  // SADECE virgul / noktali virgul / satir sonu ayirir — BOSLUK AYIRMAZ.
+  // (Testin buldugu hata: bosluga da bolununce "+90 532 111 22 33" bes parcaya
+  //  ayrilip hepsi cok kisa kaldigi icin numara HIC yuklenmiyordu.)
+  for (const parca of ham.split(/[,;\n]+/)) {
+    const rakam = String(parca).replace(/\D/g, '');
+    if (!rakam) continue;
+    // Cok uzunsa muhtemelen bosluklu birden fazla numara yan yana yazilmis;
+    // o parcayi bir de bosluktan bol.
+    if (rakam.length > 15) {
+      for (const alt of String(parca).split(/\s+/)) {
+        const n2 = _sonOnHane(alt);
+        if (n2) EKIP_NUMARALAR.add(n2);
+      }
+      continue;
+    }
+    const n = _sonOnHane(parca);
+    if (n) EKIP_NUMARALAR.add(n);
+  }
+  if (EKIP_NUMARALAR.size) {
+    console.log(`   👥 Ekip numarasi yuklendi: ${EKIP_NUMARALAR.size} kisi — ` +
+                'rozet ve aktivite sayimi artik NUMARAYA gore (isim benzerligi aldatamaz).');
+  } else {
+    console.log('   ⚠️  EKIP_NUMARALAR bos — ekip tespiti hala ISME gore yapiliyor. ' +
+                'Ayni isimli musteriler ekip rozeti alabilir. .env\'e numaralari ekleyin.');
+  }
+}
+ekipNumaralariYukle();
+
+// Bir kisi ekip uyesi mi?
+//   ad  : gorunen isim (eski davranis icin)
+//   jid : gonderenin jid'i / numarasi — VARSA KESIN HUKUM budur
+function ekipUyesiMi(ad, jid) {
+  // Numara listesi tanimliysa numara KARAR VERIR.
+  if (EKIP_NUMARALAR.size) {
+    let num = _sonOnHane(jid);
+    // LID geldiyse gercek numaraya cevirmeyi dene (lidToPn onbellegi)
+    if (!num && jid && String(jid).endsWith('@lid')) {
+      try { num = _sonOnHane(lidToPn.get(jid)); } catch (_) {}
+    }
+    if (num) {
+      const ekipMi = EKIP_NUMARALAR.has(num);
+      // OLCUM: isim tutuyor ama numara tutmuyorsa, bu ESKIDEN yanlis rozet
+      // olurdu. Kac kez onlendigini sayiyoruz ki duzeltmenin etkisi gorunsun.
+      if (!ekipMi && ad && panelKullaniciAdlari.has(_normAd(ad))) {
+        _sahteRozetSayaci++;
+        if (_sahteRozetSayaci <= 50 || _sahteRozetSayaci % 25 === 0) {
+          console.log(`🛡️ SAHTE EKIP ROZETI ONLENDI #${_sahteRozetSayaci} — ` +
+                      `"${String(ad).slice(0, 24)}" ekipte ayni isim var ama numara (…${num.slice(-4)}) ekip degil.`);
+        }
+      }
+      return ekipMi;
+    }
+    // numara cozulemedi -> karar veremeyiz, isme dus (eski davranis)
+  }
+  return ad ? panelKullaniciAdlari.has(_normAd(ad)) : false;
+}
 // başlangıçta + her 2 dakikada bir kullanıcı listesini tazele
 panelKullanicilariYenile();
 setInterval(panelKullanicilariYenile, 120000);
@@ -9488,7 +9612,11 @@ async function _startWAIc(lineId = 'ofis') {
            + bina ikonu) cizdiriyordu; ruhsat atan MUSTERI panel kullanicisi
            gibi goruntuyordu. Kayitli ISIM yine kullanilir, sadece ROZET
            gercek ekip uyelerine konur. */
-        senderOfis = !!(kayitliIsim && typeof ekipUyesiMi === 'function' && ekipUyesiMi(kayitliIsim));
+        // NUMARA KARAR VERIR (2026-09): gonderenin jid'i de veriliyor. Ekipte ayni
+        // isim olsa bile numarasi ekip degilse ROZET KONMAZ. (Sikayet: musteri
+        // "Mustafa" panel kullanicisi gibi gorunuyordu.)
+        const _gonderenJid = resolved.jid || m.key.participant || (fromMe ? '' : jid);
+        senderOfis = !!(kayitliIsim && typeof ekipUyesiMi === 'function' && ekipUyesiMi(kayitliIsim, _gonderenJid));
         senderPush = kayitliIsim
           || m.pushName
           || contactNames.get(resolved.jid)
@@ -9669,7 +9797,9 @@ async function _startWAIc(lineId = 'ofis') {
         // SADECE GERÇEK EKİP ÜYELERİ (panel kullanıcısı) sayılır. Müşteri/rastgele kayıtlı
         // kişi yazınca SAYILMAZ. fromMe (panelden gönderilen) VEYA mesajı yazan panel kullanıcısı.
         const aktKisiAdiOn = fromMe ? (line?.myName || 'Ben') : (senderName || senderPush || '');
-        const sayilsinMi = fromMe || ekipUyesiMi(aktKisiAdiOn);
+        // NUMARA KARAR VERIR: musterinin "ilgileniyorum" mesaji ekip aktivitesi
+        // sayilip RAPORU BOZMASIN. Isim tutsa bile numara tutmuyorsa sayilmaz.
+        const sayilsinMi = fromMe || ekipUyesiMi(aktKisiAdiOn, senderJid || m.key.participant || '');
         if (sayilsinMi) {
           const akt = aktiviteMesajiTespit(info.text);
           if (akt && db.isReady()) {
