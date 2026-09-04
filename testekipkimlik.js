@@ -31,23 +31,28 @@ function kur(envDegeri, ekipIsimleri = []) {
   return f(process_, adlar, (s) => (s || '').toLocaleLowerCase('tr').trim(), new Map(), { log: () => {} }, () => '');
 }
 
-// ═══ TEST 1: SIKAYETIN TA KENDISI ══════════════════════════════════
-console.log('\n== TEST 1: "Mustafa" sikayeti ==');
+// ═══ TEST 1: SIKAYETIN TA KENDISI (numara listesi YOK — normal durum) ═
+// GERCEK KURULUM: ekip uyelerinin KENDI WhatsApp numarasi YOK.
+// Herkes tek ofis hattindan, PANEL uzerinden yaziyor.
+console.log('\n== TEST 1: "Mustafa" sikayeti — ekip panelden yaziyor ==');
 {
-  // Ekipte Mustafa adinda panel kullanicisi var. Numarasi: 905321112233
-  const F = kur('905321112233', ['mustafa', 'efe riza']);
+  const F = kur('', ['mustafa', 'efe riza']);   // EKIP_NUMARALAR BOS (normal durum)
 
-  // GERCEK ekip uyesi Mustafa
-  ok('gercek ekip Mustafa -> EKIP (rozet dogru)',
-     F.ekipMi('Mustafa', '905321112233@s.whatsapp.net') === true);
-
-  // MUSTERI Mustafa — ayni isim, BASKA numara
-  ok('MUSTERI Mustafa -> EKIP DEGIL (sikayet cozuldu)',
+  // Gruba KENDI telefonundan yazan "Mustafa" -> MUSTERI, rozet ALMAMALI
+  ok('gruba telefonundan yazan "Mustafa" -> EKIP DEGIL (sikayet cozuldu)',
      F.ekipMi('Mustafa', '905559998877@s.whatsapp.net') === false);
-  console.log('         -> ayni isim, farkli numara, DOGRU sonuc');
 
-  // Ekipte hic olmayan isim
+  // Ekipte ayni isim olmasi hicbir sey degistirmemeli
+  ok('ekipte ayni isim olmasi rozet KAZANDIRMIYOR',
+     F.ekipMi('Efe Rıza', '905551112222@s.whatsapp.net') === false);
+
+  // Ekipte hic olmayan isim de tabii ki degil
   ok('ekipte olmayan isim -> EKIP DEGIL', F.ekipMi('Ahmet', '905551112233@s.whatsapp.net') === false);
+  console.log('         -> gruba telefondan yazan HERKES musteri; ekip zaten panelden yaziyor');
+
+  // WhatsApp disi cagri (jid yok): ic mesajlasma / robot -> eski davranis
+  ok('jid YOKSA (ic mesajlasma/robot) isim davranisi korunuyor',
+     F.ekipMi('Mustafa') === true);
 }
 
 // ═══ TEST 2: NUMARA YAZIM SERBESTLIGI ══════════════════════════════
@@ -62,26 +67,29 @@ console.log('\n== TEST 2: numara nasil yazilirsa yazilsin bulunmali ==');
   ok('jid\'de cihaz eki (:12) sorun cikarmiyor', F.ekipMi('Mustafa', '905321112233:12@s.whatsapp.net') === true);
 }
 
-// ═══ TEST 3: GERI UYUM — ENV BOSSA HICBIR SEY BOZULMAZ ═════════════
-console.log('\n== TEST 3: EKIP_NUMARALAR bos ise eski davranis ==');
-{
-  const F = kur('', ['mustafa']);
-  ok('numara yuklenmedi', F.set.size === 0);
-  ok('env bosken ISIM eslesmesi calisiyor (eski davranis)',
-     F.ekipMi('Mustafa', '905559998877@s.whatsapp.net') === true);
-  ok('env bosken ekipte olmayan isim yine false', F.ekipMi('Ahmet', '9055@s.whatsapp.net') === false);
-  console.log('         -> bu dosya kurulunca hicbir sey bozulmaz, numara girilince duzelir');
-}
-
-// ═══ TEST 4: NUMARA COZULEMEZSE GUVENLI DAVRANIS ═══════════════════
-console.log('\n== TEST 4: numara yoksa/cozulemezse ==');
+// ═══ TEST 3: ISTISNA — biri telefonundan da yaziyorsa ══════════════
+console.log('\n== TEST 3: EKIP_NUMARALAR dolu ise (istisna durum) ==');
 {
   const F = kur('905321112233', ['mustafa']);
-  ok('jid hic verilmezse isme dusuyor (eski davranis)', F.ekipMi('Mustafa') === true);
-  ok('jid bossa isme dusuyor', F.ekipMi('Mustafa', '') === true);
-  ok('anlamsiz kisa numara -> isme dusuyor', F.ekipMi('Mustafa', '123@s.whatsapp.net') === true);
+  ok('listedeki numara -> EKIP (rozet dogru)',
+     F.ekipMi('Mustafa', '905321112233@s.whatsapp.net') === true);
+  ok('listede olmayan ayni isim -> EKIP DEGIL',
+     F.ekipMi('Mustafa', '905559998877@s.whatsapp.net') === false);
+  console.log('         -> normalde bu listeye gerek yok, bos kalabilir');
+}
+
+// ═══ TEST 4: GUVENLI VARSAYILANLAR ════════════════════════════════
+console.log('\n== TEST 4: sinir durumlar ==');
+{
+  const F = kur('', ['mustafa']);
+  ok('jid bossa isme dusuyor (ic cagri sayilir)', F.ekipMi('Mustafa', '') === true);
   ok('ad da jid de yoksa false', F.ekipMi('', '') === false);
   ok('null degerler cokertmiyor', F.ekipMi(null, null) === false);
+  ok('jid varsa isim ASLA yetmiyor', F.ekipMi('Mustafa', '9@s.whatsapp.net') === false);
+
+  const G = kur('905321112233', ['mustafa']);
+  ok('numara listesi varken cozulemeyen kisa jid -> yine EKIP DEGIL',
+     G.ekipMi('Mustafa', '123@s.whatsapp.net') === false);
 }
 
 // ═══ TEST 5: LID COZUMU ════════════════════════════════════════════
@@ -94,16 +102,17 @@ console.log('\n== TEST 5: LID -> numara cevrimi ==');
   const ekipMi = f({ env: { EKIP_NUMARALAR: '905321112233' } }, adlar,
                    (s) => (s || '').toLocaleLowerCase('tr').trim(), lidHarita, { log: () => {} }, () => '');
   ok('bilinen LID gercek numaraya cevrilip EKIP bulunuyor', ekipMi('Mustafa', '77777@lid') === true);
-  ok('bilinmeyen LID -> isme dusuyor (guvenli)', ekipMi('Mustafa', '88888@lid') === true);
+  ok('bilinmeyen LID -> EKIP DEGIL (isim aldatamaz)', ekipMi('Mustafa', '88888@lid') === false);
 }
 
 // ═══ TEST 6: KOD BAGLANTILARI ══════════════════════════════════════
 console.log('\n== TEST 6: her iki kullanim yeri de jid veriyor mu? ==');
 {
-  ok('panel ROZETI jid ile karar veriyor',
-     /ekipUyesiMi\(kayitliIsim, _gonderenJid\)/.test(kaynak));
-  ok('AKTIVITE sayimi jid ile karar veriyor',
-     /ekipUyesiMi\(aktKisiAdiOn, senderJid \|\| m\.key\.participant \|\| ''\)/.test(kaynak));
+  ok('ROZET: numara listesi bos ise gruba yazan ASLA rozet almiyor',
+     /senderOfis = !!\(EKIP_NUMARALAR\.size && kayitliIsim/.test(kaynak));
+  ok('AKTIVITE: fromMe (panel) veya acik numara listesi',
+     /const sayilsinMi = fromMe\s*\n\s*\|\| \(EKIP_NUMARALAR\.size > 0/.test(kaynak));
+  ok('jid varsa isim eslesmesi devre disi', /if \(jid\) return false;/.test(kaynak));
   ok('jid\'siz cagri kalmadi (whapi disi)',
      !/ekipUyesiMi\((kayitliIsim|aktKisiAdiOn)\)/.test(kaynak));
   ok('fonksiyon iki parametre aliyor', /function ekipUyesiMi\(ad, jid\)/.test(kaynak));
@@ -115,12 +124,10 @@ console.log('\n== TEST 6: her iki kullanim yeri de jid veriyor mu? ==');
 // ═══ TEST 7: RAPOR BOZULMASI DA DUZELDI ════════════════════════════
 console.log('\n== TEST 7: "ilgileniyorum" sayimi ==');
 {
-  const F = kur('905321112233', ['mustafa']);
-  // Musteri "ilgileniyorum" yazarsa ekip aktivitesi SAYILMAMALI
-  ok('musterinin mesaji ekip aktivitesi SAYILMIYOR (rapor duzeldi)',
+  const F = kur('', ['mustafa']);
+  ok('MUSTERININ "ilgileniyorum"u ekip aktivitesi SAYILMIYOR (rapor duzeldi)',
      F.ekipMi('Mustafa', '905559998877@s.whatsapp.net') === false);
-  ok('gercek ekip uyesinin mesaji SAYILIYOR',
-     F.ekipMi('Mustafa', '905321112233@s.whatsapp.net') === true);
+  console.log('         -> panelden yazilan (fromMe) sayilmaya devam ediyor');
 }
 
 // ═══ TEST 8: ONCEKI DUZELTMELER YERINDE ════════════════════════════
@@ -162,7 +169,8 @@ console.log('\n== TEST 9: .env dosyasi dogrudan okunuyor mu? ==');
 
   // ikisi de yoksa eski davranis
   const C = mk('', undefined);
-  ok('ikisi de yoksa ISIM davranisina dusuyor', C.ekipMi('Mustafa', '905559998877@s.whatsapp.net') === true);
+  ok('ikisi de yoksa gruba yazan ASLA ekip degil (dogru varsayilan)',
+     C.ekipMi('Mustafa', '905559998877@s.whatsapp.net') === false);
 
   ok('kod once .env dosyasini deniyor', /_envDosyasindanOku\('EKIP_NUMARALAR'\)/.test(kaynak));
   ok('process.env yedek olarak duruyor', /if \(!ham\) ham = process\.env\.EKIP_NUMARALAR/.test(kaynak));

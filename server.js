@@ -8092,8 +8092,8 @@ function ekipNumaralariYukle(sessiz) {
     console.log(`   👥 Ekip numarasi yuklendi: ${EKIP_NUMARALAR.size} kisi — ` +
                 'rozet ve aktivite sayimi artik NUMARAYA gore (isim benzerligi aldatamaz).');
   } else {
-    console.log('   ⚠️  EKIP_NUMARALAR bos — ekip tespiti hala ISME gore yapiliyor. ' +
-                'Ayni isimli musteriler ekip rozeti alabilir. .env\'e numaralari ekleyin.');
+    console.log('   👥 Ekip tespiti: PANELDEN yazan = ekip (EKIP_NUMARALAR bos, normal durum). ' +
+                'Gruba kendi telefonundan yazan kisi ekip SAYILMAZ — ayni isimli musteri rozet alamaz.');
   }
 }
 ekipNumaralariYukle();
@@ -8122,8 +8122,21 @@ function ekipUyesiMi(ad, jid) {
       }
       return ekipMi;
     }
-    // numara cozulemedi -> karar veremeyiz, isme dus (eski davranis)
+    // numara cozulemedi -> karar veremeyiz, asagiya dus
   }
+  // ═══ EKIP = PANELDEN YAZAN (2026-09, kullanici duzeltmesi) ══════════
+  // ONEMLI: bu ekipte uyelerin KENDI WhatsApp numarasi YOK. Herkes tek ofis
+  // hattindan, PANEL uzerinden yaziyor. Dolayisiyla bir gruba KENDI
+  // telefonundan yazan kisi TANIM GEREGI ekip degildir.
+  //
+  // Bu yuzden gercek bir WhatsApp gonderisi (jid var) soz konusuysa ISME
+  // BAKARAK ekip demek HER ZAMAN yanlistir — sikayetin kaynagi buydu:
+  // ekipte "Mustafa" adinda panel kullanicisi var diye, gruba yazan MUSTERI
+  // Mustafa da ekip rozeti aliyordu.
+  //
+  // jid YOKSA (ic mesajlasma, robot gibi WhatsApp disi cagrilar) eski isim
+  // davranisi korunur — orada isim zaten panel kimligidir.
+  if (jid) return false;
   return ad ? panelKullaniciAdlari.has(_normAd(ad)) : false;
 }
 // başlangıçta + her 2 dakikada bir kullanıcı listesini tazele
@@ -9634,11 +9647,16 @@ async function _startWAIc(lineId = 'ofis') {
            + bina ikonu) cizdiriyordu; ruhsat atan MUSTERI panel kullanicisi
            gibi goruntuyordu. Kayitli ISIM yine kullanilir, sadece ROZET
            gercek ekip uyelerine konur. */
-        // NUMARA KARAR VERIR (2026-09): gonderenin jid'i de veriliyor. Ekipte ayni
-        // isim olsa bile numarasi ekip degilse ROZET KONMAZ. (Sikayet: musteri
-        // "Mustafa" panel kullanicisi gibi gorunuyordu.)
-        const _gonderenJid = resolved.jid || m.key.participant || (fromMe ? '' : jid);
-        senderOfis = !!(kayitliIsim && typeof ekipUyesiMi === 'function' && ekipUyesiMi(kayitliIsim, _gonderenJid));
+        // ROZET KURALI (2026-09): ekip PANELDEN yaziyor, kendi WhatsApp numarasi
+        // yok. Gruba kendi telefonundan yazan biri ekip DEGILDIR -> rozet YOK.
+        // Isim karsilastirmasi tamamen devre disi (musteri "Mustafa" sorunu).
+        // ISTISNA: bir ekip uyesi gruba kendi telefonundan da yaziyorsa,
+        // numarasi .env EKIP_NUMARALAR'a eklenirse rozet alir. Bos ise
+        // (normal durum) gruba yazan hicbir kisi rozet almaz.
+        const _gonderenJid = resolved.jid || m.key.participant || jid;
+        senderOfis = !!(EKIP_NUMARALAR.size && kayitliIsim
+                        && typeof ekipUyesiMi === 'function'
+                        && ekipUyesiMi(kayitliIsim, _gonderenJid));
         senderPush = kayitliIsim
           || m.pushName
           || contactNames.get(resolved.jid)
@@ -9819,9 +9837,12 @@ async function _startWAIc(lineId = 'ofis') {
         // SADECE GERÇEK EKİP ÜYELERİ (panel kullanıcısı) sayılır. Müşteri/rastgele kayıtlı
         // kişi yazınca SAYILMAZ. fromMe (panelden gönderilen) VEYA mesajı yazan panel kullanıcısı.
         const aktKisiAdiOn = fromMe ? (line?.myName || 'Ben') : (senderName || senderPush || '');
-        // NUMARA KARAR VERIR: musterinin "ilgileniyorum" mesaji ekip aktivitesi
-        // sayilip RAPORU BOZMASIN. Isim tutsa bile numara tutmuyorsa sayilmaz.
-        const sayilsinMi = fromMe || ekipUyesiMi(aktKisiAdiOn, senderJid || m.key.participant || '');
+        // AKTIVITE SAYIMI (2026-09): ekip panelden yazar -> fromMe. Gruba kendi
+        // telefonundan yazan MUSTERININ "ilgileniyorum"u ekip aktivitesi
+        // SAYILMAZ (rapor bozuluyordu). Numara listesi doluysa o da gecerli.
+        const sayilsinMi = fromMe
+          || (EKIP_NUMARALAR.size > 0
+              && ekipUyesiMi(aktKisiAdiOn, senderJid || m.key.participant || jid));
         if (sayilsinMi) {
           const akt = aktiviteMesajiTespit(info.text);
           if (akt && db.isReady()) {
